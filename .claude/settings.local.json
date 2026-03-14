@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./claude-bootstrap.sh)",
+      "Bash(echo:*)",
+      "Bash(source:*)",
+      "Bash(git add:*)",
+      "Bash(zsh -ic \"alias claude\" 2>&1)",
+      "Bash(zsh -ic \"which claude\" 2>&1)",
+      "Bash(zsh -c \"which claude\" 2>&1)",
+      "Bash(zsh -ic \"claude --version\" 2>&1)",
+      "Bash(zsh -ic \"claude --dangerouslySkipPermissions --version\" 2>&1)",
+      "Bash(zsh -ic \"claude -p 'respond with just the word HELLO'\" 2>&1)",
+      "Bash(/opt/homebrew/bin/claude --help 2>&1)",
+      "Bash(grep:*)",
+      "Bash(bash claude-bootstrap.sh 2>&1)",
+      "Bash(npm install -g *)",
+      "Bash(npm list -g *)",
+      "Bash(npm uninstall -g *)",
+      "Bash(npx playwright *)",
+      "Bash(jq *)",
+      "Bash(brew install *)",
+      "Bash(curl -fsSL *)"
+    ]
+  }
+}
