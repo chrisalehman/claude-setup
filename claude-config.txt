@@ -3,10 +3,22 @@
 # This is the single source of truth for what gets installed/removed.
 #
 # Format: type|name|source
-#   marketplace  |  name
-#   plugin       |  name  |  source
-#   github-skill |  name  |  owner/repo
+#   marketplace   |  name
+#   plugin        |  name  |  source
+#   github-skill  |  name  |  owner/repo
 #   global-memory |  filename
+#   brew-dep      |  binary              (package = binary)
+#   brew-dep      |  binary  |  package  (when binary ≠ package)
+#   npm-global    |  package
+#   mcp-server    |  name   |  package
+
+brew-dep     | git
+brew-dep     | node
+brew-dep     | pnpm
+brew-dep     | gh
+brew-dep     | jq
+brew-dep     | rg            | ripgrep
+brew-dep     | uv
 
 marketplace  | anthropics/skills
 marketplace  | VoltAgent/awesome-claude-code-subagents
@@ -26,3 +38,6 @@ plugin       | voltagent-meta      | voltagent-subagents
 global-memory | claude-global.md
 
 github-skill | excalidraw-diagram | coleam00/excalidraw-diagram-skill
+
+npm-global   | @playwright/test
+mcp-server   | playwright    | @playwright/mcp
