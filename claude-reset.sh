@@ -129,6 +129,77 @@ do_remove_global_memory() {
   echo "✓"
 }
 
+do_remove_mcp_server() {
+  local name="$1" pkg="$2"
+  local settings=~/.claude/settings.json
+
+  if ! confirm "MCP server: ${name}"; then
+    echo "  ${name} — skipped"
+    return 0
+  fi
+
+  echo -n "  ${name}... "
+
+  if [ ! -f "$settings" ] || ! jq -e ".mcpServers.\"${name}\"" "$settings" &>/dev/null; then
+    echo "✓ (already removed)"
+    return 0
+  fi
+
+  local tmp="${settings}.tmp"
+  jq --arg name "$name" 'del(.mcpServers[$name])' "$settings" > "$tmp" && mv "$tmp" "$settings"
+  echo "✓"
+}
+
+do_remove_npm_global() {
+  local pkg="$1"
+  if ! confirm "npm global: ${pkg}"; then
+    echo "  ${pkg} — skipped"
+    return 0
+  fi
+  echo -n "  ${pkg}... "
+  if npm list -g --depth=0 "$pkg" &>/dev/null; then
+    npm uninstall -g "$pkg" --silent 2>/dev/null
+    echo "✓"
+  else
+    echo "✓ (already removed)"
+  fi
+}
+
+verify_npm_global_removed() {
+  local pkg="$1"
+  if npm list -g --depth=0 "$pkg" &>/dev/null; then
+    npm_global_found=true
+    echo "    ${pkg} — still installed"
+  fi
+}
+
+verify_mcp_removed() {
+  local name="$1"
+  local settings=~/.claude/settings.json
+  if [ -f "$settings" ] && jq -e ".mcpServers.\"${name}\"" "$settings" &>/dev/null; then
+    mcp_found=true
+    echo "    ${name} — still configured"
+  fi
+}
+
+# ─── MCP Servers ───────────────────────────────────────────────────────────
+
+echo "MCP servers:"
+read_config "mcp-server" do_remove_mcp_server
+echo ""
+
+# ─── npm Globals ───────────────────────────────────────────────────────────
+
+echo "npm globals:"
+read_config "npm-global" do_remove_npm_global
+echo ""
+
+# ─── Brew Dependencies ────────────────────────────────────────────────────
+
+echo "Brew dependencies:"
+echo "  (not removed — system-level tools may be used by other software)"
+echo ""
+
 # ─── Custom Skills ──────────────────────────────────────────────────────────
 
 echo "Custom skills:"
@@ -212,6 +283,22 @@ if [ -f ~/.zshrc ] && grep -qF "dangerously-skip-permissions" ~/.zshrc; then
   echo "    ~/.zshrc — alias still present"
 else
   echo "    ~/.zshrc ✓ (clean)"
+fi
+
+echo ""
+echo "  npm globals:"
+npm_global_found=false
+read_config "npm-global" verify_npm_global_removed
+if ! $npm_global_found; then
+  echo "    (none installed) ✓"
+fi
+
+echo ""
+echo "  MCP servers:"
+mcp_found=false
+read_config "mcp-server" verify_mcp_removed
+if ! $mcp_found; then
+  echo "    (all removed) ✓"
 fi
 
 echo "" ; echo "Done"
