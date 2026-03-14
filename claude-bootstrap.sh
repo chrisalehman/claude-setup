@@ -3,7 +3,7 @@
 # claude-bootstrap.sh
 # Sets up Claude Code plugins, skills, and dependencies.
 # Idempotent — safe to run multiple times; produces the same result.
-# Requires: claude CLI, git, node (macOS + Homebrew)
+# Requires: claude CLI, git (macOS + Homebrew)
 #
 set -euo pipefail
 
@@ -21,7 +21,6 @@ check_cmd() {
 
 check_cmd claude  "Install with: brew install claude-code"
 check_cmd git     "Install with: xcode-select --install"
-check_cmd node    "Install with: brew install node"
 
 # ─── Config reader ──────────────────────────────────────────────────────────
 

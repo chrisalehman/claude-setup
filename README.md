@@ -1,6 +1,6 @@
 # claude-setup
 
-Personal Claude Code bootstrap. One script, one run, fully configured environment. Idempotent — safe to re-run anytime.
+Personal Claude Code bootstrap. Two scripts, one config, fully configured environment. Idempotent — safe to re-run anytime.
 
 ## Usage
 
@@ -8,13 +8,13 @@ Personal Claude Code bootstrap. One script, one run, fully configured environmen
 git clone git@github.com:chrisalehman/claude-setup.git
 cd claude-setup
 ./claude-bootstrap.sh        # install everything
-./claude-reset.sh            # prompt to remove all, or item-by-item
+./claude-reset.sh            # prompts "Remove all?" first, then item-by-item if declined
 ./claude-reset.sh --all      # remove everything without prompting
 ```
 
 ## What's included
 
-### Plugins
+### Plugins (from official marketplaces)
 
 | Plugin | Source | Purpose |
 |--------|--------|---------|
@@ -23,18 +23,19 @@ cd claude-setup
 | document-skills | anthropic-agent-skills | docx, pdf, pptx, xlsx creation and manipulation |
 | example-skills | anthropic-agent-skills | skill-creator, webapp-testing (Playwright), mcp-builder |
 
-### Custom Skills (installed to ~/.claude/skills/)
+### Custom Skills (fetched from GitHub, installed to ~/.claude/skills/)
 
 | Skill | Source | Purpose |
 |-------|--------|---------|
 | excalidraw-diagram | [coleam00/excalidraw-diagram-skill](https://github.com/coleam00/excalidraw-diagram-skill) | Excalidraw diagram generation with PNG rendering via Playwright |
 
-Skills are fetched from GitHub at bootstrap time, not stored in this repo.
+Custom skills are fetched from GitHub at bootstrap time, not stored in this repo.
 
 ## Repo structure
 
 ```
 claude-setup/
+├── .gitignore
 ├── claude-config.txt        # Shared config (plugins, skills, marketplaces)
 ├── claude-bootstrap.sh      # Install everything (idempotent)
 ├── claude-reset.sh          # Remove everything (interactive or --all)
@@ -45,19 +46,15 @@ claude-setup/
 
 - macOS (scripts and install instructions assume macOS + Homebrew)
 - Claude Code CLI (`brew install claude-code`)
-- Node.js (`brew install node`)
 - Git (included with Xcode command line tools)
-- Active Claude Max subscription
 
 `uv` (Python package manager) is auto-installed by the bootstrap script if missing.
 
 ## Updating
 
-```bash
-# Update marketplace plugins
-claude plugin update --all
+Re-running the bootstrap script updates all custom skills to their latest versions from GitHub:
 
-# Update all skills and dependencies (re-run the script)
+```bash
 ./claude-bootstrap.sh
 ```
 
@@ -65,6 +62,8 @@ claude plugin update --all
 
 Everything is defined in `claude-config.txt` — one place, no sync issues:
 
-- **New plugin:** Add a `plugin | name | source` line
-- **New GitHub skill:** Add a `github-skill | name | owner/repo` line
-- **New marketplace:** Add a `marketplace | name` line
+```
+plugin       | name       | source
+github-skill | name       | owner/repo
+marketplace  | name
+```
