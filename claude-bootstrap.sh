@@ -63,6 +63,44 @@ do_install_brew_dep() {
   ensure_cmd "$binary" "$pkg"
 }
 
+do_install_npm_global() {
+  local pkg="$1"
+  echo -n "  ${pkg}... "
+  if npm list -g --depth=0 "$pkg" &>/dev/null; then
+    echo "✓ (already installed)"
+  else
+    npm install -g "$pkg" --silent 2>/dev/null
+    echo "✓"
+  fi
+}
+
+do_configure_mcp_server() {
+  local name="$1" pkg="$2"
+  local settings=~/.claude/settings.json
+
+  echo -n "  ${name} (${pkg})... "
+
+  # Create settings file if it doesn't exist
+  if [ ! -f "$settings" ]; then
+    echo '{}' > "$settings"
+  fi
+
+  # Check if MCP server already configured
+  if jq -e ".mcpServers.\"${name}\"" "$settings" &>/dev/null; then
+    echo "✓ (already configured)"
+    return 0
+  fi
+
+  # Merge new MCP server entry
+  local tmp="${settings}.tmp"
+  jq --arg name "$name" --arg pkg "$pkg" '
+    .mcpServers //= {} |
+    .mcpServers[$name] = { "command": "npx", "args": [$pkg] }
+  ' "$settings" > "$tmp" && mv "$tmp" "$settings"
+
+  echo "✓"
+}
+
 do_install_marketplace() {
   local name="$1"
   echo -n "  ${name}... "
@@ -145,6 +183,23 @@ echo "Brew dependencies:"
 read_config "brew-dep" do_install_brew_dep
 echo ""
 
+# ─── npm Globals ─────────────────────────────────────────────────────────────
+
+echo "npm globals:"
+if ! command -v npm &>/dev/null; then
+  echo "  ERROR: npm not found — install node first" >&2
+  exit 1
+fi
+read_config "npm-global" do_install_npm_global
+echo ""
+
+# ─── Playwright Browsers ────────────────────────────────────────────────────
+
+echo -n "Playwright browsers (chromium)... "
+npx playwright install chromium --quiet 2>/dev/null || npx playwright install chromium 2>/dev/null
+echo "✓"
+echo ""
+
 # ─── Marketplaces ────────────────────────────────────────────────────────────
 
 echo "Marketplaces:"
@@ -190,6 +245,12 @@ echo "Skill setup:"
 echo -n "  excalidraw-diagram renderer... "
 (cd ~/.claude/skills/excalidraw-diagram/references && uv sync --quiet 2>&1 && uv run playwright install chromium 2>&1) | tail -1
 echo "  ✓"
+echo ""
+
+# ─── MCP Servers ─────────────────────────────────────────────────────────────
+
+echo "MCP servers:"
+read_config "mcp-server" do_configure_mcp_server
 echo ""
 
 # ─── Verification ───────────────────────────────────────────────────────────
