@@ -59,6 +59,7 @@ Curated behavioral rules applied to every Claude Code session across all project
 | Clean Working Directory | Scripts must not leave intermediary files |
 | Reviews Must Check Conventions | Code reviews must check file placement, not just correctness |
 | Persistent Planning for Complex Tasks | Use a scratch `_plan.md` for multi-step tasks, delete when done |
+| Use Worktrees for Development | Never commit directly to main — use worktrees/branches, merge after review |
 | Autonomy | Operate without approval except for irreversible/out-of-codebase actions |
 
 Edit `claude-global.md` to add or remove rules. To disable entirely, comment out or remove the `global-memory` line in `claude-config.txt`.

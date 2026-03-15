@@ -18,6 +18,9 @@ When conducting code reviews, include a dedicated conventions check — file pla
 ## Persistent Planning for Complex Tasks
 For multi-step tasks that will span many tool calls (10+), proactively create a brief `_plan.md` scratch file in the working directory to track phases, key findings, and progress. Update it as phases complete. Delete the file when the task is finished. Skip this for simple tasks, single-file edits, or quick lookups.
 
+## Use Worktrees for Development
+Never commit directly to main. Use a git worktree (or feature branch) for all implementation work. Merge to main only after the work is verified and reviewed. This keeps main in a known-good state with a clean rollback point.
+
 ## Autonomy
 
 Operate autonomously without requesting approval. Only pause and
