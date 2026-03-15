@@ -124,11 +124,13 @@ npm init playwright@latest
 |--------|---------|---------|
 | playwright | `@playwright/mcp` | Live browser control for E2E testing, debugging, and visual verification |
 | context7 | `@upstash/context7-mcp` | Up-to-date library documentation — bridges the gap when Claude's training data is stale |
-| claude-hitl | `claude-hitl-mcp` (local) | Human-in-the-loop notifications via Telegram — walk away from the terminal, respond from your phone |
+| claude-hitl | `claude-hitl-mcp` (local) | Human-in-the-loop notifications — walk away from the terminal, respond from your phone (Telegram default, pluggable) |
 
-### Human-in-the-Loop Notifications (Telegram)
+### Human-in-the-Loop Notifications
 
-The `claude-hitl-mcp` package (included in this repo) bridges Claude Code to Telegram for bidirectional human-in-the-loop interactions. When Claude is running autonomously and hits a decision point, it sends a notification to your phone and waits for your response.
+The `claude-hitl-mcp` package (included in this repo) bridges Claude Code to chat platforms for bidirectional human-in-the-loop interactions. When Claude is running autonomously and hits a decision point, it sends a notification to your phone and waits for your response.
+
+**Telegram is the default adapter** — it has the simplest bot API (30-second setup via @BotFather), best mobile push notifications, and zero infrastructure (long polling, no webhooks or public URLs). The pluggable adapter interface supports adding other platforms (Slack, Discord) in the future.
 
 **Three MCP tools:**
 
@@ -157,7 +159,7 @@ The `claude-hitl-mcp` package (included in this repo) bridges Claude Code to Tel
 
 **Verify:** `node dist/cli.js test` — you should get a notification in Telegram.
 
-**Pluggable architecture:** The adapter interface supports future chat platforms (Slack, Discord). Telegram ships first because it has the simplest bot API, best mobile push notifications, and zero infrastructure (long polling, no webhooks).
+**Other adapters:** The adapter interface is pluggable — Slack, Discord, and other platforms can be added by implementing the `ChatAdapter` interface. See `src/adapters/telegram.ts` for the reference implementation.
 
 ### Global Hooks (installed to ~/.claude/hooks/)
 
@@ -178,7 +180,7 @@ claude-setup/
 ├── hooks/
 │   ├── protect-main.sh      # Hook: blocks git push to main/master
 │   └── protect-database.sh  # Hook: blocks destructive SQL operations
-├── claude-hitl-mcp/         # Human-in-the-loop MCP server (Telegram bridge)
+├── claude-hitl-mcp/         # Human-in-the-loop MCP server (pluggable, Telegram default)
 │   ├── src/                 # TypeScript source
 │   ├── tests/               # Vitest test suite (47 tests)
 │   ├── package.json
