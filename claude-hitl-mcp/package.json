@@ -1,7 +1,7 @@
 {
   "name": "claude-hitl-mcp",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.1.0",
+  "description": "Human-in-the-Loop MCP server for Claude Code with Telegram notifications and priority-tiered timeouts",
   "type": "module",
   "bin": {
     "claude-hitl-mcp": "dist/cli.js"
@@ -16,12 +16,15 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": [],
+  "keywords": ["claude", "mcp", "hitl", "telegram", "human-in-the-loop"],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
+  "files": ["dist"],
+  "engines": { "node": ">=20" },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "node-telegram-bot-api": "^0.67.0"
+    "node-telegram-bot-api": "^0.67.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

@@ -42,6 +42,7 @@ github-skill | excalidraw-diagram | coleam00/excalidraw-diagram-skill
 npm-global   | @playwright/test
 mcp-server   | playwright    | @playwright/mcp
 mcp-server   | context7      | @upstash/context7-mcp@latest
+mcp-server   | claude-hitl   | claude-hitl-mcp
 
 # ─── Optional: Cloud & Infrastructure ──────────────────────────────────────
 # Uncomment what you need, re-run ./claude-bootstrap.sh

@@ -33,3 +33,29 @@ are irreversible or have consequences outside the codebase:
 - Configuration changes that affect billing (Vercel, Supabase, Anthropic)
 
 For everything else: proceed without asking.
+
+## HITL Notification Priority Guide
+
+When claude-hitl MCP tools are available, use them to keep the
+human informed and to request input on decisions:
+
+- **critical**: Irreversible actions — destructive migrations,
+  external API calls with side effects, security changes.
+  Always provide options including a "cancel" choice.
+
+- **architecture**: Decisions affecting system boundaries, data
+  models, public interfaces, or technology choices.
+  Provide options with a recommended default.
+
+- **preference**: Aesthetic choices, naming, implementation
+  details with multiple valid paths.
+  Always mark a default option.
+
+- **fyi**: Progress updates, completions, phase transitions.
+  Use notify_human, not ask_human.
+
+When in doubt, prefer a higher priority tier.
+False alarms are cheaper than silent mistakes.
+
+Use configure_hitl at the start of each session to set
+session_context so the human knows which project is messaging.
