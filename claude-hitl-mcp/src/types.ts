@@ -115,12 +115,6 @@ export interface ConfigureHitlInput {
     architecture?: number;
     preference?: number;
   };
-  quiet_hours?: {
-    start: string;
-    end: string;
-    timezone: string;
-    behavior: "queue" | "skip_preference";
-  };
 }
 
 export interface ConfigureHitlResponse {
@@ -129,9 +123,17 @@ export interface ConfigureHitlResponse {
     adapter: string;
     session_context: string;
     timeouts: { critical: null; architecture: number; preference: number };
-    quiet_hours: { start: string; end: string; timezone: string; behavior: string } | null;
   };
   error?: string;
+}
+
+export interface QuietHoursState {
+  enabled: boolean;
+  manual: boolean;
+  start?: string;
+  end?: string;
+  timezone?: string;
+  behavior?: "queue" | "skip_preference";
 }
 
 // --- Config File Types ---

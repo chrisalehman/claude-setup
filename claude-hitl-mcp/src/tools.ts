@@ -140,10 +140,6 @@ export class HitlToolHandler {
       });
     }
 
-    if (input.quiet_hours) {
-      this.engine.setQuietHours(input.quiet_hours);
-    }
-
     const archTimeout = this.engine.getTimeoutMs("architecture");
     const prefTimeout = this.engine.getTimeoutMs("preference");
 
@@ -157,7 +153,6 @@ export class HitlToolHandler {
           architecture: archTimeout ? archTimeout / 60000 : 120,
           preference: prefTimeout ? prefTimeout / 60000 : 30,
         },
-        quiet_hours: input.quiet_hours ?? null,
       },
     };
   }

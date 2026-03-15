@@ -127,15 +127,6 @@ async function main() {
         })
         .optional()
         .describe("Timeout overrides in minutes"),
-      quiet_hours: z
-        .object({
-          start: z.string(),
-          end: z.string(),
-          timezone: z.string(),
-          behavior: z.enum(["queue", "skip_preference"]),
-        })
-        .optional()
-        .describe("Quiet hours configuration"),
     },
     async (args) => {
       const h = await getHandler();
