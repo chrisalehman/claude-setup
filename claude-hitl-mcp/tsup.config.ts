@@ -17,4 +17,12 @@ export default defineConfig([
     dts: true,
     sourcemap: true,
   },
+  {
+    entry: ["src/listener.ts"],
+    format: ["esm"],
+    target: "node20",
+    dts: true,
+    sourcemap: true,
+    banner: { js: "#!/usr/bin/env node" },
+  },
 ]);
