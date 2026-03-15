@@ -87,6 +87,24 @@ async function setup() {
   saveConfig(config);
   console.log("✓ Config written to ~/.claude-hitl.json");
 
+  // Update MCP server env in settings.json so Claude Code can pass the token
+  const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
+  if (fs.existsSync(settingsPath)) {
+    try {
+      const settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      if (settings.mcpServers?.["claude-hitl"]) {
+        settings.mcpServers["claude-hitl"].env = {
+          ...settings.mcpServers["claude-hitl"].env,
+          TELEGRAM_BOT_TOKEN: token,
+        };
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf-8");
+        console.log("✓ Token added to MCP server config");
+      }
+    } catch {
+      // Best effort — settings.json may not exist yet
+    }
+  }
+
   await adapter.sendMessage({
     text: "Claude HITL is connected! You'll receive notifications here when Claude Code needs your input.",
     level: "success",

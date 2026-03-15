@@ -99,9 +99,16 @@ do_configure_mcp_server() {
     # Local package — resolve absolute path at install time
     local abs_path
     abs_path="$(cd "$(dirname "$local_server")" && pwd)/$(basename "$local_server")"
-    jq --arg name "$name" --arg path "$abs_path" '
+
+    # Build env object if token env vars are available
+    local env_json="{}"
+    if [ "$name" = "claude-hitl" ] && [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
+      env_json=$(jq -n --arg t "$TELEGRAM_BOT_TOKEN" '{"TELEGRAM_BOT_TOKEN": $t}')
+    fi
+
+    jq --arg name "$name" --arg path "$abs_path" --argjson env "$env_json" '
       .mcpServers //= {} |
-      .mcpServers[$name] = { "command": "node", "args": [$path] }
+      .mcpServers[$name] = { "command": "node", "args": [$path], "env": $env }
     ' "$settings" > "$tmp" && mv "$tmp" "$settings"
     echo "✓ (local)"
   else
