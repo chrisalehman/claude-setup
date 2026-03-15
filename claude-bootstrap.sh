@@ -76,50 +76,33 @@ do_install_npm_global() {
 
 do_configure_mcp_server() {
   local name="$1" pkg="$2"
-  local settings=~/.claude/settings.json
 
   echo -n "  ${name} (${pkg})... "
 
-  # Create settings file if it doesn't exist
-  if [ ! -f "$settings" ]; then
-    echo '{}' > "$settings"
-  fi
-
-  # Check if MCP server already configured
-  if jq -e ".mcpServers.\"${name}\"" "$settings" &>/dev/null; then
+  # Check if already configured via claude mcp
+  if claude mcp get "$name" &>/dev/null; then
     echo "✓ (already configured)"
     return 0
   fi
 
   # Check if the package exists as a local subdirectory with a built server
   local local_server="${SCRIPT_DIR}/${pkg}/dist/server.js"
-  local tmp="${settings}.tmp"
 
   if [ -f "$local_server" ]; then
-    # Local package — resolve absolute path at install time
+    # Local package — resolve absolute path and register via claude mcp add
     local abs_path
     abs_path="$(cd "$(dirname "$local_server")" && pwd)/$(basename "$local_server")"
 
-    # Build env object if token env vars are available
-    local env_json="{}"
+    local env_args=()
     if [ "$name" = "claude-hitl" ] && [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-      env_json=$(jq -n --arg t "$TELEGRAM_BOT_TOKEN" '{"TELEGRAM_BOT_TOKEN": $t}')
+      env_args=(-e "TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}")
     fi
 
-    local pkg_dir
-    pkg_dir="$(dirname "$abs_path")/.."
-    pkg_dir="$(cd "$pkg_dir" && pwd)"
-    jq --arg name "$name" --arg path "$abs_path" --argjson env "$env_json" --arg cwd "$pkg_dir" '
-      .mcpServers //= {} |
-      .mcpServers[$name] = { "command": "node", "args": [$path], "env": $env, "cwd": $cwd }
-    ' "$settings" > "$tmp" && mv "$tmp" "$settings"
+    claude mcp add "$name" "${env_args[@]}" -s user -- node "$abs_path" &>/dev/null
     echo "✓ (local)"
   else
-    # Remote package — use npx
-    jq --arg name "$name" --arg pkg "$pkg" '
-      .mcpServers //= {} |
-      .mcpServers[$name] = { "command": "npx", "args": [$pkg] }
-    ' "$settings" > "$tmp" && mv "$tmp" "$settings"
+    # Remote package — register via claude mcp add
+    claude mcp add "$name" -s user -- npx -y "$pkg" &>/dev/null
     echo "✓"
   fi
 }
@@ -226,8 +209,7 @@ verify_npm_global() {
 
 verify_mcp_server() {
   local name="$1"
-  local settings=~/.claude/settings.json
-  if [ -f "$settings" ] && jq -e ".mcpServers.\"${name}\"" "$settings" &>/dev/null; then
+  if claude mcp get "$name" &>/dev/null; then
     echo "    ${name} ✓"
   else
     echo "    ${name} — not configured"
