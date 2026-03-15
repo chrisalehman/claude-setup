@@ -19,6 +19,7 @@ export interface SessionInfo {
   cwd: string | null;
   worktree?: string;
   sessionContext?: string;
+  timeoutOverrides?: { architecture?: number; preference?: number };
   connectedAt: Date;
   socket: net.Socket;
 }
@@ -298,6 +299,9 @@ export class IpcServer {
 
     if (msg.sessionContext !== undefined) {
       session.sessionContext = msg.sessionContext;
+    }
+    if (msg.timeoutOverrides !== undefined) {
+      session.timeoutOverrides = msg.timeoutOverrides;
     }
   }
 
