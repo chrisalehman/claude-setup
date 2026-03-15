@@ -52,7 +52,15 @@ function persistEnvVar(varName: string, value: string): void {
   }
 }
 
-function buildPlistContent(nodePath: string, packageDir: string, configDir: string): string {
+function buildPlistContent(nodePath: string, packageDir: string, configDir: string, envVars?: Record<string, string>): string {
+  let envSection = "";
+  if (envVars && Object.keys(envVars).length > 0) {
+    const entries = Object.entries(envVars)
+      .map(([k, v]) => `      <key>${k}</key>\n      <string>${v}</string>`)
+      .join("\n");
+    envSection = `\n  <key>EnvironmentVariables</key>\n  <dict>\n${entries}\n  </dict>`;
+  }
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -73,7 +81,7 @@ function buildPlistContent(nodePath: string, packageDir: string, configDir: stri
   <key>StandardOutPath</key>
   <string>${configDir}/listener.log</string>
   <key>StandardErrorPath</key>
-  <string>${configDir}/listener.log</string>
+  <string>${configDir}/listener.log</string>${envSection}
 </dict>
 </plist>
 `;
@@ -89,7 +97,24 @@ function doInstallListener(): void {
   const launchAgentsDir = path.join(os.homedir(), "Library", "LaunchAgents");
   ensureConfigDir(launchAgentsDir);
 
-  const plistContent = buildPlistContent(nodePath, packageDir, configDir);
+  // Resolve env vars that the listener needs — launchd doesn't inherit shell env
+  const envVars: Record<string, string> = {};
+  const config = loadConfig();
+  if (config?.telegram?.bot_token) {
+    const tokenValue = config.telegram.bot_token;
+    if (typeof tokenValue === "string" && tokenValue.startsWith("env:")) {
+      const resolved = resolveEnvValue(tokenValue);
+      const envName = tokenValue.slice(4);
+      envVars[envName] = resolved;
+    }
+  }
+
+  // Unload existing plist if present (ignore errors)
+  try {
+    child_process.execSync(`launchctl unload "${PLIST_PATH}" 2>/dev/null`, { stdio: "ignore" });
+  } catch {}
+
+  const plistContent = buildPlistContent(nodePath, packageDir, configDir, envVars);
   fs.writeFileSync(PLIST_PATH, plistContent, "utf-8");
 
   child_process.execSync(`launchctl load "${PLIST_PATH}"`, { stdio: "inherit" });
