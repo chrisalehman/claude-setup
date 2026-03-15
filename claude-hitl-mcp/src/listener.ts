@@ -8,6 +8,9 @@
  *   Quiet hours toggle → broadcast quiet_hours_changed to all sessions
  */
 
+import * as fs from "node:fs";
+import * as os from "node:os";
+import { fileURLToPath } from "node:url";
 import type { ClientMessage } from "./ipc/protocol.js";
 import type { SessionInfo } from "./ipc/server.js";
 import { IpcServer } from "./ipc/server.js";
@@ -25,7 +28,7 @@ import {
   handleQuietAction,
   type QuietState,
 } from "./commands/quiet.js";
-import { loadConfig, saveConfig } from "./config.js";
+import { loadConfig, saveConfig, resolveEnvValue, HITL_CONFIG_DIR } from "./config.js";
 import { PriorityEngine } from "./priority-engine.js";
 import type { HitlConfig } from "./types.js";
 
@@ -36,7 +39,7 @@ export interface TelegramBot {
     text: string,
     options?: Record<string, unknown>
   ): Promise<{ message_id: number }>;
-  answerCallbackQuery(queryId: string): Promise<void>;
+  answerCallbackQuery(queryId: string): Promise<boolean | void>;
   on(event: string, handler: (...args: unknown[]) => void): void;
   off(event: string, handler: (...args: unknown[]) => void): void;
 }
@@ -132,10 +135,13 @@ export class Listener {
     try {
       const config = loadConfig(this.configPath);
       if (config?.defaults?.quiet_hours) {
-        const qh = config.defaults.quiet_hours;
+        const qh = config.defaults.quiet_hours as typeof config.defaults.quiet_hours & {
+          enabled?: boolean;
+          manualOverride?: boolean;
+        };
         this.quietState = {
-          enabled: false, // schedule exists but not necessarily "on" right now
-          manual: false,
+          enabled: qh.enabled ?? false,
+          manual: qh.manualOverride ?? false,
           start: qh.start,
           end: qh.end,
           timezone: qh.timezone,
@@ -149,26 +155,27 @@ export class Listener {
 
   private persistQuietState(): void {
     try {
-      let config: HitlConfig = loadConfig(this.configPath) ?? {
+      const rawConfig: Record<string, unknown> = loadConfig(this.configPath) as unknown as Record<string, unknown> ?? {
         adapter: "telegram",
       };
 
+      const existingDefaults = (rawConfig.defaults as Record<string, unknown>) ?? {};
+      const quietHoursPayload: Record<string, unknown> = {
+        ...((existingDefaults.quiet_hours as Record<string, unknown>) ?? {}),
+        enabled: this.quietState.enabled,
+        manualOverride: this.quietState.manual,
+      };
+
       if (this.quietState.start && this.quietState.end && this.quietState.timezone) {
-        config = {
-          ...config,
-          defaults: {
-            ...config.defaults,
-            quiet_hours: {
-              start: this.quietState.start,
-              end: this.quietState.end,
-              timezone: this.quietState.timezone,
-              behavior: this.quietState.behavior ?? "queue",
-            },
-          },
-        };
+        quietHoursPayload.start = this.quietState.start;
+        quietHoursPayload.end = this.quietState.end;
+        quietHoursPayload.timezone = this.quietState.timezone;
+        quietHoursPayload.behavior = this.quietState.behavior ?? "queue";
       }
 
-      saveConfig(config, this.configPath);
+      rawConfig.defaults = { ...existingDefaults, quiet_hours: quietHoursPayload };
+
+      saveConfig(rawConfig as unknown as HitlConfig, this.configPath);
     } catch {
       // Non-fatal — continue without persisting
     }
@@ -534,4 +541,72 @@ export class Listener {
   getIpcServer(): IpcServer {
     return this.ipc;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Daemon entrypoint
+// ---------------------------------------------------------------------------
+
+async function main(): Promise<void> {
+  const configDir = HITL_CONFIG_DIR;
+  const configPath = `${configDir}/config.json`;
+
+  const config = loadConfig(configPath);
+  if (!config) {
+    throw new Error(`Config not found at ${configPath}. Run setup first.`);
+  }
+  if (!config.telegram?.bot_token) {
+    throw new Error("Config missing telegram.bot_token");
+  }
+  if (!config.telegram?.chat_id) {
+    throw new Error("Config missing telegram.chat_id");
+  }
+
+  const botToken = resolveEnvValue(config.telegram.bot_token);
+  const chatId = config.telegram.chat_id;
+  const socketPath = `${configDir}/sock`;
+
+  // Dynamically import node-telegram-bot-api to avoid issues in test environments
+  const { default: TelegramBotImpl } = await import("node-telegram-bot-api");
+  const telegramBot = new TelegramBotImpl(botToken, { polling: true });
+
+  const listener = new Listener({
+    configDir,
+    socketPath,
+    telegramBot,
+    chatId,
+  });
+
+  await listener.start();
+
+  // Write PID file
+  const pidPath = `${configDir}/listener.pid`;
+  fs.writeFileSync(pidPath, String(process.pid), "utf-8");
+
+  console.error(`[listener] Started, PID ${process.pid}`);
+
+  const shutdown = async (): Promise<void> => {
+    await listener.stop();
+    try {
+      fs.unlinkSync(pidPath);
+    } catch {
+      // Best effort
+    }
+    process.exit(0);
+  };
+
+  process.on("SIGTERM", () => {
+    void shutdown();
+  });
+  process.on("SIGINT", () => {
+    void shutdown();
+  });
+}
+
+// Only run as daemon when invoked directly (not when imported by tests)
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error("[listener] Fatal error:", err);
+    process.exit(1);
+  });
 }

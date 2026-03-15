@@ -206,4 +206,16 @@ export class ListenerClientAdapter implements ChatAdapter {
   onQuietHoursChanged(handler: QuietHoursHandler): void {
     this.quietHoursHandler = handler;
   }
+
+  /**
+   * Propagate configure_hitl settings to the listener daemon over IPC.
+   * Not part of ChatAdapter; called by HitlToolHandler when it detects this adapter.
+   */
+  sendConfigure(
+    sessionContext?: string,
+    timeoutOverrides?: { architecture?: number; preference?: number }
+  ): void {
+    if (!this.client || !this.client.isConnected()) return;
+    this.client.sendConfigure(sessionContext, timeoutOverrides);
+  }
 }
