@@ -288,9 +288,18 @@ async function setup() {
       if (!hookSettings.hooks[event]) {
         hookSettings.hooks[event] = [];
       }
-      const existing = hookSettings.hooks[event] as Array<{ type: string; command: string }>;
-      if (!existing.some((h) => h.command === hookPath)) {
-        existing.push({ type: "command", command: hookPath });
+      // Claude Code hooks format: [{matcher?, hooks: [{type, command}]}]
+      const eventHooks = hookSettings.hooks[event] as Array<{
+        matcher?: string;
+        hooks: Array<{ type: string; command: string }>;
+      }>;
+      const alreadyInstalled = eventHooks.some((entry) =>
+        entry.hooks?.some((h) => h.command === hookPath)
+      );
+      if (!alreadyInstalled) {
+        eventHooks.push({
+          hooks: [{ type: "command", command: hookPath }],
+        });
       }
     }
 
