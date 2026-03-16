@@ -93,19 +93,26 @@ export function formatStateIndicator(input: StateIndicatorInput): string {
 export function formatSessionDetail(session: StatusSession): string {
   const lines: string[] = [];
 
-  // Header line: project + optional worktree
   const headerParts = [session.project];
   if (session.worktree) headerParts.push(`(worktree: ${session.worktree})`);
   lines.push(headerParts.join(" "));
 
-  // Optional context
   if (session.sessionContext) {
     lines.push(`Context: ${session.sessionContext}`);
   }
 
   lines.push("");
 
-  // Plan section
+  // State indicator
+  const state = formatStateIndicator({
+    lastActivityAge: session.lastActivityAge,
+    blockedOn: session.blockedOn,
+    blockedAge: session.blockedAge,
+  });
+  lines.push(state);
+
+  lines.push("");
+
   if (session.plan) {
     lines.push(`📋 Plan:\n${truncatePlan(session.plan, 3000)}`);
   } else {
@@ -114,7 +121,6 @@ export function formatSessionDetail(session: StatusSession): string {
 
   lines.push("");
 
-  // Pending questions
   if (session.pendingCount > 0) {
     const plural = session.pendingCount === 1 ? "question" : "questions";
     const agePart =
@@ -171,13 +177,13 @@ export function formatStatusMessage(
     if (session.worktree) headerParts.push(`(worktree: ${session.worktree})`);
     summaryLines.push(headerParts.join(" "));
 
-    // One-line plan summary: first non-empty line of plan, or fallback
-    if (session.plan) {
-      const firstLine = session.plan.split("\n").find((l) => l.trim() !== "") ?? "No active plan";
-      summaryLines.push(`   ${firstLine}`);
-    } else {
-      summaryLines.push("   No active plan");
-    }
+    // State indicator (replaces plan first-line in compact view)
+    const state = formatStateIndicator({
+      lastActivityAge: session.lastActivityAge,
+      blockedOn: session.blockedOn,
+      blockedAge: session.blockedAge,
+    });
+    summaryLines.push(`   ${state}`);
 
     // Pending status
     if (session.pendingCount > 0) {
