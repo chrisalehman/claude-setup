@@ -264,7 +264,6 @@ export class Listener {
       void this.bot.editMessageText(updatedText, {
         chat_id: this.opts.chatId,
         message_id: entry.messageId,
-        parse_mode: "Markdown",
       }).catch(() => {
         // Best effort — message may have been deleted
       });
@@ -347,11 +346,11 @@ export class Listener {
     // msg.message already contains the priority label from tools.ts — don't duplicate it
     let fullText = `${prefix} ${msg.message}`;
     if (msg.context) {
-      fullText += `\n\n_Context:_ ${msg.context}`;
+      fullText += `\n\nContext: ${msg.context}`;
     }
 
     // Build inline keyboard options
-    const sendOpts: Record<string, unknown> = { parse_mode: "Markdown" };
+    const sendOpts: Record<string, unknown> = {};
     if (msg.options && msg.options.length > 0) {
       sendOpts.reply_markup = {
         inline_keyboard: msg.options.map((opt, i) => [
@@ -414,7 +413,6 @@ export class Listener {
     const fullText = `${prefix} ${msg.message}`;
 
     const sent = await this.bot.sendMessage(this.opts.chatId, fullText, {
-      parse_mode: "Markdown",
       disable_notification: msg.silent ?? false,
     });
 
@@ -496,7 +494,7 @@ export class Listener {
 
     const result = formatStatusMessage(statusSessions, disconnectedInfos);
 
-    const sendOpts: Record<string, unknown> = { parse_mode: "Markdown" };
+    const sendOpts: Record<string, unknown> = {};
     if (result.buttons && result.buttons.length > 0) {
       sendOpts.reply_markup = {
         inline_keyboard: result.buttons.map((btn) => [
@@ -553,9 +551,7 @@ export class Listener {
     };
 
     const detail = formatSessionDetail(statusSession);
-    await this.bot.sendMessage(this.opts.chatId, detail, {
-      parse_mode: "Markdown",
-    });
+    await this.bot.sendMessage(this.opts.chatId, detail);
   }
 
   private async handleQuietCommand(): Promise<void> {

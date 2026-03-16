@@ -4,7 +4,7 @@ export interface QuietState {
   start?: string;
   end?: string;
   timezone?: string;
-  behavior?: "queue" | "skip_preference";
+  behavior?: "skip_preference";
 }
 
 export interface QuietButton {

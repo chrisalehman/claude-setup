@@ -66,7 +66,7 @@ describe("TelegramAdapter", () => {
       expect(mockBot.sendMessage).toHaveBeenCalledWith(
         "12345",
         "✅ Hello world",
-        { parse_mode: "Markdown", disable_notification: true }
+        { disable_notification: true }
       );
     });
 
@@ -105,7 +105,6 @@ describe("TelegramAdapter", () => {
       expect(mockBot.editMessageText).toHaveBeenCalledWith("Updated", {
         chat_id: "12345",
         message_id: 123,
-        parse_mode: "Markdown",
       });
     });
   });

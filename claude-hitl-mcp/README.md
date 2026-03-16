@@ -10,25 +10,34 @@ Human-in-the-loop MCP server for Claude Code. Walk away from the terminal -- res
 2. Run:
    ```bash
    export TELEGRAM_BOT_TOKEN="your-token-here"
-   cd claude-hitl-mcp && npm install && npm run build
-   node dist/cli.js setup
+   cd claude-hitl-mcp && npm install && npm run build && npm link
+   claude-hitl-mcp setup
    ```
 3. Send `/start` to your bot when prompted
-4. Verify: `node dist/cli.js test`
+4. Verify: `claude-hitl-mcp doctor`
 
-### After first time (automatic)
+Once set up, HITL is registered globally. Every Claude Code session on this machine gets it automatically -- no per-project config needed.
 
-`./claude-bootstrap.sh` in the parent repo handles everything: build, MCP registration, hooks, and listener daemon. No manual steps.
+### Adoption (new machine or user)
+
+```bash
+git clone <this-repo>
+cd claude-hitl-mcp
+npm install && npm run build && npm link
+export TELEGRAM_BOT_TOKEN="your-token-here"
+claude-hitl-mcp setup
+claude-hitl-mcp doctor     # verify everything
+```
 
 ## How It Works
 
 ```
                       Telegram
                          |
-                 [Listener Daemon]     ← owns the bot, runs 24/7
+                 [Listener Daemon]     <- owns the bot, runs 24/7
                   ~/.claude-hitl/sock
                    /            \
-          [MCP Server]    [MCP Server]  ← one per Claude Code session
+          [MCP Server]    [MCP Server]  <- one per Claude Code session
           (project A)     (project B)
 ```
 
@@ -54,14 +63,15 @@ A single listener daemon maintains the Telegram connection. MCP servers (one per
 ## CLI
 
 ```
-node dist/cli.js setup               First-time setup
-node dist/cli.js test                Send test notification
-node dist/cli.js status              Show config and connection
-node dist/cli.js install-listener    Install listener daemon
-node dist/cli.js uninstall-listener  Remove listener daemon
-node dist/cli.js start-listener      Start listener
-node dist/cli.js stop-listener       Stop listener
-node dist/cli.js listener-logs       Tail logs
+claude-hitl-mcp setup               First-time setup
+claude-hitl-mcp doctor              Check prerequisites (--fix to auto-repair)
+claude-hitl-mcp test                End-to-end test (all tools + priorities)
+claude-hitl-mcp status              Show config and connection
+claude-hitl-mcp install-listener    Install listener daemon
+claude-hitl-mcp uninstall-listener  Remove listener daemon
+claude-hitl-mcp start-listener      Start listener
+claude-hitl-mcp stop-listener       Stop listener
+claude-hitl-mcp listener-logs       Tail logs
 ```
 
 ## Telegram Commands
@@ -74,14 +84,15 @@ node dist/cli.js listener-logs       Tail logs
 
 ## Troubleshooting
 
-**409 Conflict** -- Multiple bot connections. Fix: `node dist/cli.js stop-listener && node dist/cli.js start-listener`
+Run `claude-hitl-mcp doctor` first -- it checks everything and tells you exactly what's wrong.
 
-**No notifications** -- Check: `node dist/cli.js status`, then `node dist/cli.js listener-logs`
+**MCP tools missing** -- `claude-hitl-mcp doctor --fix` will re-register the MCP server.
 
-**MCP tools missing** -- Run `claude mcp list`. If `claude-hitl` absent, re-run `./claude-bootstrap.sh` or register manually:
-```bash
-claude mcp add claude-hitl -e "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN" -s user -- node /path/to/dist/server.js
-```
+**409 Conflict** -- Multiple bot connections. Fix: `claude-hitl-mcp stop-listener && claude-hitl-mcp start-listener`
+
+**No notifications** -- Check: `claude-hitl-mcp status`, then `claude-hitl-mcp listener-logs`
+
+**Listener won't start after brew upgrade** -- `claude-hitl-mcp doctor --fix` rewrites the plist with a stable node path.
 
 ## Development
 

@@ -141,10 +141,7 @@ export class HitlToolHandler {
     }
 
     // Propagate to listener daemon if using IPC adapter
-    if ('sendConfigure' in this.adapter) {
-      (this.adapter as { sendConfigure: (ctx?: string, overrides?: { architecture?: number; preference?: number }) => void })
-        .sendConfigure(this.sessionContext || undefined, input.timeout_overrides);
-    }
+    this.adapter.sendConfigure?.(this.sessionContext || undefined, input.timeout_overrides);
 
     const archTimeout = this.engine.getTimeoutMs("architecture");
     const prefTimeout = this.engine.getTimeoutMs("preference");
@@ -165,7 +162,7 @@ export class HitlToolHandler {
 
   private prefixContext(message: string): string {
     if (this.sessionContext) {
-      return `_${this.sessionContext}_\n\n${message}`;
+      return `[${this.sessionContext}]\n\n${message}`;
     }
     return message;
   }

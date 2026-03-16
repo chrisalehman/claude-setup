@@ -130,7 +130,6 @@ export class TelegramAdapter implements ChatAdapter {
       this.chatId,
       `${prefix}${params.text}`,
       {
-        parse_mode: "Markdown",
         disable_notification: params.silent ?? false,
       }
     );
@@ -150,12 +149,10 @@ export class TelegramAdapter implements ChatAdapter {
 
     let fullText = params.text;
     if (params.context) {
-      fullText += `\n\n_Context:_ ${params.context}`;
+      fullText += `\n\nContext: ${params.context}`;
     }
 
-    const opts: TelegramBot.SendMessageOptions = {
-      parse_mode: "Markdown",
-    };
+    const opts: TelegramBot.SendMessageOptions = {};
 
     if (params.options && params.options.length > 0) {
       // One button per row for mobile-friendly layout
@@ -183,7 +180,6 @@ export class TelegramAdapter implements ChatAdapter {
     await this.bot.editMessageText(params.text, {
       chat_id: this.chatId,
       message_id: parseInt(params.messageId, 10),
-      parse_mode: "Markdown",
     });
   }
 

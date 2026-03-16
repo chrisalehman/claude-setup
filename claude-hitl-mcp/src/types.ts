@@ -65,6 +65,8 @@ export interface ChatAdapter {
 
   onMessage(handler: MessageHandler): void;
 
+  sendConfigure?(sessionContext?: string, timeoutOverrides?: { architecture?: number; preference?: number }): void;
+
   readonly capabilities: {
     inlineButtons: boolean;
     threading: boolean;
@@ -133,7 +135,7 @@ export interface QuietHoursState {
   start?: string;
   end?: string;
   timezone?: string;
-  behavior?: "queue" | "skip_preference";
+  behavior?: "skip_preference";
 }
 
 // --- Config File Types ---
@@ -153,7 +155,7 @@ export interface HitlConfig {
       start: string;
       end: string;
       timezone: string;
-      behavior: "queue" | "skip_preference";
+      behavior: "skip_preference";
     };
   };
 }

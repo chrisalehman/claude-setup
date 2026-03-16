@@ -14,6 +14,8 @@ import {
   ensureConfigDir,
 } from "./config.js";
 import { TelegramAdapter } from "./adapters/telegram.js";
+import { createAdapter } from "./adapters/factory.js";
+import { HitlToolHandler } from "./tools.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -88,8 +90,76 @@ function buildPlistContent(nodePath: string, packageDir: string, configDir: stri
 `;
 }
 
+const SETTINGS_PATH = path.join(os.homedir(), ".claude", "settings.json");
+
+function readSettings(): Record<string, unknown> {
+  if (fs.existsSync(SETTINGS_PATH)) {
+    return JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf-8"));
+  }
+  return {};
+}
+
+function writeSettings(settings: Record<string, unknown>): void {
+  const claudeDir = path.join(os.homedir(), ".claude");
+  if (!fs.existsSync(claudeDir)) fs.mkdirSync(claudeDir, { recursive: true });
+  fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n", "utf-8");
+}
+
+function registerMcpInSettings(serverJsPath: string, token: string): void {
+  const settings = readSettings();
+  if (!settings.mcpServers) settings.mcpServers = {};
+  (settings.mcpServers as Record<string, unknown>)["claude-hitl"] = {
+    command: "node",
+    args: [serverJsPath],
+    env: { TELEGRAM_BOT_TOKEN: token },
+  };
+  writeSettings(settings);
+}
+
+function installHooksInSettings(): void {
+  const settings = readSettings();
+  if (!settings.hooks) settings.hooks = {};
+  const hooks = settings.hooks as Record<string, unknown[]>;
+
+  const binDir = path.resolve(__dirname, "..", "bin");
+  const hookEvents: Record<string, string> = {
+    PostToolUse: path.join(binDir, "hook-activity.sh"),
+    PermissionRequest: path.join(binDir, "hook-blocked.sh"),
+  };
+
+  for (const [event, hookPath] of Object.entries(hookEvents)) {
+    if (!hooks[event]) hooks[event] = [];
+    const eventHooks = hooks[event] as Array<{
+      matcher?: string;
+      hooks: Array<{ type: string; command: string }>;
+    }>;
+    const alreadyInstalled = eventHooks.some((entry) =>
+      entry.hooks?.some((h) => h.command === hookPath)
+    );
+    if (!alreadyInstalled) {
+      eventHooks.push({ hooks: [{ type: "command", command: hookPath }] });
+    }
+  }
+  writeSettings(settings);
+}
+
+/** Resolve a stable node path that survives brew upgrades. */
+function stableNodePath(): string {
+  const execPath = process.execPath;
+  // If running from Homebrew Cellar, prefer the stable symlink
+  if (execPath.includes("/Cellar/") || execPath.includes("/opt/homebrew/lib/")) {
+    const brewNode = "/opt/homebrew/bin/node";
+    try {
+      if (fs.existsSync(brewNode) && fs.realpathSync(brewNode) === fs.realpathSync(execPath)) {
+        return brewNode;
+      }
+    } catch {}
+  }
+  return execPath;
+}
+
 function doInstallListener(): void {
-  const nodePath = process.execPath;
+  const nodePath = stableNodePath();
   const packageDir = path.resolve(__dirname, "..");
   const configDir = HITL_CONFIG_DIR;
 
@@ -129,42 +199,192 @@ function getArg(args: string[], flag: string): string | undefined {
   return idx !== -1 && idx + 1 < args.length ? args[idx + 1] : undefined;
 }
 
-function signal(args: string[]): void {
-  const type = args[0];
-  if (type !== "activity" && type !== "blocked") {
-    console.error("Usage: claude-hitl-mcp signal <activity|blocked> --session-id <id> --tool <name> [--input <text>]");
-    process.exit(1);
-  }
-
-  const sessionId = getArg(args, "--session-id");
-  const toolName = getArg(args, "--tool");
-  if (!sessionId || !toolName) {
-    console.error("--session-id and --tool are required");
-    process.exit(1);
-  }
-
-  const toolInput = getArg(args, "--input");
-
-  const msg: Record<string, string> = { type, sessionId, toolName };
-  if (toolInput && type === "blocked") {
-    msg.toolInput = toolInput;
-  }
-
+function sendSignalToSocket(msg: Record<string, string>): void {
   const socketPath = `${HITL_CONFIG_DIR}/sock`;
   const socket = net.createConnection(socketPath);
-
   socket.on("connect", () => {
     socket.write(JSON.stringify(msg) + "\n", () => {
-      console.log("sent");
       socket.destroy();
       process.exit(0);
     });
   });
-
-  socket.on("error", (err) => {
-    console.error(`failed: ${err.message}`);
+  socket.on("error", () => {
     process.exit(1);
   });
+}
+
+function signal(args: string[]): void {
+  const type = args[0];
+  if (type !== "activity" && type !== "blocked") {
+    console.error("Usage: claude-hitl-mcp signal <activity|blocked> [--stdin | --session-id <id> --tool <name>]");
+    process.exit(1);
+  }
+
+  // --stdin mode: read Claude Code hook JSON from stdin
+  if (args.includes("--stdin")) {
+    let data = "";
+    process.stdin.setEncoding("utf-8");
+    process.stdin.on("data", (chunk) => { data += chunk; });
+    process.stdin.on("end", () => {
+      try {
+        const input = JSON.parse(data);
+        const sessionId = input.session_id;
+        const toolName = input.tool_name;
+        if (!sessionId || !toolName) process.exit(0);
+
+        const msg: Record<string, string> = { type, sessionId, toolName };
+        if (type === "blocked") {
+          const ti = input.tool_input?.command ?? input.tool_input?.file_path ?? "";
+          if (ti) msg.toolInput = String(ti).slice(0, 200);
+        }
+        const cwd = input.cwd;
+        if (cwd) msg.cwd = cwd;
+        sendSignalToSocket(msg);
+      } catch {
+        process.exit(0); // Don't block Claude Code on parse errors
+      }
+    });
+    return;
+  }
+
+  // Explicit args mode
+  const sessionId = getArg(args, "--session-id");
+  const toolName = getArg(args, "--tool");
+  if (!sessionId || !toolName) {
+    console.error("--session-id and --tool are required (or use --stdin)");
+    process.exit(1);
+  }
+
+  const toolInput = getArg(args, "--input");
+  const msg: Record<string, string> = { type, sessionId, toolName };
+  if (toolInput && type === "blocked") msg.toolInput = toolInput;
+  sendSignalToSocket(msg);
+}
+
+async function doctor(fix: boolean): Promise<void> {
+  let failures = 0;
+
+  function pass(label: string) { console.log(`  ✓ ${label}`); }
+  function fail(label: string, hint: string) { console.log(`  ✗ ${label} — ${hint}`); failures++; }
+
+  console.log("claude-hitl doctor\n");
+
+  // 1. Config
+  const config = loadConfig();
+  if (config) {
+    pass("Config exists");
+  } else {
+    fail("Config exists", "run: claude-hitl-mcp setup");
+    console.log(`\n${failures} issue(s) found. Fix config first, then re-run doctor.`);
+    return;
+  }
+
+  // 2. Token resolves
+  try {
+    if (config.telegram?.bot_token) {
+      resolveEnvValue(config.telegram.bot_token);
+      pass("Telegram token resolves");
+    } else {
+      fail("Telegram token", "missing in config");
+    }
+  } catch {
+    fail("Telegram token resolves", "TELEGRAM_BOT_TOKEN env var not set");
+  }
+
+  // 3. Listener socket
+  const socketPath = path.join(HITL_CONFIG_DIR, "sock");
+  const socketAlive = await new Promise<boolean>((resolve) => {
+    if (!fs.existsSync(socketPath)) { resolve(false); return; }
+    const sock = net.createConnection(socketPath);
+    const timer = setTimeout(() => { sock.destroy(); resolve(false); }, 2000);
+    sock.on("connect", () => { clearTimeout(timer); sock.destroy(); resolve(true); });
+    sock.on("error", () => { clearTimeout(timer); resolve(false); });
+  });
+  if (socketAlive) {
+    pass("Listener socket responsive");
+  } else {
+    fail("Listener socket responsive", "run: claude-hitl-mcp install-listener");
+    if (fix) {
+      console.log("    → fixing: reinstalling listener...");
+      try { doInstallListener(); pass("Listener reinstalled"); } catch { fail("Listener reinstall", "manual intervention needed"); }
+    }
+  }
+
+  // 4. PID alive
+  const pidPath = path.join(HITL_CONFIG_DIR, "listener.pid");
+  if (fs.existsSync(pidPath)) {
+    const pid = parseInt(fs.readFileSync(pidPath, "utf-8").trim(), 10);
+    try { process.kill(pid, 0); pass(`Listener PID ${pid} alive`); }
+    catch { fail(`Listener PID ${pid}`, "process not running"); }
+  } else {
+    fail("Listener PID file", "not found");
+  }
+
+  // 5. Plist uses stable node path
+  if (fs.existsSync(PLIST_PATH)) {
+    const plist = fs.readFileSync(PLIST_PATH, "utf-8");
+    if (plist.includes("/Cellar/")) {
+      fail("Plist node path", "uses Cellar path (breaks on brew upgrade)");
+      if (fix) {
+        console.log("    → fixing: rewriting plist with stable path...");
+        try { doInstallListener(); pass("Plist rewritten"); } catch { fail("Plist rewrite", "failed"); }
+      }
+    } else {
+      pass("Plist uses stable node path");
+    }
+  } else {
+    fail("Plist exists", "run: claude-hitl-mcp install-listener");
+  }
+
+  // 6. MCP registered
+  const settings = readSettings();
+  const mcpServers = (settings.mcpServers ?? {}) as Record<string, unknown>;
+  if (mcpServers["claude-hitl"]) {
+    pass("MCP server registered in settings.json");
+  } else {
+    fail("MCP server registered", "not found in ~/.claude/settings.json");
+    if (fix) {
+      console.log("    → fixing: registering MCP server...");
+      const serverJsPath = path.resolve(__dirname, "..", "dist", "server.js");
+      const token = config.telegram?.bot_token ? resolveEnvValue(config.telegram.bot_token) : "";
+      if (token) {
+        try {
+          child_process.execSync(
+            `claude mcp add claude-hitl -e "TELEGRAM_BOT_TOKEN=${token}" -s user -- node "${serverJsPath}"`,
+            { stdio: "pipe" }
+          );
+          pass("MCP server registered");
+        } catch {
+          try { registerMcpInSettings(serverJsPath, token); pass("MCP registered (fallback)"); }
+          catch { fail("MCP registration", "failed — register manually"); }
+        }
+      }
+    }
+  }
+
+  // 7. Hooks registered
+  const hooks = (settings.hooks ?? {}) as Record<string, unknown[]>;
+  const hasPostToolUse = Array.isArray(hooks.PostToolUse) && hooks.PostToolUse.length > 0;
+  const hasPermissionReq = Array.isArray(hooks.PermissionRequest) && hooks.PermissionRequest.length > 0;
+  if (hasPostToolUse && hasPermissionReq) {
+    pass("Hooks registered (PostToolUse, PermissionRequest)");
+  } else {
+    fail("Hooks registered", "missing in ~/.claude/settings.json");
+    if (fix) {
+      console.log("    → fixing: installing hooks...");
+      try { installHooksInSettings(); pass("Hooks installed"); } catch { fail("Hook install", "failed"); }
+    }
+  }
+
+  // 8. CLI on PATH
+  try {
+    child_process.execSync("which claude-hitl-mcp", { stdio: "pipe" });
+    pass("claude-hitl-mcp on PATH");
+  } catch {
+    fail("claude-hitl-mcp on PATH", "run: npm link (from claude-hitl-mcp dir)");
+  }
+
+  console.log(`\n${failures === 0 ? "All checks passed." : `${failures} issue(s) found.${fix ? "" : " Run with --fix to auto-repair."}`}`);
 }
 
 const USAGE = `
@@ -173,7 +393,8 @@ claude-hitl-mcp — Human-in-the-Loop MCP Server
 Usage:
   claude-hitl-mcp                 Start MCP server (stdio mode)
   claude-hitl-mcp setup           Interactive first-time setup
-  claude-hitl-mcp test            Send a test notification
+  claude-hitl-mcp doctor          Check all prerequisites (--fix to auto-repair)
+  claude-hitl-mcp test            End-to-end test (all tools + priorities)
   claude-hitl-mcp status          Show config and connection status
   claude-hitl-mcp signal <type>   Send activity/blocked signal to listener
   claude-hitl-mcp install-listener    Install and start the listener daemon
@@ -232,69 +453,33 @@ async function setup() {
   saveConfig(config);
   console.log(`Config written to ${DEFAULT_CONFIG_PATH}`);
 
-  // Register MCP server and install hooks in ~/.claude/settings.json (single read-modify-write)
-  const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
+  // Register MCP server via `claude mcp add` (canonical method)
+  const serverJsPath = path.resolve(__dirname, "..", "dist", "server.js");
   try {
-    const claudeDir = path.join(os.homedir(), ".claude");
-    if (!fs.existsSync(claudeDir)) {
-      fs.mkdirSync(claudeDir, { recursive: true });
+    child_process.execSync(
+      `claude mcp add claude-hitl -e "TELEGRAM_BOT_TOKEN=${token}" -s user -- node "${serverJsPath}"`,
+      { stdio: "pipe" }
+    );
+    console.log("MCP server registered globally via claude mcp add");
+  } catch {
+    // Fallback: write directly to settings.json (claude CLI may not be on PATH)
+    try {
+      registerMcpInSettings(serverJsPath, token);
+      console.log("MCP server registered globally in ~/.claude/settings.json");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`Warning: could not register MCP server: ${message}`);
+      console.warn(`Register manually: claude mcp add claude-hitl -s user -- node "${serverJsPath}"`);
     }
+  }
 
-    const settings = fs.existsSync(settingsPath)
-      ? JSON.parse(fs.readFileSync(settingsPath, "utf-8"))
-      : {};
-
-    // --- MCP server registration ---
-    if (!settings.mcpServers) {
-      settings.mcpServers = {};
-    }
-
-    const serverJsPath = path.resolve(__dirname, "..", "dist", "server.js");
-    settings.mcpServers["claude-hitl"] = {
-      command: "node",
-      args: [serverJsPath],
-      env: {
-        TELEGRAM_BOT_TOKEN: token,
-      },
-    };
-
-    // --- Hook installation ---
-    const binDir = path.resolve(__dirname, "..", "bin");
-    const hookEvents: Record<string, string> = {
-      PostToolUse: path.join(binDir, "hook-activity.sh"),
-      PermissionRequest: path.join(binDir, "hook-blocked.sh"),
-    };
-
-    if (!settings.hooks) {
-      settings.hooks = {};
-    }
-
-    for (const [event, hookPath] of Object.entries(hookEvents)) {
-      if (!settings.hooks[event]) {
-        settings.hooks[event] = [];
-      }
-      // Claude Code hooks format: [{matcher?, hooks: [{type, command}]}]
-      const eventHooks = settings.hooks[event] as Array<{
-        matcher?: string;
-        hooks: Array<{ type: string; command: string }>;
-      }>;
-      const alreadyInstalled = eventHooks.some((entry) =>
-        entry.hooks?.some((h) => h.command === hookPath)
-      );
-      if (!alreadyInstalled) {
-        eventHooks.push({
-          hooks: [{ type: "command", command: hookPath }],
-        });
-      }
-    }
-
-    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf-8");
-    console.log("MCP server registered globally in ~/.claude/settings.json");
+  // Install hooks in ~/.claude/settings.json
+  try {
+    installHooksInSettings();
     console.log("Claude Code hooks installed for activity tracking");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.warn(`Warning: could not register MCP server/hooks: ${message}`);
-    console.warn("Register manually: claude mcp add claude-hitl -s user -- node " + path.resolve(__dirname, "..", "dist", "server.js"));
+    console.warn(`Warning: could not install hooks: ${message}`);
   }
 
   await adapter.sendMessage({
@@ -324,19 +509,67 @@ async function test() {
     process.exit(1);
   }
 
-  const adapter = new TelegramAdapter();
   const token = resolveEnvValue(config.telegram.bot_token);
+  const socketPath = path.join(HITL_CONFIG_DIR, "sock");
+  const adapter = createAdapter(socketPath);
   await adapter.connect({
     token,
     chatId: config.telegram.chat_id ? String(config.telegram.chat_id) : undefined,
   });
 
-  await adapter.sendMessage({
-    text: "Test notification from claude-hitl-mcp",
-    level: "info",
-  });
+  const handler = new HitlToolHandler(adapter);
 
-  console.log("Test notification sent");
+  console.log("claude-hitl-mcp comprehensive test\n");
+  console.log("This exercises all tools and priorities via Telegram.");
+  console.log("Watch your Telegram chat and tap the buttons when prompted.\n");
+
+  // 1. configure_hitl
+  console.log("1/7  configure_hitl ...");
+  const configResult = await handler.configureHitl({ session_context: "HITL test suite" });
+  console.log(`     ${configResult.status} (adapter: ${configResult.active_config.adapter})`);
+
+  // 2. notify_human — all levels
+  const levels = ["info", "success", "warning", "error"] as const;
+  for (let i = 0; i < levels.length; i++) {
+    const level = levels[i];
+    console.log(`${i + 2}/7  notify_human (${level}) ...`);
+    const result = await handler.notifyHuman({
+      message: `Test notification — level: ${level}`,
+      level,
+    });
+    console.log(`     ${result.status}`);
+  }
+
+  // 3. ask_human — preference (30s timeout, auto-picks default)
+  console.log("6/7  ask_human (preference) — tap a button or wait 30s for auto-default ...");
+  const prefResult = await handler.askHuman({
+    message: "Test preference question: pick a color",
+    priority: "preference",
+    options: [
+      { text: "Red" },
+      { text: "Blue", default: true },
+      { text: "Green" },
+    ],
+    timeout_minutes: 0.5, // 30 seconds for test
+  });
+  console.log(`     ${prefResult.status}: ${prefResult.response}`);
+
+  // 4. ask_human — architecture (60s timeout, returns "paused")
+  console.log("7/7  ask_human (architecture) — tap a button or wait 60s for timeout ...");
+  const archResult = await handler.askHuman({
+    message: "Test architecture question: which database?",
+    priority: "architecture",
+    options: [
+      { text: "PostgreSQL", default: true },
+      { text: "SQLite" },
+    ],
+    timeout_minutes: 1, // 60 seconds for test
+  });
+  console.log(`     ${archResult.status}: ${archResult.response}`);
+
+  // Note: we skip critical because it blocks forever (no timeout)
+
+  console.log("\nAll tests complete.");
   await adapter.disconnect();
 }
 
@@ -359,15 +592,39 @@ async function status() {
     console.log(`Quiet hours: ${qh.start}-${qh.end} ${qh.timezone} (${qh.behavior})`);
   }
 
-  if (config.telegram?.bot_token) {
+  // Check listener daemon health via IPC socket (avoids 409 Conflict with Telegram)
+  const socketPath = path.join(HITL_CONFIG_DIR, "sock");
+  if (fs.existsSync(socketPath)) {
     try {
-      const token = resolveEnvValue(config.telegram.bot_token);
-      const adapter = new TelegramAdapter();
-      await adapter.connect({ token });
-      console.log("Connection: connected");
-      await adapter.disconnect();
-    } catch (err) {
-      console.log(`Connection: failed — ${err}`);
+      const stat = fs.statSync(socketPath);
+      if (stat.isSocket()) {
+        // Try connecting to the socket to verify the listener is alive
+        const alive = await new Promise<boolean>((resolve) => {
+          const sock = net.createConnection(socketPath);
+          const timer = setTimeout(() => { sock.destroy(); resolve(false); }, 2000);
+          sock.on("connect", () => { clearTimeout(timer); sock.destroy(); resolve(true); });
+          sock.on("error", () => { clearTimeout(timer); resolve(false); });
+        });
+        console.log(`Listener: ${alive ? "running" : "socket exists but not responding"}`);
+      } else {
+        console.log("Listener: socket path exists but is not a socket");
+      }
+    } catch {
+      console.log("Listener: not running (socket check failed)");
+    }
+  } else {
+    console.log("Listener: not running (no socket)");
+  }
+
+  // Check PID file
+  const pidPath = path.join(HITL_CONFIG_DIR, "listener.pid");
+  if (fs.existsSync(pidPath)) {
+    const pid = fs.readFileSync(pidPath, "utf-8").trim();
+    try {
+      process.kill(parseInt(pid, 10), 0); // signal 0 = existence check
+      console.log(`Listener PID: ${pid} (alive)`);
+    } catch {
+      console.log(`Listener PID: ${pid} (stale — process not running)`);
     }
   }
 }
@@ -430,6 +687,13 @@ switch (command) {
     test().catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       console.error("Test failed:", message);
+      process.exit(1);
+    });
+    break;
+  case "doctor":
+    doctor(process.argv.includes("--fix")).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("Doctor failed:", message);
       process.exit(1);
     });
     break;
