@@ -12,54 +12,58 @@ When Claude is running autonomously and hits a decision point, it sends a notifi
 - A Telegram account
 - Claude Code installed
 
-### Setup (under 2 minutes)
+### First-Time Setup (under 2 minutes)
+
+This is the only interactive step. Everything after this is handled by `claude-bootstrap.sh`.
 
 **1. Create a Telegram bot**
 
 Open Telegram, message [@BotFather](https://t.me/BotFather), send `/newbot`, follow the prompts, and copy the token.
 
-**2. Set the token**
+**2. Set the token and run setup**
 
 ```bash
 export TELEGRAM_BOT_TOKEN="your-token-here"
-```
-
-**3. Run setup**
-
-```bash
 cd claude-hitl-mcp
 npm install && npm run build
 node dist/cli.js setup
 ```
 
-This single command does everything:
-- Persists the token to `~/.zshrc`
-- Connects to Telegram and waits for you to send `/start` to your bot
-- Saves config to `~/.claude-hitl/config.json`
-- Registers the MCP server **globally** in `~/.claude/settings.json` (available to all projects)
-- Installs a background listener daemon (macOS launchd)
-- Sends a test notification
+Setup will:
+- Persist the token to `~/.zshrc`
+- Connect to Telegram and wait for you to send `/start` to your bot
+- Save config to `~/.claude-hitl/config.json`
+- Register the MCP server globally in `~/.claude/settings.json`
+- Install the listener daemon (macOS launchd)
+- Send a test notification
 
-**4. Verify**
+**3. Verify**
 
 ```bash
 node dist/cli.js test    # Should send a Telegram notification
 node dist/cli.js status  # Shows config and connection status
 ```
 
-Then start a new Claude Code session in **any project** — the HITL tools will be available:
+### After First-Time Setup
+
+Once `~/.claude-hitl/config.json` exists (from the setup above), `claude-bootstrap.sh` handles everything deterministically on subsequent runs:
+
+- **Builds** the package (`npm install && npm run build`)
+- **Registers** the MCP server via `claude mcp add` (with `TELEGRAM_BOT_TOKEN` from env)
+- **Installs hooks** for activity tracking (`PostToolUse`, `PermissionRequest`) in `~/.claude/settings.json`
+- **Starts** the listener daemon via launchd
+
+After a reset or on a new machine (with `~/.claude-hitl/config.json` and `TELEGRAM_BOT_TOKEN` in place):
 
 ```bash
-cd ~/workspace/some-other-project
-claude
-# Tools available: ask_human, notify_human, configure_hitl
+./claude-bootstrap.sh   # Fully restores HITL — no manual steps needed
 ```
 
 ### Adding to Another Project
 
-Nothing to do. The `setup` command registers the MCP server globally (`-s user` scope in `~/.claude/settings.json`). Every Claude Code session on your machine automatically has access to the HITL tools.
+Nothing to do. The MCP server is registered globally (`-s user` scope). Every Claude Code session on your machine automatically has access to the HITL tools.
 
-If you skipped `setup` or need to register manually:
+If you need to register manually:
 
 ```bash
 claude mcp add claude-hitl \

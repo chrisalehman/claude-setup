@@ -74,6 +74,18 @@ do_install_npm_global() {
   fi
 }
 
+do_build_local_package() {
+  local pkg="$1"
+  local pkg_dir="${SCRIPT_DIR}/${pkg}"
+
+  # Only build if the directory has a package.json (it's a local Node package)
+  [ -f "${pkg_dir}/package.json" ] || return 0
+
+  echo -n "  ${pkg} (npm install && build)... "
+  (cd "$pkg_dir" && npm install --silent 2>/dev/null && npm run build --silent 2>/dev/null)
+  echo "✓"
+}
+
 do_configure_mcp_server() {
   local name="$1" pkg="$2"
 
@@ -306,39 +318,55 @@ if [ ! -f "$settings" ]; then
   echo '{}' > "$settings"
 fi
 
-# Define all managed hooks (matcher|command pairs)
-# protect-main: blocks pushes to main/master (Bash only)
-# protect-database: blocks destructive SQL (Bash only)
+# Define all managed hooks (event|matcher_or_empty|command pairs)
+# PreToolUse hooks have a matcher; PostToolUse and PermissionRequest hooks do not.
 MANAGED_HOOKS=(
-  "Bash|~/.claude/hooks/protect-main.sh"
-  "Bash|~/.claude/hooks/protect-database.sh"
+  "PreToolUse|Bash|~/.claude/hooks/protect-main.sh"
+  "PreToolUse|Bash|~/.claude/hooks/protect-database.sh"
 )
 
-# Ensure PreToolUse array exists
-if ! jq -e '.hooks.PreToolUse' "$settings" &>/dev/null; then
-  tmp="${settings}.tmp"
-  jq '.hooks.PreToolUse = []' "$settings" > "$tmp" && mv "$tmp" "$settings"
+# HITL activity tracking hooks — only if the local package is built
+hitl_bin="${SCRIPT_DIR}/claude-hitl-mcp/bin"
+if [ -f "${hitl_bin}/hook-activity.sh" ]; then
+  MANAGED_HOOKS+=(
+    "PostToolUse||${hitl_bin}/hook-activity.sh"
+    "PermissionRequest||${hitl_bin}/hook-blocked.sh"
+  )
 fi
 
 hooks_added=0
 for entry in "${MANAGED_HOOKS[@]}"; do
-  matcher="${entry%%|*}"
-  command="${entry##*|}"
+  IFS='|' read -r event matcher cmd <<< "$entry"
 
-  # Skip if this exact matcher+command combo already exists
-  if jq -e --arg m "$matcher" --arg c "$command" \
-    '.hooks.PreToolUse[] | select(.matcher == $m and (.hooks[] | .command == $c))' \
+  # Ensure the event array exists
+  if ! jq -e ".hooks.${event}" "$settings" &>/dev/null; then
+    tmp="${settings}.tmp"
+    jq --arg ev "$event" '.hooks[$ev] = []' "$settings" > "$tmp" && mv "$tmp" "$settings"
+  fi
+
+  # Skip if this exact command already exists in the event array
+  if jq -e --arg ev "$event" --arg c "$cmd" \
+    '.hooks[$ev][] | select(.hooks[] | .command == $c)' \
     "$settings" &>/dev/null; then
     continue
   fi
 
+  # Build the hook entry — with or without matcher
   tmp="${settings}.tmp"
-  jq --arg m "$matcher" --arg c "$command" '
-    .hooks.PreToolUse += [{
-      "matcher": $m,
-      "hooks": [{"type": "command", "command": $c, "timeout": 10}]
-    }]
-  ' "$settings" > "$tmp" && mv "$tmp" "$settings"
+  if [ -n "$matcher" ]; then
+    jq --arg ev "$event" --arg m "$matcher" --arg c "$cmd" '
+      .hooks[$ev] += [{
+        "matcher": $m,
+        "hooks": [{"type": "command", "command": $c, "timeout": 10}]
+      }]
+    ' "$settings" > "$tmp" && mv "$tmp" "$settings"
+  else
+    jq --arg ev "$event" --arg c "$cmd" '
+      .hooks[$ev] += [{
+        "hooks": [{"type": "command", "command": $c}]
+      }]
+    ' "$settings" > "$tmp" && mv "$tmp" "$settings"
+  fi
   hooks_added=$((hooks_added + 1))
 done
 
@@ -349,10 +377,32 @@ else
 fi
 echo ""
 
+# ─── Local Package Builds ────────────────────────────────────────────────────
+
+echo "Local packages:"
+read_config "mcp-server" do_build_local_package
+echo ""
+
 # ─── MCP Servers ─────────────────────────────────────────────────────────────
 
 echo "MCP servers:"
 read_config "mcp-server" do_configure_mcp_server
+echo ""
+
+# ─── HITL Listener Daemon ───────────────────────────────────────────────────
+
+echo -n "HITL listener daemon... "
+hitl_config=~/.claude-hitl/config.json
+hitl_cli="${SCRIPT_DIR}/claude-hitl-mcp/dist/cli.js"
+if [ ! -f "$hitl_config" ]; then
+  echo "⚠ (config not found — run: cd claude-hitl-mcp && node dist/cli.js setup)"
+elif [ ! -f "$hitl_cli" ]; then
+  echo "⚠ (not built)"
+else
+  # (Re)install the listener daemon via launchd
+  node "$hitl_cli" install-listener 2>/dev/null
+  echo "✓"
+fi
 echo ""
 
 # ─── Verification ───────────────────────────────────────────────────────────
@@ -400,6 +450,19 @@ if [ -f ~/.claude/CLAUDE.md ] && grep -q "<!-- claude-setup:start -->" ~/.claude
   echo "    ~/.claude/CLAUDE.md ✓"
 else
   echo "    ~/.claude/CLAUDE.md — not installed"
+fi
+
+echo ""
+echo "  HITL listener:"
+if launchctl list com.claude-hitl.listener &>/dev/null; then
+  echo "    launchd service ✓"
+else
+  echo "    launchd service — not running"
+fi
+if [ -S ~/.claude-hitl/sock ]; then
+  echo "    socket ✓"
+else
+  echo "    socket — not found"
 fi
 
 echo ""
