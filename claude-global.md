@@ -11,10 +11,10 @@
 - One task per subagent for focused execution
 
 ## 3. Self-Improvement Loop
-- After ANY correction from the user: update `tasks/lessons.md` with the pattern
+- After ANY correction from the user: save as a feedback memory AND update `tasks/lessons.md`
+- The feedback memory is authoritative (auto-loaded); `tasks/lessons.md` is the human-readable in-repo record
 - Write rules for yourself to prevent the same mistake
 - Ruthlessly iterate on these lessons until mistake rate drops
-- Review lessons at session start for relevant project
 
 ## 4. Verification Before Done
 - Never mark a task complete without proving it works
@@ -36,7 +36,7 @@
 
 ## Task Management
 
-1. **Plan First**: Write plan to `tasks/todo.md` with checkable items
+1. **Plan First**: Write plan to `tasks/todo.md` or the location specified by the active skill (e.g., `docs/superpowers/plans/`)
 2. **Verify Plan**: Check in before starting implementation
 3. **Track Progress**: Mark items complete as you go
 4. **Explain Changes**: High-level summary at each step
