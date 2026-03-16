@@ -10,8 +10,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { Listener } from "../src/listener.js";
+import * as net from "node:net";
 import { IpcClient } from "../src/ipc/client.js";
 import type { ServerMessage } from "../src/ipc/protocol.js";
+import { serialize } from "../src/ipc/protocol.js";
 import { createMockBot } from "./helpers/mock-bot.js";
 
 // ---------------------------------------------------------------------------
@@ -442,6 +444,85 @@ describe("Listener", () => {
       await waitFor(() => bot.sentMessages.length > 0);
 
       expect(bot.sentMessages[0].text).toContain("Quiet hours");
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 10. Activity tracking and blocked notifications
+  // -------------------------------------------------------------------------
+
+  describe("activity tracking and blocked notifications", () => {
+    it("sends Telegram notification when blocked message received", async () => {
+      const client = new IpcClient(socketPath);
+      await client.connect("sess-blocked", "blocked-project", os.homedir());
+      await waitFor(() => listener.getIpcServer().getSessions().length === 1);
+
+      const eph = net.createConnection(socketPath);
+      await new Promise<void>((resolve) => eph.on("connect", resolve));
+      eph.write(serialize({
+        type: "blocked",
+        sessionId: "sess-blocked",
+        toolName: "Bash",
+        toolInput: "npm run build",
+      } as any));
+      await new Promise((r) => setTimeout(r, 200));
+      eph.destroy();
+
+      await waitFor(() => bot.sentMessages.length > 0);
+
+      const msg = bot.sentMessages[0];
+      expect(msg.text).toContain("blocked-project");
+      expect(msg.text).toContain("Waiting for permission");
+      expect(msg.text).toContain("Bash");
+      expect(msg.text).toContain("npm run build");
+
+      await client.disconnect();
+    });
+
+    it("truncates toolInput to 200 characters in blocked notification", async () => {
+      const client = new IpcClient(socketPath);
+      await client.connect("sess-trunc", "trunc-project", os.homedir());
+      await waitFor(() => listener.getIpcServer().getSessions().length === 1);
+
+      const longInput = "x".repeat(300);
+      const eph = net.createConnection(socketPath);
+      await new Promise<void>((resolve) => eph.on("connect", resolve));
+      eph.write(serialize({
+        type: "blocked",
+        sessionId: "sess-trunc",
+        toolName: "Bash",
+        toolInput: longInput,
+      } as any));
+      await new Promise((r) => setTimeout(r, 200));
+      eph.destroy();
+
+      await waitFor(() => bot.sentMessages.length > 0);
+      expect(bot.sentMessages[0].text.length).toBeLessThan(350);
+
+      await client.disconnect();
+    });
+
+    it("/status shows activity state when activity data exists", async () => {
+      const client = new IpcClient(socketPath);
+      await client.connect("sess-state", "state-project", os.homedir());
+      await waitFor(() => listener.getIpcServer().getSessions().length === 1);
+
+      const eph = net.createConnection(socketPath);
+      await new Promise<void>((resolve) => eph.on("connect", resolve));
+      eph.write(serialize({
+        type: "activity",
+        sessionId: "sess-state",
+        toolName: "Read",
+      } as any));
+      await new Promise((r) => setTimeout(r, 200));
+      eph.destroy();
+
+      bot.simulateMessage("/status");
+      await waitFor(() => bot.sentMessages.length > 0);
+
+      expect(bot.sentMessages[0].text).toContain("Active");
+
+      await client.disconnect();
     });
   });
 });

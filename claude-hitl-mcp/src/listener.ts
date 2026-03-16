@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import type { ClientMessage } from "./ipc/protocol.js";
 import type { SessionInfo } from "./ipc/server.js";
 import { IpcServer } from "./ipc/server.js";
-import type { AskMessage, NotifyMessage } from "./ipc/protocol.js";
+import type { AskMessage, NotifyMessage, BlockedMessage } from "./ipc/protocol.js";
 import { formatHelpMessage } from "./commands/help.js";
 import {
   formatStatusMessage,
@@ -312,6 +312,9 @@ export class Listener {
       case "notify":
         void this.handleNotifyMessage(session, message as NotifyMessage);
         break;
+      case "blocked":
+        void this.handleBlockedMessage(session, message as BlockedMessage);
+        break;
       default:
         // Other message types (register/deregister/configure) handled by IpcServer
         break;
@@ -399,6 +402,22 @@ export class Listener {
     });
   }
 
+  private async handleBlockedMessage(
+    session: SessionInfo,
+    msg: BlockedMessage
+  ): Promise<void> {
+    const prefix = `[${session.project}]`;
+    const toolLine = `Tool: ${msg.toolName}`;
+    const inputLine = msg.toolInput
+      ? `\n${msg.toolInput.slice(0, 200)}`
+      : "";
+    const fullText = `${prefix} ⚠️ Waiting for permission\n${toolLine}${inputLine}\n\nGo to terminal to approve or deny.`;
+
+    await this.bot.sendMessage(this.opts.chatId, fullText, {
+      disable_notification: false,
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Command handlers
   // ---------------------------------------------------------------------------
@@ -431,6 +450,13 @@ export class Listener {
         plan: readPlanFile(s.cwd),
         pendingCount,
         oldestPendingAge,
+        lastActivityAge: s.lastActivityAt
+          ? (now - s.lastActivityAt.getTime()) / 1000
+          : undefined,
+        blockedOn: s.blockedOn,
+        blockedAge: s.blockedAt
+          ? (now - s.blockedAt.getTime()) / 1000
+          : undefined,
       };
     });
 
@@ -487,6 +513,13 @@ export class Listener {
       plan: readPlanFile(session.cwd),
       pendingCount,
       oldestPendingAge,
+      lastActivityAge: session.lastActivityAt
+        ? (now - session.lastActivityAt.getTime()) / 1000
+        : undefined,
+      blockedOn: session.blockedOn,
+      blockedAge: session.blockedAt
+        ? (now - session.blockedAt.getTime()) / 1000
+        : undefined,
     };
 
     const detail = formatSessionDetail(statusSession);
