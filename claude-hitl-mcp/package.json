@@ -19,7 +19,7 @@
   "keywords": ["claude", "mcp", "hitl", "telegram", "human-in-the-loop"],
   "author": "",
   "license": "MIT",
-  "files": ["dist"],
+  "files": ["dist", "bin"],
   "engines": { "node": ">=20" },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
