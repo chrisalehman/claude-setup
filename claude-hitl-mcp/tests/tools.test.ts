@@ -103,5 +103,39 @@ describe("HitlToolHandler", () => {
       expect(result.response).toBe("Postgres");
       expect(result.selected_option).toBe(1);
     });
+
+    it("resolves free-text response when options were provided", async () => {
+      let capturedHandler: any;
+      (adapter.onMessage as any).mockImplementation((h: any) => {
+        capturedHandler = h;
+      });
+      handler = new HitlToolHandler(adapter);
+
+      const askPromise = handler.askHuman({
+        message: "Redis or Postgres?",
+        priority: "preference",
+        options: [
+          { text: "Redis", default: true },
+          { text: "Postgres" },
+        ],
+        timeout_minutes: 1,
+      });
+
+      await vi.waitFor(() => {
+        expect(adapter.sendInteractiveMessage).toHaveBeenCalled();
+      });
+
+      // Simulate user typing free text instead of tapping a button
+      capturedHandler({
+        text: "Actually use SQLite",
+        messageId: "m3",
+        isButtonTap: false,
+      });
+
+      const result = await askPromise;
+      expect(result.status).toBe("answered");
+      expect(result.response).toBe("Actually use SQLite");
+      expect(result.selected_option).toBeNull();
+    });
   });
 });
