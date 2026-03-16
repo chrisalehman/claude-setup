@@ -93,7 +93,7 @@ export interface AskHumanInput {
 export interface AskHumanResponse {
   status: "answered" | "timed_out" | "error";
   response: string;
-  selected_option?: number;
+  selected_option?: number | null;
   response_time_seconds: number;
   priority: Priority;
   timed_out_action?: "used_default" | "paused" | null;

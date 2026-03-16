@@ -49,7 +49,7 @@ async function main() {
   // Register tools
   server.tool(
     "ask_human",
-    "Send a question to the human and wait for their response. Use priority tiers: critical (irreversible actions), architecture (design decisions), preference (aesthetic choices).",
+    "Send a question to the human and wait for their response. Use priority tiers: critical (irreversible actions), architecture (design decisions), preference (aesthetic choices). Always provide options as suggestions, but the human may respond with free text instead of selecting an option. When this happens, selected_option will be null and response will contain their verbatim text. Handle both structured and free-text responses gracefully.",
     {
       message: z.string().describe("The question or decision to present"),
       priority: z
@@ -64,7 +64,7 @@ async function main() {
           })
         )
         .optional()
-        .describe("Selectable options with optional default"),
+        .describe("Suggested options shown as buttons. The human may tap one or ignore them and reply with free text instead."),
       context: z.string().optional().describe("Additional context"),
       timeout_minutes: z.number().optional().describe("Override default timeout"),
     },

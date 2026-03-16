@@ -97,6 +97,25 @@ describe("SessionManager", () => {
       expect(result.status).toBe("answered");
       expect(result.response).toBe("use Postgres");
     });
+
+    it("returns selected_option as null for free-text when options were provided", async () => {
+      const { requestId, promise } = manager.createRequest("preference", null, [
+        { text: "Redis" },
+        { text: "Postgres" },
+      ]);
+      manager.setMessageId(requestId, "msg-1");
+
+      manager.routeResponse({
+        text: "Actually use SQLite",
+        messageId: "msg-999",
+        isButtonTap: false,
+      });
+
+      const result = await promise;
+      expect(result.status).toBe("answered");
+      expect(result.response).toBe("Actually use SQLite");
+      expect(result.selected_option).toBeNull();
+    });
   });
 
   describe("timeout handling", () => {
