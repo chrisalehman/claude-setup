@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as child_process from "node:child_process";
@@ -123,6 +124,49 @@ function doInstallListener(): void {
   console.log(`  Logs:  ${configDir}/listener.log`);
 }
 
+function getArg(args: string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag);
+  return idx !== -1 && idx + 1 < args.length ? args[idx + 1] : undefined;
+}
+
+function signal(args: string[]): void {
+  const type = args[0];
+  if (type !== "activity" && type !== "blocked") {
+    console.error("Usage: claude-hitl-mcp signal <activity|blocked> --session-id <id> --tool <name> [--input <text>]");
+    process.exit(1);
+  }
+
+  const sessionId = getArg(args, "--session-id");
+  const toolName = getArg(args, "--tool");
+  if (!sessionId || !toolName) {
+    console.error("--session-id and --tool are required");
+    process.exit(1);
+  }
+
+  const toolInput = getArg(args, "--input");
+
+  const msg: Record<string, string> = { type, sessionId, toolName };
+  if (toolInput && type === "blocked") {
+    msg.toolInput = toolInput;
+  }
+
+  const socketPath = `${HITL_CONFIG_DIR}/sock`;
+  const socket = net.createConnection(socketPath);
+
+  socket.on("connect", () => {
+    socket.write(JSON.stringify(msg) + "\n", () => {
+      console.log("sent");
+      socket.destroy();
+      process.exit(0);
+    });
+  });
+
+  socket.on("error", (err) => {
+    console.error(`failed: ${err.message}`);
+    process.exit(1);
+  });
+}
+
 const USAGE = `
 claude-hitl-mcp — Human-in-the-Loop MCP Server
 
@@ -131,6 +175,7 @@ Usage:
   claude-hitl-mcp setup           Interactive first-time setup
   claude-hitl-mcp test            Send a test notification
   claude-hitl-mcp status          Show config and connection status
+  claude-hitl-mcp signal <type>   Send activity/blocked signal to listener
   claude-hitl-mcp install-listener    Install and start the listener daemon
   claude-hitl-mcp uninstall-listener  Stop and remove the listener daemon
   claude-hitl-mcp start-listener      Start the listener daemon
@@ -401,6 +446,9 @@ switch (command) {
     break;
   case "listener-logs":
     listenerLogs();
+    break;
+  case "signal":
+    signal(process.argv.slice(3));
     break;
   default:
     if (command && command !== "--help" && command !== "-h") {
