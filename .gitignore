@@ -14,6 +14,9 @@
 *.swo
 *~
 
+# Claude Code local settings (machine-specific permissions)
+.claude/settings.local.json
+
 # Node
 node_modules/
 
