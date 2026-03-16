@@ -149,16 +149,9 @@ The `claude-hitl-mcp` package (included in this repo) bridges Claude Code to cha
 | `preference` | Auto-pick the marked default option | 30 min |
 | `fyi` | Never blocks (`notify_human`) | n/a |
 
-**Setup (under 2 minutes):**
+**Setup:** See [First-Time HITL Setup](#first-time-hitl-setup) in Prerequisites. After the one-time Telegram binding, `./claude-bootstrap.sh` handles all subsequent setup deterministically.
 
-1. Create a Telegram bot: message `@BotFather` → `/newbot` → copy the token
-2. Set the token: `export TELEGRAM_BOT_TOKEN="your-token-here"`
-3. Run setup: `cd claude-hitl-mcp && npm install && npm run build && node dist/cli.js setup`
-4. Send `/start` to your bot in Telegram when prompted
-
-That's it — `setup` automatically registers the MCP server globally in `~/.claude/settings.json`, installs the listener daemon, and sends a test notification. Every Claude Code session on your machine will have access to the HITL tools.
-
-**Verify:** `node dist/cli.js test` — you should get a notification in Telegram.
+**Verify:** `cd claude-hitl-mcp && node dist/cli.js test` — you should get a notification in Telegram.
 
 See [`claude-hitl-mcp/README.md`](claude-hitl-mcp/README.md) for full documentation, architecture details, and troubleshooting.
 
@@ -199,6 +192,20 @@ claude-setup/
 - Claude Code CLI (`brew install claude-code`)
 
 The bootstrap script automatically installs Homebrew (if missing) and all other dependencies.
+
+### First-Time HITL Setup
+
+The HITL notification system requires a one-time interactive setup to bind your Telegram bot. **Do this before running the bootstrap for the first time:**
+
+```bash
+# 1. Create a bot: message @BotFather in Telegram → /newbot → copy the token
+# 2. Set the token and run setup:
+export TELEGRAM_BOT_TOKEN="your-token-here"
+cd claude-hitl-mcp && npm install && npm run build && node dist/cli.js setup
+# 3. Send /start to your bot in Telegram when prompted
+```
+
+This creates `~/.claude-hitl/config.json` with your bot binding. After that, `./claude-bootstrap.sh` handles everything deterministically — building the package, registering the MCP server, installing hooks, and starting the listener daemon. No manual steps on subsequent runs.
 
 ## Updating
 
