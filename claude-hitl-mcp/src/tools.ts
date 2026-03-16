@@ -51,7 +51,7 @@ export class HitlToolHandler {
       return {
         status: "timed_out",
         response: action.response,
-        selected_option: action.selectedIndex,
+        selected_option: action.selectedIndex ?? null,
         response_time_seconds: 0,
         priority: input.priority,
         timed_out_action: action.action,

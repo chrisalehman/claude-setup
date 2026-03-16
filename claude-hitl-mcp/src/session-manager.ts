@@ -145,7 +145,7 @@ export class SessionManager {
     req.resolve({
       status: "answered",
       response,
-      selected_option: selectedIndex,
+      selected_option: selectedIndex ?? null,
       response_time_seconds: Math.round((Date.now() - req.createdAt) / 1000),
       priority: req.priority,
       timed_out_action: null,
@@ -164,7 +164,7 @@ export class SessionManager {
     req.resolve({
       status: "timed_out",
       response: action.response,
-      selected_option: action.selectedIndex,
+      selected_option: action.selectedIndex ?? null,
       response_time_seconds: Math.round((Date.now() - req.createdAt) / 1000),
       priority: req.priority,
       timed_out_action: action.action,
