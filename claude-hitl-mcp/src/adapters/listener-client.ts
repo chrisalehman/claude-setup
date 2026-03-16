@@ -183,7 +183,8 @@ export class ListenerClientAdapter implements ChatAdapter {
       params.priority,
       params.options,
       defaultIndex !== undefined && defaultIndex >= 0 ? defaultIndex : undefined,
-      // context is not a first-class field in AskMessage; omit for now
+      undefined,
+      params.context,
     );
 
     // The adapter does NOT wait for the response — response routing goes through

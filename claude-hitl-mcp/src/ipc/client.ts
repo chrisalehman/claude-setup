@@ -253,7 +253,8 @@ export class IpcClient {
     priority: AskMessage["priority"],
     options?: AskMessage["options"],
     defaultIndex?: number,
-    timeoutMinutes?: number
+    timeoutMinutes?: number,
+    context?: string
   ): void {
     const msg: AskMessage = {
       type: "ask",
@@ -264,6 +265,7 @@ export class IpcClient {
       ...(options ? { options } : {}),
       ...(defaultIndex !== undefined ? { defaultIndex } : {}),
       ...(timeoutMinutes !== undefined ? { timeoutMinutes } : {}),
+      ...(context ? { context } : {}),
     };
     this.send(msg);
   }

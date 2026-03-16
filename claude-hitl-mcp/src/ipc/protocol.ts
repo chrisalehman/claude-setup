@@ -27,6 +27,7 @@ export interface AskMessage {
   options?: Array<{ text: string; description?: string; isDefault?: boolean }>;
   defaultIndex?: number;
   timeoutMinutes?: number;
+  context?: string;
 }
 
 export interface NotifyMessage {

@@ -264,6 +264,7 @@ export class Listener {
       void this.bot.editMessageText(updatedText, {
         chat_id: this.opts.chatId,
         message_id: entry.messageId,
+        parse_mode: "Markdown",
       }).catch(() => {
         // Best effort — message may have been deleted
       });
@@ -342,9 +343,12 @@ export class Listener {
     session: SessionInfo,
     msg: AskMessage
   ): Promise<void> {
-    const priorityLabel = this.priorityEngine.formatPriorityLabel(msg.priority);
     const prefix = `[${session.project}]`;
-    const fullText = `${prefix} ${priorityLabel}\n\n${msg.message}`;
+    // msg.message already contains the priority label from tools.ts — don't duplicate it
+    let fullText = `${prefix} ${msg.message}`;
+    if (msg.context) {
+      fullText += `\n\n_Context:_ ${msg.context}`;
+    }
 
     // Build inline keyboard options
     const sendOpts: Record<string, unknown> = { parse_mode: "Markdown" };
