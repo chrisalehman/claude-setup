@@ -39,6 +39,10 @@ export interface TelegramBot {
     text: string,
     options?: Record<string, unknown>
   ): Promise<{ message_id: number }>;
+  editMessageText(
+    text: string,
+    options?: Record<string, unknown>
+  ): Promise<unknown>;
   answerCallbackQuery(queryId: string): Promise<boolean | void>;
   on(event: string, handler: (...args: unknown[]) => void): void;
   off(event: string, handler: (...args: unknown[]) => void): void;
@@ -64,6 +68,8 @@ interface PendingEntry {
   createdAt: number;
   options?: AskMessage["options"];
   defaultIndex?: number;
+  messageId?: number;
+  originalText?: string;
 }
 
 export class Listener {
@@ -252,6 +258,17 @@ export class Listener {
         ? (entry.options[selectedIndex]?.text ?? indexStr)
         : indexStr;
 
+    // Edit the original message to show the selection and remove buttons
+    if (entry.messageId && entry.originalText) {
+      const updatedText = `${entry.originalText}\n\n✅ ${optionText}`;
+      void this.bot.editMessageText(updatedText, {
+        chat_id: this.opts.chatId,
+        message_id: entry.messageId,
+      }).catch(() => {
+        // Best effort — message may have been deleted
+      });
+    }
+
     this.resolvePendingRequest(requestId, entry, {
       text: optionText,
       selectedIndex: isNaN(selectedIndex) ? undefined : selectedIndex,
@@ -377,6 +394,8 @@ export class Listener {
       createdAt: Date.now(),
       options: msg.options,
       defaultIndex: defaultIndex !== undefined && defaultIndex >= 0 ? defaultIndex : msg.defaultIndex,
+      messageId: sent.message_id,
+      originalText: fullText,
     });
 
     // Suppress unused-variable warning — message_id tracked for future use

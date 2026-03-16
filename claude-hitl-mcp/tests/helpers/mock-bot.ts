@@ -14,11 +14,18 @@ export interface SentMessage {
   options?: Record<string, unknown>;
 }
 
+export interface EditedMessage {
+  text: string;
+  options?: Record<string, unknown>;
+}
+
 export interface MockBot {
   /** All messages sent via sendMessage */
   sentMessages: SentMessage[];
   /** All callback query IDs acknowledged via answerCallbackQuery */
   answeredCallbacks: string[];
+  /** All messages edited via editMessageText */
+  editedMessages: EditedMessage[];
 
   // Bot API surface used by Listener
   sendMessage(
@@ -26,6 +33,10 @@ export interface MockBot {
     text: string,
     options?: Record<string, unknown>
   ): Promise<{ message_id: number }>;
+  editMessageText(
+    text: string,
+    options?: Record<string, unknown>
+  ): Promise<unknown>;
   answerCallbackQuery(queryId: string): Promise<void>;
   on(event: string, handler: (...args: unknown[]) => void): void;
   off(event: string, handler: (...args: unknown[]) => void): void;
@@ -42,6 +53,7 @@ export function createMockBot(chatId: number = 12345): MockBot {
   const bot: MockBot = {
     sentMessages: [],
     answeredCallbacks: [],
+    editedMessages: [],
 
     sendMessage(
       cId: number | string,
@@ -50,6 +62,14 @@ export function createMockBot(chatId: number = 12345): MockBot {
     ): Promise<{ message_id: number }> {
       bot.sentMessages.push({ chatId: cId, text, options });
       return Promise.resolve({ message_id: messageIdCounter++ });
+    },
+
+    editMessageText(
+      text: string,
+      options?: Record<string, unknown>
+    ): Promise<unknown> {
+      bot.editedMessages.push({ text, options });
+      return Promise.resolve(true);
     },
 
     answerCallbackQuery(queryId: string): Promise<void> {
