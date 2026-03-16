@@ -265,6 +265,42 @@ async function setup() {
     console.warn("Register manually: claude mcp add claude-hitl -s user -- node " + path.resolve(__dirname, "..", "dist", "server.js"));
   }
 
+  // Install Claude Code hooks for activity tracking
+  try {
+    const binDir = path.resolve(__dirname, "..", "bin");
+    const activityHookPath = path.join(binDir, "hook-activity.sh");
+    const blockedHookPath = path.join(binDir, "hook-blocked.sh");
+
+    const hookSettings = fs.existsSync(settingsPath)
+      ? JSON.parse(fs.readFileSync(settingsPath, "utf-8"))
+      : {};
+
+    if (!hookSettings.hooks) {
+      hookSettings.hooks = {};
+    }
+
+    const hookEvents: Record<string, string> = {
+      PostToolUse: activityHookPath,
+      PermissionRequest: blockedHookPath,
+    };
+
+    for (const [event, hookPath] of Object.entries(hookEvents)) {
+      if (!hookSettings.hooks[event]) {
+        hookSettings.hooks[event] = [];
+      }
+      const existing = hookSettings.hooks[event] as Array<{ type: string; command: string }>;
+      if (!existing.some((h) => h.command === hookPath)) {
+        existing.push({ type: "command", command: hookPath });
+      }
+    }
+
+    fs.writeFileSync(settingsPath, JSON.stringify(hookSettings, null, 2) + "\n", "utf-8");
+    console.log("Claude Code hooks installed for activity tracking");
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`Warning: could not install hooks: ${message}`);
+  }
+
   await adapter.sendMessage({
     text: "Claude HITL is connected! You'll receive notifications here when Claude Code needs your input.",
     level: "success",
