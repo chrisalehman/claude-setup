@@ -423,6 +423,93 @@ describe("Listener", () => {
 
       expect(bot.sentMessages[0].text).toContain("Session not found");
     });
+
+    it("shows declared plan path content instead of filesystem discovery", async () => {
+      const projectDir = tmpHomeDir();
+      try {
+        // Create a superpowers plan file (would normally be found by discovery)
+        const plansDir = path.join(projectDir, "docs", "superpowers", "plans");
+        fs.mkdirSync(plansDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(plansDir, "2026-03-16-old-plan.md"),
+          "## Old Plan\n- [ ] Old task"
+        );
+
+        // Create a declared plan file in a different location
+        const declaredPlan = path.join(projectDir, "declared-plan.md");
+        fs.writeFileSync(declaredPlan, "## Declared Plan\n- [ ] Active task");
+
+        const client = new IpcClient(socketPath);
+        await client.connect("sess-declared", "declared-project", projectDir);
+        await waitFor(() => listener.getIpcServer().getSessions().length === 1);
+
+        // Declare the plan path via configure
+        client.sendConfigure(undefined, undefined, declaredPlan);
+        await new Promise((r) => setTimeout(r, 50));
+
+        bot.simulateMessage("/status");
+        await waitFor(() => bot.sentMessages.length > 0);
+
+        // Should show the declared plan, NOT the superpowers plan
+        expect(bot.sentMessages[0].text).toContain("Declared Plan");
+        expect(bot.sentMessages[0].text).toContain("Active task");
+        expect(bot.sentMessages[0].text).not.toContain("Old Plan");
+
+        await client.disconnect();
+      } finally {
+        fs.rmSync(projectDir, { recursive: true, force: true });
+      }
+    });
+
+    it("falls back to filesystem discovery when no plan path declared", async () => {
+      const projectDir = tmpHomeDir();
+      try {
+        const plansDir = path.join(projectDir, "docs", "superpowers", "plans");
+        fs.mkdirSync(plansDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(plansDir, "2026-03-16-active.md"),
+          "## Discovered Plan\n- [ ] Found via discovery"
+        );
+
+        const client = new IpcClient(socketPath);
+        await client.connect("sess-fallback", "fallback-project", projectDir);
+        await waitFor(() => listener.getIpcServer().getSessions().length === 1);
+
+        bot.simulateMessage("/status");
+        await waitFor(() => bot.sentMessages.length > 0);
+
+        expect(bot.sentMessages[0].text).toContain("Discovered Plan");
+
+        await client.disconnect();
+      } finally {
+        fs.rmSync(projectDir, { recursive: true, force: true });
+      }
+    });
+
+    it("shows no active plan when filesystem plans are all completed", async () => {
+      const projectDir = tmpHomeDir();
+      try {
+        const plansDir = path.join(projectDir, "docs", "superpowers", "plans");
+        fs.mkdirSync(plansDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(plansDir, "2026-03-16-done.md"),
+          "## Done Plan\n- [x] All done"
+        );
+
+        const client = new IpcClient(socketPath);
+        await client.connect("sess-completed", "completed-project", projectDir);
+        await waitFor(() => listener.getIpcServer().getSessions().length === 1);
+
+        bot.simulateMessage("/status");
+        await waitFor(() => bot.sentMessages.length > 0);
+
+        expect(bot.sentMessages[0].text).toContain("No active plan");
+
+        await client.disconnect();
+      } finally {
+        fs.rmSync(projectDir, { recursive: true, force: true });
+      }
+    });
   });
 
   // -------------------------------------------------------------------------
