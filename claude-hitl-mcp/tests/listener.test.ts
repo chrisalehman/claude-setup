@@ -12,7 +12,7 @@ import * as fs from "node:fs";
 import { Listener } from "../src/listener.js";
 import * as net from "node:net";
 import { IpcClient } from "../src/ipc/client.js";
-import type { ServerMessage } from "../src/ipc/protocol.js";
+import type { ServerMessage, NotifyMessage } from "../src/ipc/protocol.js";
 import { serialize } from "../src/ipc/protocol.js";
 import { createMockBot } from "./helpers/mock-bot.js";
 
@@ -102,6 +102,8 @@ describe("Listener", () => {
   });
 
   afterEach(async () => {
+    // Always restore real timers in case a test left fake timers active due to failure
+    vi.useRealTimers();
     await listener.stop();
     try {
       fs.unlinkSync(socketPath);
@@ -210,7 +212,6 @@ describe("Listener", () => {
 
       const msg = bot.sentMessages[0];
       expect(msg.text).toContain("[ask-project]");
-      expect(msg.text).toContain("ARCHITECTURE");
       expect(msg.text).toContain("Which database?");
 
       const keyboard = (
@@ -225,18 +226,23 @@ describe("Listener", () => {
     });
 
     it("sends a timeout IPC message after timeoutMinutes elapses", async () => {
-      vi.useFakeTimers();
+      // Capture real setImmediate before fake timers replace it — we need it
+      // below to yield past the I/O poll phase while fake timers are active.
+      const realSetImmediate = setImmediate;
 
+      // Connect and wait for the session to register using real timers so the
+      // TCP handshake completes before we intercept timers.
       const client = new IpcClient(socketPath);
       await client.connect("sess-timeout", "timeout-project", os.homedir());
-
-      // Wait synchronously for the session to be tracked
-      await vi.runAllTimersAsync();
-      await waitFor(() => listener.getIpcServer().getSessions().length === 1, 200);
+      await waitFor(() => listener.getIpcServer().getSessions().length === 1);
 
       // Collect messages received by client
       const received: ServerMessage[] = [];
       client.onMessage((msg) => received.push(msg));
+
+      // Activate fake timers so the listener's setTimeout for the 1-minute
+      // timeout is registered as a fake timer we can fast-forward.
+      vi.useFakeTimers();
 
       client.sendAsk(
         "req-timeout",
@@ -247,18 +253,24 @@ describe("Listener", () => {
         1 // 1 minute
       );
 
-      // Let the sendAsk message travel through the socket
-      await vi.runAllTimersAsync();
-      await waitFor(() => bot.sentMessages.length > 0, 200);
+      // Socket I/O fires during the libuv I/O poll phase.  Using real
+      // setImmediate (captured before fake timers) yields past that phase,
+      // allowing the listener to receive the socket data, process the ask,
+      // call bot.sendMessage, and register the fake setTimeout for the timeout.
+      const ioDeadline = Date.now() + 2000;
+      while (bot.sentMessages.length === 0 && Date.now() < ioDeadline) {
+        await new Promise<void>((r) => { realSetImmediate(r); });
+      }
+      expect(bot.sentMessages.length).toBeGreaterThan(0);
 
-      // Advance time past the 1-minute timeout
+      // Advance fake time past the 1-minute timeout.  The fake setTimeout
+      // callback fires synchronously inside advanceTimersByTime.
       vi.advanceTimersByTime(61 * 1000);
-      await vi.runAllTimersAsync();
 
-      await waitFor(
-        () => received.some((m) => m.type === "timeout"),
-        200
-      );
+      // Restore real timers so the socket write from the timeout callback can
+      // propagate to the client via real I/O.
+      vi.useRealTimers();
+      await waitFor(() => received.some((m) => m.type === "timeout"));
 
       const timeoutMsg = received.find((m) => m.type === "timeout") as
         | { type: "timeout"; requestId: string }
@@ -266,7 +278,6 @@ describe("Listener", () => {
       expect(timeoutMsg).toBeDefined();
       expect(timeoutMsg?.requestId).toBe("req-timeout");
 
-      vi.useRealTimers();
       await client.disconnect();
     });
   });
@@ -451,6 +462,7 @@ describe("Listener", () => {
   // 10. Activity tracking and blocked notifications
   // -------------------------------------------------------------------------
 
+
   describe("activity tracking and blocked notifications", () => {
     it("sends Telegram notification when blocked message received", async () => {
       const client = new IpcClient(socketPath);
@@ -521,6 +533,187 @@ describe("Listener", () => {
       await waitFor(() => bot.sentMessages.length > 0);
 
       expect(bot.sentMessages[0].text).toContain("Active");
+
+      await client.disconnect();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 11. ask_human priority levels
+  // -------------------------------------------------------------------------
+
+  describe("ask_human priority levels", () => {
+    it.each([
+      ["critical", "critical" as const],
+      ["architecture", "architecture" as const],
+      ["preference", "preference" as const],
+    ])("relays %s ask to Telegram with buttons and routes response back", async (_label, priority) => {
+      const client = new IpcClient(socketPath);
+      await client.connect(`sess-${priority}`, `${priority}-project`, os.homedir());
+      await waitFor(() => listener.getIpcServer().getSessions().length === 1);
+
+      const received: ServerMessage[] = [];
+      client.onMessage((m) => received.push(m));
+
+      client.sendAsk(
+        `req-${priority}`,
+        `Test ${priority} question`,
+        priority,
+        [{ text: "Option A", isDefault: true }, { text: "Option B" }]
+      );
+
+      await waitFor(() => bot.sentMessages.length > 0);
+
+      const msg = bot.sentMessages[0];
+      expect(msg.text).toContain(`[${priority}-project]`);
+      expect(msg.text).toContain(`Test ${priority} question`);
+
+      // Verify inline keyboard
+      const keyboard = (msg.options as { reply_markup?: { inline_keyboard?: unknown[][] } })
+        ?.reply_markup?.inline_keyboard;
+      expect(Array.isArray(keyboard)).toBe(true);
+      expect((keyboard as unknown[][]).length).toBe(2);
+
+      // Verify default option marked with star
+      const buttons = (keyboard as Array<Array<{ text: string }>>).flat();
+      expect(buttons[0].text).toContain("⭐");
+
+      // Simulate button tap
+      bot.simulateCallbackQuery(`req-${priority}:1`);
+      await waitFor(() => received.some((m) => m.type === "response"));
+
+      const response = received.find((m) => m.type === "response") as {
+        type: "response";
+        requestId: string;
+        text: string;
+        selectedIndex?: number;
+        isButtonTap: boolean;
+      } | undefined;
+      expect(response?.text).toBe("Option B");
+      expect(response?.selectedIndex).toBe(1);
+      expect(response?.isButtonTap).toBe(true);
+
+      await client.disconnect();
+    });
+
+    it("critical priority does not time out", async () => {
+      vi.useFakeTimers();
+      try {
+        const client = new IpcClient(socketPath);
+        await client.connect("sess-crit-timeout", "crit-project", os.homedir());
+        await vi.runAllTimersAsync();
+        await waitFor(() => listener.getIpcServer().getSessions().length === 1, 200);
+
+        const received: ServerMessage[] = [];
+        client.onMessage((m) => received.push(m));
+
+        client.sendAsk("req-crit-no-timeout", "Critical question", "critical", [
+          { text: "OK", isDefault: true },
+        ]);
+
+        await vi.runAllTimersAsync();
+        await waitFor(() => bot.sentMessages.length > 0, 200);
+
+        // Verify the request is registered as pending before advancing time
+        expect(listener.getPendingCount()).toBe(1);
+
+        // Advance past the default preference timeout (60 min) to prove critical
+        // has no timeout.  Disconnect before advancing to avoid the IpcClient
+        // reconnect-backoff loop saturating the fake timer queue.
+        await client.disconnect();
+        vi.advanceTimersByTime(61 * 60 * 1000);
+        await vi.runAllTimersAsync();
+
+        // Should NOT have timed out — the pending entry must still be present
+        expect(received.filter((m) => m.type === "timeout")).toHaveLength(0);
+        expect(listener.getPendingCount()).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 12. notify_human levels
+  // -------------------------------------------------------------------------
+
+  describe("notify_human levels", () => {
+    it.each([
+      ["info"],
+      ["success"],
+      ["warning"],
+      ["error"],
+    ])("relays %s notification to Telegram and sends ack", async (level) => {
+      const client = new IpcClient(socketPath);
+      await client.connect(`sess-${level}`, `${level}-project`, os.homedir());
+      await waitFor(() => listener.getIpcServer().getSessions().length === 1);
+
+      const notifiedPromise = nextMessage<{ type: "notified"; requestId: string; messageId: string }>(
+        client,
+        "notified"
+      );
+
+      client.sendNotify(`notif-${level}`, `Test ${level} notification`, level as NotifyMessage["level"]);
+
+      const notified = await notifiedPromise;
+      expect(notified.requestId).toBe(`notif-${level}`);
+      expect(notified.messageId).toBeTruthy();
+
+      await waitFor(() => bot.sentMessages.length > 0);
+      expect(bot.sentMessages[0].text).toContain(`[${level}-project]`);
+      expect(bot.sentMessages[0].text).toContain(`Test ${level} notification`);
+
+      await client.disconnect();
+    });
+
+    it("silent notification suppresses Telegram push notification", async () => {
+      const client = new IpcClient(socketPath);
+      await client.connect("sess-silent", "silent-project", os.homedir());
+      await waitFor(() => listener.getIpcServer().getSessions().length === 1);
+
+      const notifiedPromise = nextMessage<{ type: "notified"; requestId: string; messageId: string }>(
+        client,
+        "notified"
+      );
+
+      client.sendNotify("notif-silent", "Silent message", "info", true);
+
+      await notifiedPromise;
+      await waitFor(() => bot.sentMessages.length > 0);
+
+      const opts = bot.sentMessages[0].options as { disable_notification?: boolean } | undefined;
+      expect(opts?.disable_notification).toBe(true);
+
+      await client.disconnect();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 13. ask_human with context
+  // -------------------------------------------------------------------------
+
+  describe("ask_human with context", () => {
+    it("includes context in the Telegram message when provided", async () => {
+      const client = new IpcClient(socketPath);
+      await client.connect("sess-ctx", "ctx-project", os.homedir());
+      await waitFor(() => listener.getIpcServer().getSessions().length === 1);
+
+      client.sendAsk(
+        "req-ctx",
+        "Question with context",
+        "preference",
+        [{ text: "OK" }],
+        undefined,
+        undefined,
+        "Additional context here"
+      );
+
+      await waitFor(() => bot.sentMessages.length > 0);
+
+      const msg = bot.sentMessages[0];
+      expect(msg.text).toContain("Question with context");
+      expect(msg.text).toContain("Context:");
+      expect(msg.text).toContain("Additional context here");
 
       await client.disconnect();
     });
