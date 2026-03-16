@@ -316,6 +316,7 @@ export class IpcServer {
 
     this.sessions.set(msg.sessionId, session);
     this.socketToSessionId.set(socket, msg.sessionId);
+    console.error(`[ipc] Session registered: ${msg.sessionId.slice(0, 8)}… project=${msg.project} cwd=${validatedCwd} (total: ${this.sessions.size})`);
 
     // Remove from disconnected if reconnecting
     this.disconnectedSessions.delete(msg.sessionId);
@@ -347,6 +348,7 @@ export class IpcServer {
     if (!sessionId) return;
 
     const session = this.sessions.get(sessionId);
+    console.error(`[ipc] Session disconnected: ${sessionId.slice(0, 8)}… project=${session?.project} graceful=${graceful} (remaining: ${this.sessions.size - 1})`);
     this.sessions.delete(sessionId);
     this.socketToSessionId.delete(socket);
 

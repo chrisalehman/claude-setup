@@ -452,6 +452,7 @@ export class Listener {
   private async handleStatusCommand(): Promise<void> {
     const sessions = this.ipc.getSessions();
     const disconnected = this.ipc.getDisconnectedSessions();
+    console.error(`[listener] /status: ${sessions.length} active, ${disconnected.length} disconnected, sessions: ${JSON.stringify(sessions.map(s => ({ id: s.sessionId.slice(0, 8), project: s.project })))}`);
 
     const statusSessions: StatusSession[] = sessions.map((s) => {
       // Count pending requests belonging to this session
