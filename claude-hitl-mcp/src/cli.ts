@@ -16,6 +16,7 @@ import {
 import { TelegramAdapter } from "./adapters/telegram.js";
 import { createAdapter } from "./adapters/factory.js";
 import { HitlToolHandler } from "./tools.js";
+import { runDoctorChecks, formatDoctorResults, type CheckResult } from "./doctor.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -262,129 +263,49 @@ function signal(args: string[]): void {
 }
 
 async function doctor(fix: boolean): Promise<void> {
-  let failures = 0;
-
-  function pass(label: string) { console.log(`  ✓ ${label}`); }
-  function fail(label: string, hint: string) { console.log(`  ✗ ${label} — ${hint}`); failures++; }
-
-  console.log("claude-hitl doctor\n");
-
-  // 1. Config
   const config = loadConfig();
-  if (config) {
-    pass("Config exists");
-  } else {
-    fail("Config exists", "run: claude-hitl-mcp setup");
-    console.log(`\n${failures} issue(s) found. Fix config first, then re-run doctor.`);
-    return;
-  }
 
-  // 2. Token resolves
-  try {
-    if (config.telegram?.bot_token) {
-      resolveEnvValue(config.telegram.bot_token);
-      pass("Telegram token resolves");
-    } else {
-      fail("Telegram token", "missing in config");
-    }
-  } catch {
-    fail("Telegram token resolves", "TELEGRAM_BOT_TOKEN env var not set");
-  }
-
-  // 3. Listener socket
-  const socketPath = path.join(HITL_CONFIG_DIR, "sock");
-  const socketAlive = await new Promise<boolean>((resolve) => {
-    if (!fs.existsSync(socketPath)) { resolve(false); return; }
-    const sock = net.createConnection(socketPath);
-    const timer = setTimeout(() => { sock.destroy(); resolve(false); }, 2000);
-    sock.on("connect", () => { clearTimeout(timer); sock.destroy(); resolve(true); });
-    sock.on("error", () => { clearTimeout(timer); resolve(false); });
-  });
-  if (socketAlive) {
-    pass("Listener socket responsive");
-  } else {
-    fail("Listener socket responsive", "run: claude-hitl-mcp install-listener");
-    if (fix) {
-      console.log("    → fixing: reinstalling listener...");
-      try { doInstallListener(); pass("Listener reinstalled"); } catch { fail("Listener reinstall", "manual intervention needed"); }
-    }
-  }
-
-  // 4. PID alive
-  const pidPath = path.join(HITL_CONFIG_DIR, "listener.pid");
-  if (fs.existsSync(pidPath)) {
-    const pid = parseInt(fs.readFileSync(pidPath, "utf-8").trim(), 10);
-    try { process.kill(pid, 0); pass(`Listener PID ${pid} alive`); }
-    catch { fail(`Listener PID ${pid}`, "process not running"); }
-  } else {
-    fail("Listener PID file", "not found");
-  }
-
-  // 5. Plist uses stable node path
-  if (fs.existsSync(PLIST_PATH)) {
-    const plist = fs.readFileSync(PLIST_PATH, "utf-8");
-    if (plist.includes("/Cellar/")) {
-      fail("Plist node path", "uses Cellar path (breaks on brew upgrade)");
-      if (fix) {
-        console.log("    → fixing: rewriting plist with stable path...");
-        try { doInstallListener(); pass("Plist rewritten"); } catch { fail("Plist rewrite", "failed"); }
-      }
-    } else {
-      pass("Plist uses stable node path");
-    }
-  } else {
-    fail("Plist exists", "run: claude-hitl-mcp install-listener");
-  }
-
-  // 6. MCP registered
-  const settings = readSettings();
-  const mcpServers = (settings.mcpServers ?? {}) as Record<string, unknown>;
-  if (mcpServers["claude-hitl"]) {
-    pass("MCP server registered in settings.json");
-  } else {
-    fail("MCP server registered", "not found in ~/.claude/settings.json");
-    if (fix) {
-      console.log("    → fixing: registering MCP server...");
-      const serverJsPath = path.resolve(__dirname, "..", "dist", "server.js");
-      const token = config.telegram?.bot_token ? resolveEnvValue(config.telegram.bot_token) : "";
-      if (token) {
-        try {
-          child_process.execSync(
-            `claude mcp add claude-hitl -e "TELEGRAM_BOT_TOKEN=${token}" -s user -- node "${serverJsPath}"`,
-            { stdio: "pipe" }
-          );
-          pass("MCP server registered");
-        } catch {
-          try { registerMcpInSettings(serverJsPath, token); pass("MCP registered (fallback)"); }
-          catch { fail("MCP registration", "failed — register manually"); }
+  const results = await runDoctorChecks({
+    configDir: HITL_CONFIG_DIR,
+    settingsPath: SETTINGS_PATH,
+    plistPath: PLIST_PATH,
+    fix,
+    fixCallbacks: {
+      reinstallListener: doInstallListener,
+      registerMcp: () => {
+        const serverJsPath = path.resolve(__dirname, "..", "dist", "server.js");
+        const token = config?.telegram?.bot_token ? resolveEnvValue(config.telegram.bot_token) : "";
+        if (token) {
+          try {
+            child_process.execSync(
+              `claude mcp add claude-hitl -e "TELEGRAM_BOT_TOKEN=${token}" -s user -- node "${serverJsPath}"`,
+              { stdio: "pipe" }
+            );
+          } catch {
+            registerMcpInSettings(serverJsPath, token);
+          }
         }
-      }
-    }
-  }
+      },
+      installHooks: installHooksInSettings,
+    },
+  });
 
-  // 7. Hooks registered
-  const hooks = (settings.hooks ?? {}) as Record<string, unknown[]>;
-  const hasPostToolUse = Array.isArray(hooks.PostToolUse) && hooks.PostToolUse.length > 0;
-  const hasPermissionReq = Array.isArray(hooks.PermissionRequest) && hooks.PermissionRequest.length > 0;
-  if (hasPostToolUse && hasPermissionReq) {
-    pass("Hooks registered (PostToolUse, PermissionRequest)");
-  } else {
-    fail("Hooks registered", "missing in ~/.claude/settings.json");
-    if (fix) {
-      console.log("    → fixing: installing hooks...");
-      try { installHooksInSettings(); pass("Hooks installed"); } catch { fail("Hook install", "failed"); }
-    }
-  }
-
-  // 8. CLI on PATH
+  // 8. CLI on PATH (environment-specific, not in runDoctorChecks)
+  const cliCheck: CheckResult = { label: "claude-hitl-mcp on PATH", passed: false };
   try {
     child_process.execSync("which claude-hitl-mcp", { stdio: "pipe" });
-    pass("claude-hitl-mcp on PATH");
+    cliCheck.passed = true;
   } catch {
-    fail("claude-hitl-mcp on PATH", "run: npm link (from claude-hitl-mcp dir)");
+    cliCheck.hint = "run: npm link (from claude-hitl-mcp dir)";
   }
+  results.push(cliCheck);
 
-  console.log(`\n${failures === 0 ? "All checks passed." : `${failures} issue(s) found.${fix ? "" : " Run with --fix to auto-repair."}`}`);
+  console.log(formatDoctorResults(results));
+
+  const unfixedFailures = results.filter((r) => !r.passed && !r.fixed).length;
+  if (unfixedFailures > 0 && !fix) {
+    console.log("Run with --fix to auto-repair.");
+  }
 }
 
 const USAGE = `
