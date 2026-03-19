@@ -10,27 +10,9 @@ cd claude-setup
 
 Re-run anytime to update. Reset with `./claude-reset.sh`.
 
-## First-Time Setup
-
-The bootstrap handles almost everything automatically. The one exception is the HITL notification system, which requires a one-time interactive step to bind your Telegram bot.
-
-**Do this before your first bootstrap run:**
-
-1. Message [@BotFather](https://t.me/BotFather) in Telegram, send `/newbot`, copy the token
-2. Run:
-   ```bash
-   export TELEGRAM_BOT_TOKEN="your-token-here"
-   cd claude-hitl-mcp && npm install && npm run build && node dist/cli.js setup
-   ```
-3. Send `/start` to your bot in Telegram when prompted
-
-After this, `./claude-bootstrap.sh` restores everything deterministically on every subsequent run. No manual steps.
-
 ## What You Get
 
 **Autonomy without recklessness.** A shell alias skips permission prompts. Behavioral rules in `~/.claude/CLAUDE.md` set the judgment layer -- Claude operates continuously but pauses for irreversible actions. Hard guardrail hooks physically block pushes to main and destructive SQL.
-
-**HITL notifications.** Walk away from the terminal. Claude sends decisions to your phone via Telegram and waits for your response. Priority tiers control timeouts: critical blocks forever, architecture pauses after 2h, preference auto-resolves after 30m. See [`claude-hitl-mcp/README.md`](claude-hitl-mcp/README.md).
 
 **Structured workflow.** The superpowers plugin gives Claude a full SDLC: brainstorm, plan, TDD, parallel subagent execution, code review.
 
@@ -49,10 +31,10 @@ Everything is defined in [`claude-config.txt`](claude-config.txt). Edit it and r
 | **CLI tools** | git, node, pnpm, gh, jq, ripgrep, uv |
 | **Plugins** | superpowers, frontend-design, document-skills, example-skills |
 | **Subagents** | voltagent-core-dev, voltagent-lang, voltagent-infra, voltagent-qa-sec, voltagent-data-ai, voltagent-dev-exp, voltagent-meta |
-| **MCP servers** | playwright, context7, claude-hitl (local) |
+| **MCP servers** | playwright, context7 |
 | **Skills** | excalidraw-diagram |
-| **Hooks** | protect-main.sh, protect-database.sh, HITL activity tracking |
-| **Global rules** | Autonomy, worktrees, code review, HITL priority guide ([`claude-global.md`](claude-global.md)) |
+| **Hooks** | protect-main.sh, protect-database.sh |
+| **Global rules** | Autonomy, worktrees, code review ([`claude-global.md`](claude-global.md)) |
 | **Shell alias** | `claude` runs with `--dangerously-skip-permissions` |
 
 Optional tools (cloud, databases, deployment) are commented out at the bottom of `claude-config.txt`. Uncomment and re-run.
@@ -66,6 +48,5 @@ claude-setup/
 ├── claude-bootstrap.sh      # Install everything (idempotent)
 ├── claude-reset.sh          # Remove everything
 ├── hooks/                   # Git + SQL guardrail hooks
-├── claude-hitl-mcp/         # Human-in-the-loop MCP server
 └── README.md
 ```

@@ -37,7 +37,6 @@
 - Go fix failing CI tests without being told how
 
 ## Task Management
-
 1. **Plan First**: Write plan to `tasks/todo.md` or the location specified by the active skill (e.g., `docs/superpowers/plans/`)
 2. **Verify Plan**: Check in before starting implementation
 3. **Track Progress**: Mark items complete as you go
@@ -46,45 +45,12 @@
 6. **Capture Lessons**: Update `tasks/lessons.md` after corrections
 
 ## Core Principles
-
 - **Simplicity First**: Make every change as simple as possible. Impact minimal code.
 - **No Laziness**: Find root causes. No temporary fixes. Senior developer standards.
 
 ## Autonomy
-
-Operate autonomously without requesting approval. Only pause and
-explicitly wait for human confirmation before taking actions that
-are irreversible or have consequences outside the codebase:
-
+Operate autonomously without requesting approval, EXCEPT for the following:
 - Destructive database migrations (ALTER/DROP on existing tables with data)
 - Any push to main or production branches
 - Changes to secrets, API keys, or environment credentials
 - Configuration changes that affect billing (Vercel, Supabase, Anthropic)
-
-For everything else: proceed without asking.
-
-## HITL Notification Priority Guide
-
-When claude-hitl MCP tools are available, use them to keep the
-human informed and to request input on decisions:
-
-- **critical**: Irreversible actions — destructive migrations,
-  external API calls with side effects, security changes.
-  Always provide options including a "cancel" choice.
-
-- **architecture**: Decisions affecting system boundaries, data
-  models, public interfaces, or technology choices.
-  Provide options with a recommended default.
-
-- **preference**: Aesthetic choices, naming, implementation
-  details with multiple valid paths.
-  Always mark a default option.
-
-- **fyi**: Progress updates, completions, phase transitions.
-  Use notify_human, not ask_human.
-
-When in doubt, prefer a higher priority tier.
-False alarms are cheaper than silent mistakes.
-
-Use configure_hitl at the start of each session to set
-session_context so the human knows which project is messaging.

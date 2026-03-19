@@ -105,12 +105,7 @@ do_configure_mcp_server() {
     local abs_path
     abs_path="$(cd "$(dirname "$local_server")" && pwd)/$(basename "$local_server")"
 
-    local env_args=()
-    if [ "$name" = "claude-hitl" ] && [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-      env_args=(-e "TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}")
-    fi
-
-    claude mcp add "$name" "${env_args[@]}" -s user -- node "$abs_path" &>/dev/null
+    claude mcp add "$name" -s user -- node "$abs_path" &>/dev/null
     echo "✓ (local)"
   else
     # Remote package — register via claude mcp add
@@ -325,15 +320,6 @@ MANAGED_HOOKS=(
   "PreToolUse|Bash|~/.claude/hooks/protect-database.sh"
 )
 
-# HITL activity tracking hooks — only if the local package is built
-hitl_bin="${SCRIPT_DIR}/claude-hitl-mcp/bin"
-if [ -f "${hitl_bin}/hook-activity.sh" ]; then
-  MANAGED_HOOKS+=(
-    "PostToolUse||${hitl_bin}/hook-activity.sh"
-    "PermissionRequest||${hitl_bin}/hook-blocked.sh"
-  )
-fi
-
 hooks_added=0
 for entry in "${MANAGED_HOOKS[@]}"; do
   IFS='|' read -r event matcher cmd <<< "$entry"
@@ -389,22 +375,6 @@ echo "MCP servers:"
 read_config "mcp-server" do_configure_mcp_server
 echo ""
 
-# ─── HITL Listener Daemon ───────────────────────────────────────────────────
-
-echo -n "HITL listener daemon... "
-hitl_config=~/.claude-hitl/config.json
-hitl_cli="${SCRIPT_DIR}/claude-hitl-mcp/dist/cli.js"
-if [ ! -f "$hitl_config" ]; then
-  echo "⚠ (config not found — run: cd claude-hitl-mcp && node dist/cli.js setup)"
-elif [ ! -f "$hitl_cli" ]; then
-  echo "⚠ (not built)"
-else
-  # (Re)install the listener daemon via launchd
-  node "$hitl_cli" install-listener 2>/dev/null
-  echo "✓"
-fi
-echo ""
-
 # ─── Verification ───────────────────────────────────────────────────────────
 
 echo "Verification:"
@@ -450,19 +420,6 @@ if [ -f ~/.claude/CLAUDE.md ] && grep -q "<!-- claude-setup:start -->" ~/.claude
   echo "    ~/.claude/CLAUDE.md ✓"
 else
   echo "    ~/.claude/CLAUDE.md — not installed"
-fi
-
-echo ""
-echo "  HITL listener:"
-if launchctl list com.claude-hitl.listener &>/dev/null; then
-  echo "    launchd service ✓"
-else
-  echo "    launchd service — not running"
-fi
-if [ -S ~/.claude-hitl/sock ]; then
-  echo "    socket ✓"
-else
-  echo "    socket — not found"
 fi
 
 echo ""
