@@ -7,6 +7,9 @@
 #
 set -euo pipefail
 
+cleanup() { rm -f ~/.claude/settings.json.tmp ~/.claude/CLAUDE.md.tmp; }
+trap cleanup EXIT
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG="${SCRIPT_DIR}/claude-config.txt"
 
@@ -26,7 +29,12 @@ check_cmd claude  "Install with: brew install claude-code"
 if ! command -v brew &>/dev/null; then
   echo "Installing Homebrew..."
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+fi
+# Ensure brew is on PATH (handles both Apple Silicon and Intel)
+if [ -x /opt/homebrew/bin/brew ]; then
   eval "$(/opt/homebrew/bin/brew shellenv)"
+elif [ -x /usr/local/bin/brew ]; then
+  eval "$(/usr/local/bin/brew shellenv)"
 fi
 
 # ─── Config reader ──────────────────────────────────────────────────────────
@@ -37,10 +45,10 @@ fi
 read_config() {
   local type="$1" callback="$2"
   while IFS='|' read -r entry_type f1 f2; do
-    entry_type="$(echo "$entry_type" | xargs)"
+    entry_type="$(echo "$entry_type" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     [ "$entry_type" = "$type" ] || continue
-    f1="$(echo "$f1" | xargs)"
-    f2="$(echo "${f2:-}" | xargs)"
+    f1="$(echo "$f1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    f2="$(echo "${f2:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     "$callback" "$f1" "$f2"
   done < <(grep -v '^\s*#' "$CONFIG" | grep -v '^\s*$')
 }
@@ -117,22 +125,29 @@ do_configure_mcp_server() {
 do_install_marketplace() {
   local name="$1"
   echo -n "  ${name}... "
-  if claude plugin marketplace add "$name" &>/dev/null; then
+  local output
+  if output=$(claude plugin marketplace add "$name" 2>&1); then
     echo "✓"
-  else
+  elif echo "$output" | grep -qi "already"; then
     echo "✓ (already added)"
+  else
+    echo "FAILED: $output" >&2
+    exit 1
   fi
 }
 
 do_install_plugin() {
   local plugin="$1" source="$2"
   echo -n "  ${plugin} (${source})... "
-  local output
-  output=$(claude plugin install "${plugin}@${source}" 2>&1)
-  if echo "$output" | grep -q "already"; then
+  if claude plugin list 2>&1 | grep -q "${plugin}@${source}"; then
     echo "✓ (already installed)"
-  else
+    return 0
+  fi
+  if claude plugin install "${plugin}@${source}" &>/dev/null; then
     echo "✓"
+  else
+    echo "FAILED" >&2
+    exit 1
   fi
 }
 
@@ -144,7 +159,7 @@ do_install_github_skill() {
   git clone --depth 1 --quiet "https://github.com/${repo}.git" "$tmp"
   mkdir -p ~/.claude/skills
   rm -rf ~/.claude/skills/"${name}"
-  cp -r "$tmp" ~/.claude/skills/"${name}"
+  cp -r "$tmp" ~/.claude/skills/"${name}" && rm -rf ~/.claude/skills/"${name}"/.git
   rm -rf "$tmp"
   echo "✓"
 }
@@ -162,7 +177,7 @@ do_install_github_skill_pack() {
     local skill_name
     skill_name="$(basename "$skill_dir")"
     rm -rf ~/.claude/skills/"${skill_name}"
-    cp -r "$skill_dir" ~/.claude/skills/"${skill_name}"
+    cp -r "$skill_dir" ~/.claude/skills/"${skill_name}" && rm -rf ~/.claude/skills/"${skill_name}"/.git
     count=$((count + 1))
   done
   rm -rf "$tmp"
@@ -222,6 +237,7 @@ verify_brew_dep() {
     echo "    ${binary} ✓"
   else
     echo "    ${binary} — not found"
+    verify_failures=$((verify_failures + 1))
   fi
 }
 
@@ -231,6 +247,7 @@ verify_npm_global() {
     echo "    ${pkg} ✓"
   else
     echo "    ${pkg} — not found"
+    verify_failures=$((verify_failures + 1))
   fi
 }
 
@@ -240,6 +257,7 @@ verify_mcp_server() {
     echo "    ${name} ✓"
   else
     echo "    ${name} — not configured"
+    verify_failures=$((verify_failures + 1))
   fi
 }
 
@@ -262,7 +280,7 @@ echo ""
 # ─── Playwright Browsers ────────────────────────────────────────────────────
 
 echo -n "Playwright browsers (chromium)... "
-npx playwright install chromium --quiet 2>/dev/null || npx playwright install chromium 2>/dev/null
+npx playwright install chromium 2>/dev/null
 echo "✓"
 echo ""
 
@@ -288,12 +306,15 @@ echo ""
 
 echo "Shell alias:"
 echo -n "  claude → claude --dangerously-skip-permissions... "
-CLAUDE_BIN="$(command -v claude)"
-ALIAS_LINE="alias claude='${CLAUDE_BIN} --dangerously-skip-permissions'"
+ALIAS_LINE="alias claude='claude --dangerously-skip-permissions'"
 ZSHRC=~/.zshrc
-if grep -qxF "$ALIAS_LINE" "$ZSHRC" 2>/dev/null; then
+if grep -q "alias claude=.*dangerously-skip-permissions" "$ZSHRC" 2>/dev/null; then
   echo "✓ (already installed)"
 else
+  # Remove any old alias variant first
+  if [ -f "$ZSHRC" ]; then
+    grep -v "alias claude=.*dangerously-skip-permissions" "$ZSHRC" > "${ZSHRC}.tmp" && mv "${ZSHRC}.tmp" "$ZSHRC"
+  fi
   printf '\n%s\n' "$ALIAS_LINE" >> "$ZSHRC"
   echo "✓"
 fi
@@ -309,9 +330,13 @@ echo ""
 # ─── Skill Setup ────────────────────────────────────────────────────────────
 
 echo "Skill setup:"
-echo -n "  excalidraw-diagram renderer... "
-(cd ~/.claude/skills/excalidraw-diagram/references && uv sync --quiet 2>&1 && uv run playwright install chromium 2>&1) | tail -1
-echo "  ✓"
+if [ -d ~/.claude/skills/excalidraw-diagram/references ]; then
+  echo -n "  excalidraw-diagram renderer... "
+  (cd ~/.claude/skills/excalidraw-diagram/references && uv sync --quiet 2>&1 && uv run playwright install chromium 2>&1) | tail -1
+  echo "  ✓"
+else
+  echo "  excalidraw-diagram — skipped (not installed)"
+fi
 echo ""
 
 # ─── Global Hooks ────────────────────────────────────────────────────────────
@@ -320,6 +345,7 @@ echo "Global hooks:"
 mkdir -p ~/.claude/hooks
 for hook in "${SCRIPT_DIR}"/hooks/*.sh; do
   [ -f "$hook" ] || continue
+  [[ "$(basename "$hook")" == *.test.sh ]] && continue
   name="$(basename "$hook")"
   echo -n "  ${name}... "
   cp "$hook" ~/.claude/hooks/"$name"
@@ -346,7 +372,7 @@ for entry in "${MANAGED_HOOKS[@]}"; do
   IFS='|' read -r event matcher cmd <<< "$entry"
 
   # Ensure the event array exists
-  if ! jq -e ".hooks.${event}" "$settings" &>/dev/null; then
+  if ! jq -e --arg ev "$event" '.hooks[$ev]' "$settings" &>/dev/null; then
     tmp="${settings}.tmp"
     jq --arg ev "$event" '.hooks[$ev] = []' "$settings" > "$tmp" && mv "$tmp" "$settings"
   fi
@@ -418,6 +444,7 @@ echo ""
 
 # ─── Verification ───────────────────────────────────────────────────────────
 
+verify_failures=0
 echo "Verification:"
 
 echo ""
@@ -473,4 +500,9 @@ else
 fi
 
 echo ""
-echo "Done"
+if [ "$verify_failures" -gt 0 ]; then
+  echo "Done (${verify_failures} issues detected)"
+  exit 1
+else
+  echo "Done ✓"
+fi
