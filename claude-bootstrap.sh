@@ -384,6 +384,26 @@ else
 fi
 echo ""
 
+# ─── Env Vars ───────────────────────────────────────────────────────────────
+
+echo "Env vars:"
+
+env_added=0
+do_set_env_var() {
+  local key="$1" val="$2"
+  echo -n "  ${key}=${val}... "
+  if jq -e --arg k "$key" --arg v "$val" '.env[$k] == $v' "$settings" &>/dev/null; then
+    echo "✓ (already set)"
+    return
+  fi
+  tmp="${settings}.tmp"
+  jq --arg k "$key" --arg v "$val" '.env[$k] = $v' "$settings" > "$tmp" && mv "$tmp" "$settings"
+  env_added=$((env_added + 1))
+  echo "✓"
+}
+read_config "env-var" do_set_env_var
+echo ""
+
 # ─── Local Package Builds ────────────────────────────────────────────────────
 
 echo "Local packages:"

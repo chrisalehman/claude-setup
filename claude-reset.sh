@@ -249,6 +249,29 @@ else
 fi
 echo ""
 
+# ─── Env Vars ─────────────────────────────────────────────────────────────
+
+do_remove_env_var() {
+  local key="$1" val="$2"
+  if ! confirm "env var: ${key}"; then
+    echo "  ${key} — skipped"
+    return 0
+  fi
+  local settings=~/.claude/settings.json
+  echo -n "  ${key}... "
+  if [ ! -f "$settings" ] || ! jq -e --arg k "$key" '.env[$k]' "$settings" &>/dev/null; then
+    echo "✓ (already removed)"
+    return 0
+  fi
+  local tmp="${settings}.tmp"
+  jq --arg k "$key" 'del(.env[$k]) | if .env == {} then del(.env) else . end' "$settings" > "$tmp" && mv "$tmp" "$settings"
+  echo "✓"
+}
+
+echo "Env vars:"
+read_config "env-var" do_remove_env_var
+echo ""
+
 # ─── MCP Servers ───────────────────────────────────────────────────────────
 
 echo "MCP servers:"
