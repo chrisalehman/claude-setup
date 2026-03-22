@@ -12,15 +12,15 @@ Re-run anytime to update. Reset with `./claude-reset.sh`.
 
 ## What You Get
 
-**Specialist subagents** — TypeScript, Python, Go, Rust, Terraform, Kubernetes, PostgreSQL, security auditing, and more. Claude dispatches domain experts in parallel instead of being a generalist.
+**Deploy the team.** 100+ specialist agents — TypeScript, Python, Go, Rust, Terraform, Kubernetes, PostgreSQL, security auditing, and more. Claude dispatches domain experts in parallel. A solo agent is a wasted army.
 
-**Structured SDLC workflow** — The superpowers plugin gives Claude engineering discipline: brainstorm → plan → TDD → parallel execution → code review. No more ad-hoc development.
+**Structured SDLC.** Brainstorm → plan → TDD → parallel execution → code review. The superpowers plugin gives Claude engineering discipline, not ad-hoc development.
 
-**Document and design skills** — PDFs, Word docs, spreadsheets, slide decks, diagrams, frontend UI prototypes. Built-in document generation and visual design capabilities.
+**Documents, designs, and diagrams.** PDFs, Word docs, spreadsheets, slide decks, Excalidraw diagrams, frontend UI prototypes. Built-in generation and visual design.
 
-**Live browser** — Playwright MCP server for E2E testing, screenshot validation, and visual debugging.
+**Live browser.** Playwright MCP server for E2E testing, screenshot validation, and visual debugging.
 
-**Autonomy without recklessness** — A shell alias skips permission prompts for speed. Behavioral rules in `~/.claude/CLAUDE.md` provide judgment — Claude operates continuously but pauses for irreversible actions. Hard hooks physically block pushes to main and destructive SQL. No accidents.
+**Autonomy without recklessness.** A shell alias skips permission prompts for speed. Behavioral rules in `~/.claude/CLAUDE.md` provide judgment. Hard hooks physically block pushes to main and destructive SQL. No accidents.
 
 ## What's Installed
 
@@ -34,7 +34,7 @@ Everything is defined in [`claude-config.txt`](claude-config.txt). This is the s
 | **MCP servers** | playwright, context7 |
 | **Skills** | excalidraw-diagram, impeccable (20+ design skills) |
 | **Hooks** | protect-main.sh, protect-database.sh |
-| **Rules** | Behavioral guardrails → [`~/.claude/CLAUDE.md`](claude-global.md) |
+| **Philosophy** | 6 principles for agentic development → [`~/.claude/CLAUDE.md`](claude-global.md) |
 | **Shell alias** | `claude` → `claude --dangerously-skip-permissions` |
 
 Optional tools (cloud, databases, deployment) are commented out at the bottom of `claude-config.txt`. Uncomment and re-run bootstrap.
@@ -52,7 +52,7 @@ Modify `claude-config.txt` to add or remove tools, skills, plugins. Uncomment op
 ```
 claude-setup/
 ├── claude-config.txt        # What gets installed (single source of truth)
-├── claude-global.md         # Behavioral rules → ~/.claude/CLAUDE.md
+├── claude-global.md         # Philosophy for agentic development → ~/.claude/CLAUDE.md
 ├── claude-bootstrap.sh      # Install everything (idempotent)
 ├── claude-reset.sh          # Remove everything
 ├── hooks/                   # Safety guardrail hooks
@@ -64,7 +64,7 @@ claude-setup/
 
 ## Safety Model
 
-Hooks cover `PreToolUse` events on `Bash` commands, preventing accidental pushes to main and destructive SQL operations. This is a guardrail for accidents, not a security boundary — the behavioral rules in `~/.claude/CLAUDE.md` provide the judgment layer that teaches Claude when to pause for irreversible actions.
+Hooks cover `PreToolUse` events on `Bash` commands, preventing accidental pushes to main and destructive SQL operations. This is a guardrail for accidents, not a security boundary. The philosophy in [`claude-global.md`](claude-global.md) provides the judgment layer — six principles that teach Claude when to act, when to pause, and when to deploy the team.
 
 ## Requirements
 
