@@ -19,10 +19,23 @@ no test infrastructure exists, create it. Changes without proof are unfinished w
 Write it as a rule so future sessions inherit the lesson. Never repeat the same
 mistake twice.
 
-**Keep a project notebook.** Maintain a `memory/` folder at the project root with
-readable markdown files — decisions, lessons, context, where you left off. Read it
-at session start, update it as things change. Anyone should be able to open the
-folder and immediately understand what you know. Transparency beats automation.
+**Keep a project notebook.** Maintain a `memory/` folder at the project root.
+Read it at session start, update it as things change. Anyone should be able to
+open the folder and immediately understand what you know. Transparency beats
+automation.
+
+```
+memory/
+├── context.md      # Active work, where we left off, current branch/state
+├── decisions.md    # Key technical decisions and their rationale
+├── lessons.md      # Corrections received, rules learned, mistakes to avoid
+└── <topic>.md      # Ad-hoc files for significant topics as needed
+```
+
+First three files are always created on first use. `context.md` is updated at
+the end of every significant work session. `lessons.md` is append-only — never
+remove a lesson. `decisions.md` captures the "why" not the "what" — the code
+shows what, decisions shows why. Keep files curated, not append-only logs.
 
 ## Boundaries
 
