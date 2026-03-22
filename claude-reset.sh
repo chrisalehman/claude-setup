@@ -11,6 +11,9 @@
 #
 set -euo pipefail
 
+cleanup() { rm -f ~/.claude/settings.json.tmp ~/.claude/CLAUDE.md.tmp ~/.zshrc.tmp; }
+trap cleanup EXIT
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG="${SCRIPT_DIR}/claude-config.txt"
 
@@ -40,10 +43,10 @@ fi
 read_config() {
   local type="$1" callback="$2"
   while IFS='|' read -r entry_type f1 f2; do
-    entry_type="$(echo "$entry_type" | xargs)"
+    entry_type="$(echo "$entry_type" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     [ "$entry_type" = "$type" ] || continue
-    f1="$(echo "$f1" | xargs)"
-    f2="$(echo "${f2:-}" | xargs)"
+    f1="$(echo "$f1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    f2="$(echo "${f2:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     "$callback" "$f1" "$f2"
   done < <(grep -v '^\s*#' "$CONFIG" | grep -v '^\s*$')
 }
@@ -158,7 +161,6 @@ do_remove_global_memory() {
 
 do_remove_mcp_server() {
   local name="$1" pkg="$2"
-  local settings=~/.claude/settings.json
 
   if ! confirm "MCP server: ${name}"; then
     echo "  ${name} — skipped"
@@ -167,14 +169,12 @@ do_remove_mcp_server() {
 
   echo -n "  ${name}... "
 
-  if [ ! -f "$settings" ] || ! jq -e ".mcpServers.\"${name}\"" "$settings" &>/dev/null; then
+  if ! claude mcp get "$name" &>/dev/null; then
     echo "✓ (already removed)"
     return 0
   fi
 
-  local tmp="${settings}.tmp"
-  jq --arg name "$name" 'del(.mcpServers[$name])' "$settings" > "$tmp" && mv "$tmp" "$settings"
-  echo "✓"
+  claude mcp remove "$name" -s user &>/dev/null && echo "✓" || echo "✓ (already removed)"
 }
 
 do_remove_npm_global() {
@@ -202,8 +202,7 @@ verify_npm_global_removed() {
 
 verify_mcp_removed() {
   local name="$1"
-  local settings=~/.claude/settings.json
-  if [ -f "$settings" ] && jq -e ".mcpServers.\"${name}\"" "$settings" &>/dev/null; then
+  if claude mcp get "$name" &>/dev/null; then
     mcp_found=true
     echo "    ${name} — still configured"
   fi
@@ -220,6 +219,7 @@ else
   # Remove only hooks that exist in this repo's hooks/ directory
   for hook in "${SCRIPT_DIR}"/hooks/*.sh; do
     [ -f "$hook" ] || continue
+    [[ "$(basename "$hook")" == *.test.sh ]] && continue
     name="$(basename "$hook")"
     echo -n "  ${name}... "
     if [ -f ~/.claude/hooks/"${name}" ]; then
@@ -231,6 +231,7 @@ else
     hooks_removed=$((hooks_removed + 1))
     # Remove matching entries from settings.json
     if [ -f "$settings" ] && jq -e '.hooks.PreToolUse' "$settings" &>/dev/null; then
+      # Note: uses literal ~ to match what bootstrap stored in settings.json
       cmd="~/.claude/hooks/${name}"
       tmp="${settings}.tmp"
       jq --arg c "$cmd" '
@@ -238,10 +239,12 @@ else
       ' "$settings" > "$tmp" && mv "$tmp" "$settings"
     fi
   done
-  # Clean up empty PreToolUse array and hooks object
+  # Clean up empty PreToolUse array, then clean up empty hooks object if nothing else remains
   if [ -f "$settings" ]; then
     tmp="${settings}.tmp"
-    jq 'if .hooks.PreToolUse == [] then del(.hooks) else . end' "$settings" > "$tmp" && mv "$tmp" "$settings"
+    jq 'if .hooks.PreToolUse == [] then del(.hooks.PreToolUse) else . end' "$settings" > "$tmp" && mv "$tmp" "$settings"
+    # Clean up empty hooks object
+    jq 'if .hooks == {} then del(.hooks) else . end' "$settings" > "$tmp" && mv "$tmp" "$settings"
   fi
   if [ "$hooks_removed" -eq 0 ]; then
     echo "  (no hooks to remove)"
@@ -252,7 +255,7 @@ echo ""
 # ─── Env Vars ─────────────────────────────────────────────────────────────
 
 do_remove_env_var() {
-  local key="$1" val="$2"
+  local key="$1" _val="$2"  # _val unused; config format requires two fields
   if ! confirm "env var: ${key}"; then
     echo "  ${key} — skipped"
     return 0
