@@ -6,6 +6,10 @@
 *.png
 *.excalidraw
 
+# Exception: architecture diagram for README
+!architecture.png
+!architecture.excalidraw
+
 # OS
 .DS_Store
 
