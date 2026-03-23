@@ -448,6 +448,19 @@ do_set_statusline() {
 read_config "statusline" do_set_statusline
 echo ""
 
+# ─── ccstatusline Config ──────────────────────────────────────────────────────
+
+echo "ccstatusline config:"
+echo -n "  settings.json → ~/.config/ccstatusline/settings.json... "
+mkdir -p ~/.config/ccstatusline
+if diff -q "${SCRIPT_DIR}/ccstatusline/settings.json" ~/.config/ccstatusline/settings.json &>/dev/null; then
+  echo "✓ (already up to date)"
+else
+  cp "${SCRIPT_DIR}/ccstatusline/settings.json" ~/.config/ccstatusline/settings.json
+  echo "✓"
+fi
+echo ""
+
 # ─── Local Package Builds ────────────────────────────────────────────────────
 
 echo "Local packages:"
@@ -507,6 +520,15 @@ if jq -e '.statusLine.command' "$settings" &>/dev/null; then
   echo "    $(jq -r '.statusLine.command' "$settings") ✓"
 else
   echo "    (not configured)"
+fi
+
+echo ""
+echo "  ccstatusline config:"
+if diff -q "${SCRIPT_DIR}/ccstatusline/settings.json" ~/.config/ccstatusline/settings.json &>/dev/null; then
+  echo "    settings.json ✓"
+else
+  echo "    settings.json — out of sync"
+  verify_failures=$((verify_failures + 1))
 fi
 
 echo ""

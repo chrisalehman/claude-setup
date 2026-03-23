@@ -296,6 +296,18 @@ do_remove_statusline() {
 
 echo "Status line:"
 read_config "statusline" do_remove_statusline
+
+echo -n "  ccstatusline config... "
+if ! confirm "ccstatusline config (~/.config/ccstatusline/)"; then
+  echo "skipped"
+else
+  if [ -d ~/.config/ccstatusline ]; then
+    rm -rf ~/.config/ccstatusline
+    echo "✓"
+  else
+    echo "✓ (already removed)"
+  fi
+fi
 echo ""
 
 # ─── MCP Servers ───────────────────────────────────────────────────────────
