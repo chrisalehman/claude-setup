@@ -23,6 +23,9 @@ brew-dep     | jq
 brew-dep     | rg            | ripgrep
 brew-dep     | uv
 
+# CLI tools installed via npm (same category, different install mechanism)
+npm-global   | @playwright/cli
+
 marketplace  | anthropics/skills
 marketplace  | VoltAgent/awesome-claude-code-subagents
 
@@ -48,8 +51,6 @@ env-var      | CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS | 1
 
 statusline   | npx ccstatusline@latest
 
-npm-global   | @playwright/test
-mcp-server   | playwright    | @playwright/mcp
 mcp-server   | context7      | @upstash/context7-mcp@latest
 
 # ─── Optional: Cloud & Infrastructure ──────────────────────────────────────

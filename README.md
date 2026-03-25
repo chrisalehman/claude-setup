@@ -49,10 +49,10 @@ Everything lives in [`claude-config.txt`](claude-config.txt) — edit it and re-
 
 | Category | What |
 |----------|------|
-| **CLI tools** | git, node, pnpm, gh, jq, ripgrep, uv |
+| **CLI tools** | git, node, pnpm, gh, jq, ripgrep, uv, @playwright/cli |
 | **Plugins** | superpowers, frontend-design, document-skills, example-skills |
 | **Subagents** | voltagent-core-dev, voltagent-lang, voltagent-infra, voltagent-qa-sec, voltagent-data-ai, voltagent-dev-exp, voltagent-meta |
-| **MCP servers** | playwright, context7 |
+| **MCP servers** | context7 |
 | **Skills** | excalidraw-diagram, impeccable (20+ design skills) |
 | **Hooks** | protect-main.sh, protect-database.sh |
 | **Philosophy** | 9 principles for agentic development → [`~/.claude/CLAUDE.md`](claude-global.md) |
@@ -85,29 +85,28 @@ Everything below explains why each tool was chosen over alternatives, where it's
 
 ### CLI Tools
 
-Installed via `brew install`. These are system-level dependencies that Claude Code and the bootstrap itself depend on.
+System-level dependencies that Claude Code and the bootstrap itself depend on. Most install via `brew install`; some install via `npm install -g` when they're Node.js tools — both are CLI tools Claude invokes from the shell.
 
 | Tool | Config | Why this tool |
 |------|--------|---------------|
 | **git** | `brew-dep \| git` | Version control. Required by Claude Code for worktrees, diffs, and branch operations. |
-| **node** | `brew-dep \| node` | JavaScript runtime. Required by npm, MCP servers (`npx`), and Playwright. |
+| **node** | `brew-dep \| node` | JavaScript runtime. Required by npm, MCP servers (`npx`), and Playwright CLI. |
 | **pnpm** | `brew-dep \| pnpm` | Fast, disk-efficient package manager. Preferred over npm/yarn for speed and strict dependency resolution. Not currently used by bootstrap itself, but available for project work. |
 | **gh** | `brew-dep \| gh` | GitHub CLI. Claude uses `gh pr create`, `gh issue`, `gh api` for GitHub operations without needing browser access or tokens in env vars. |
 | **jq** | `brew-dep \| jq` | JSON processor. The bootstrap script uses jq to merge hooks, env vars, and status line config into `~/.claude/settings.json` without clobbering existing settings. Also useful for Claude when parsing API responses. |
 | **ripgrep** | `brew-dep \| rg \| ripgrep` | Claude Code's built-in `Grep` tool is powered by ripgrep (`rg`). Without it, code search falls back to slower alternatives. The binary is `rg` but the Homebrew package name is `ripgrep`, hence the two-field config entry. |
 | **uv** | `brew-dep \| uv` | Python package manager from Astral. Used exclusively for the excalidraw-diagram skill setup (`uv sync`, `uv run`). Chosen over pip/poetry for speed — installs Python dependencies in seconds, not minutes. |
+| **@playwright/cli** | `npm-global \| @playwright/cli` | Token-efficient browser automation. See below. |
+
+**Playwright CLI** — Token-efficient browser automation. Where the Playwright MCP server injects full page snapshots and screenshots into Claude's context window (~114K tokens per task), the CLI keeps browser state on disk and gives Claude compact YAML snapshots and file paths (~27K tokens per task) — roughly a 4x token reduction. Claude runs `playwright-cli snapshot` to get element references, `playwright-cli click` to interact, and `playwright-cli screenshot` to capture images to disk. At no point does the full DOM or image binary enter the context window unless Claude explicitly reads those files.
+
+Why CLI over MCP: The MCP server works well for short, interactive sessions where Claude needs to reason about page state in real time. But for the "Autonomous Debug Cycles" pattern — where Claude iterates through test → fix → validate loops — the CLI's token efficiency means longer sessions before context compression kicks in, and lower cost per cycle. The CLI is best for well-defined browser tasks; MCP is better when the agent needs rich page reasoning for ambiguous situations.
+
+The bootstrap also runs `npx playwright install chromium` to ensure the browser binary is available.
 
 ### MCP Servers
 
 MCP (Model Context Protocol) servers give Claude runtime capabilities beyond its built-in tools. Registered via `claude mcp add -s user` (user-scoped, not project-scoped). Configured in [`claude-config.txt`](claude-config.txt) and registered during bootstrap into `~/.claude/settings.json`.
-
-**Playwright** — `mcp-server | playwright | @playwright/mcp`
-
-Browser automation. Gives Claude tools to navigate pages, click elements, fill forms, take screenshots, and run JavaScript in a real Chromium browser. This is what enables the "Autonomous Debug Cycles" pattern — Claude can start a dev server, navigate to the app, observe the UI, and iterate on fixes against what it actually sees.
-
-Why Playwright over Puppeteer or Cypress: Playwright has first-class MCP support (`@playwright/mcp` is maintained by Microsoft), auto-waits for elements (fewer flaky interactions), and supports Chromium/Firefox/WebKit. Puppeteer is Chrome-only and has no official MCP server. Cypress is a testing framework, not a browser automation tool — different use case.
-
-The bootstrap also installs `@playwright/test` as an npm global and runs `npx playwright install chromium` to ensure the browser binary is available.
 
 **Context7** — `mcp-server | context7 | @upstash/context7-mcp@latest`
 

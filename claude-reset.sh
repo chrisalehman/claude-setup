@@ -159,6 +159,35 @@ do_remove_global_memory() {
   echo "✓"
 }
 
+do_clean_local_package() {
+  local pkg="$1"
+  local pkg_dir="${SCRIPT_DIR}/${pkg}"
+
+  # Only clean if the directory has a package.json (it's a local Node package)
+  [ -f "${pkg_dir}/package.json" ] || return 0
+
+  if ! confirm "local package build artifacts: ${pkg}"; then
+    echo "  ${pkg} — skipped"
+    return 0
+  fi
+
+  echo -n "  ${pkg} (node_modules/ and dist/)... "
+  local removed=0
+  if [ -d "${pkg_dir}/node_modules" ]; then
+    rm -rf "${pkg_dir}/node_modules"
+    removed=$((removed + 1))
+  fi
+  if [ -d "${pkg_dir}/dist" ]; then
+    rm -rf "${pkg_dir}/dist"
+    removed=$((removed + 1))
+  fi
+  if [ "$removed" -gt 0 ]; then
+    echo "✓"
+  else
+    echo "✓ (already removed)"
+  fi
+}
+
 do_remove_mcp_server() {
   local name="$1" pkg="$2"
 
@@ -179,7 +208,7 @@ do_remove_mcp_server() {
 
 do_remove_npm_global() {
   local pkg="$1"
-  if ! confirm "npm global: ${pkg}"; then
+  if ! confirm "CLI tool: ${pkg}"; then
     echo "  ${pkg} — skipped"
     return 0
   fi
@@ -205,6 +234,16 @@ verify_mcp_removed() {
   if claude mcp get "$name" &>/dev/null; then
     mcp_found=true
     echo "    ${name} — still configured"
+  fi
+}
+
+verify_local_package_clean() {
+  local pkg="$1"
+  local pkg_dir="${SCRIPT_DIR}/${pkg}"
+  [ -f "${pkg_dir}/package.json" ] || return 0
+  if [ -d "${pkg_dir}/node_modules" ] || [ -d "${pkg_dir}/dist" ]; then
+    local_pkg_found=true
+    echo "    ${pkg} — build artifacts still present"
   fi
 }
 
@@ -310,21 +349,45 @@ else
 fi
 echo ""
 
+# ─── Local Package Builds ────────────────────────────────────────────────────
+
+echo "Local packages:"
+read_config "mcp-server" do_clean_local_package
+echo ""
+
 # ─── MCP Servers ───────────────────────────────────────────────────────────
 
 echo "MCP servers:"
 read_config "mcp-server" do_remove_mcp_server
 echo ""
 
-# ─── npm Globals ───────────────────────────────────────────────────────────
+# ─── Playwright Browsers ────────────────────────────────────────────────────
 
-echo "npm globals:"
+echo "Playwright browsers:"
+if ! confirm "Playwright browsers (chromium)"; then
+  echo "  browsers — skipped"
+else
+  echo -n "  chromium... "
+  if npx playwright uninstall --all 2>/dev/null; then
+    echo "✓"
+  elif [ -d ~/Library/Caches/ms-playwright ]; then
+    rm -rf ~/Library/Caches/ms-playwright
+    echo "✓ (cache removed directly)"
+  else
+    echo "✓ (already removed)"
+  fi
+fi
+echo ""
+
+# ─── CLI Tools (npm) ───────────────────────────────────────────────────────
+
+echo "CLI tools (npm):"
 read_config "npm-global" do_remove_npm_global
 echo ""
 
-# ─── Brew Dependencies ────────────────────────────────────────────────────
+# ─── CLI Tools (brew) ─────────────────────────────────────────────────────
 
-echo "Brew dependencies:"
+echo "CLI tools (brew):"
 echo "  (not removed — system-level tools may be used by other software)"
 echo ""
 
@@ -333,6 +396,12 @@ echo ""
 echo "Custom skills:"
 read_config "github-skill" do_remove_skill
 read_config "github-skill-pack" do_remove_github_skill_pack
+echo ""
+
+# ─── Skill Setup ────────────────────────────────────────────────────────────
+
+echo "Skill setup:"
+echo "  excalidraw-diagram renderer — not removed separately (.venv removed with skill dir; Playwright cache removed above)"
 echo ""
 
 # ─── Global Memory ──────────────────────────────────────────────────────────
@@ -425,7 +494,7 @@ else
 fi
 
 echo ""
-echo "  npm globals:"
+echo "  CLI tools (npm):"
 npm_global_found=false
 read_config "npm-global" verify_npm_global_removed
 if ! $npm_global_found; then
@@ -438,6 +507,30 @@ mcp_found=false
 read_config "mcp-server" verify_mcp_removed
 if ! $mcp_found; then
   echo "    (all removed) ✓"
+fi
+
+echo ""
+echo "  Local package builds:"
+local_pkg_found=false
+read_config "mcp-server" verify_local_package_clean
+if ! $local_pkg_found; then
+  echo "    (all clean) ✓"
+fi
+
+echo ""
+echo "  Playwright browsers:"
+if [ -d ~/Library/Caches/ms-playwright ] && [ "$(ls -A ~/Library/Caches/ms-playwright 2>/dev/null)" ]; then
+  echo "    ~/Library/Caches/ms-playwright — still present"
+else
+  echo "    ~/Library/Caches/ms-playwright ✓ (clean)"
+fi
+
+echo ""
+echo "  Skill setup:"
+if [ -d ~/.claude/skills/excalidraw-diagram/references/.venv ]; then
+  echo "    excalidraw-diagram .venv — still present (skill dir not removed?)"
+else
+  echo "    excalidraw-diagram .venv ✓ (clean)"
 fi
 
 echo "" ; echo "Done"

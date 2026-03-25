@@ -261,15 +261,27 @@ verify_mcp_server() {
   fi
 }
 
-# ─── Brew Dependencies ──────────────────────────────────────────────────────
+verify_local_package_built() {
+  local pkg="$1"
+  local pkg_dir="${SCRIPT_DIR}/${pkg}"
+  [ -f "${pkg_dir}/package.json" ] || return 0
+  if [ -d "${pkg_dir}/node_modules" ] && [ -d "${pkg_dir}/dist" ]; then
+    echo "    ${pkg} ✓"
+  else
+    echo "    ${pkg} — node_modules/ or dist/ missing"
+    verify_failures=$((verify_failures + 1))
+  fi
+}
 
-echo "Brew dependencies:"
+# ─── CLI Tools (brew) ───────────────────────────────────────────────────────
+
+echo "CLI tools (brew):"
 read_config "brew-dep" do_install_brew_dep
 echo ""
 
-# ─── npm Globals ─────────────────────────────────────────────────────────────
+# ─── CLI Tools (npm) ─────────────────────────────────────────────────────────
 
-echo "npm globals:"
+echo "CLI tools (npm):"
 if ! command -v npm &>/dev/null; then
   echo "  ERROR: npm not found — install node first" >&2
   exit 1
@@ -479,12 +491,33 @@ verify_failures=0
 echo "Verification:"
 
 echo ""
-echo "  Brew dependencies:"
+echo "  CLI tools (brew):"
 read_config "brew-dep" verify_brew_dep
 
 echo ""
-echo "  npm globals:"
+echo "  CLI tools (npm):"
 read_config "npm-global" verify_npm_global
+
+echo ""
+echo "  Playwright browsers:"
+if ls ~/Library/Caches/ms-playwright/chromium-* &>/dev/null; then
+  echo "    chromium ✓"
+else
+  echo "    chromium — not found"
+  verify_failures=$((verify_failures + 1))
+fi
+
+echo ""
+echo "  Skill setup:"
+if [ -d ~/.claude/skills/excalidraw-diagram/references/.venv ]; then
+  echo "    excalidraw-diagram renderer ✓"
+else
+  echo "    excalidraw-diagram renderer — .venv not found (skill not installed or uv sync failed)"
+fi
+
+echo ""
+echo "  Local package builds:"
+read_config "mcp-server" verify_local_package_built
 
 echo ""
 echo "  MCP servers:"
@@ -502,7 +535,7 @@ echo "  Plugins (official skills):"
 claude plugin list 2>&1 | while IFS= read -r line; do echo "    $line"; done
 
 echo ""
-echo "  Custom skills (global):"
+echo "  Custom skills:"
 for skill_dir in ~/.claude/skills/*/; do
   [ -d "$skill_dir" ] || continue
   name="$(basename "$skill_dir")"

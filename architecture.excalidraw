@@ -279,7 +279,7 @@
     },
     {
       "type": "rectangle", "id": "group3_rect",
-      "x": 700, "y": 320, "width": 380, "height": 65,
+      "x": 700, "y": 320, "width": 380, "height": 90,
       "strokeColor": "#1e40af", "backgroundColor": "#dbeafe",
       "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "dashed",
       "roughness": 0, "opacity": 100, "angle": 0,
@@ -302,9 +302,9 @@
     },
     {
       "type": "text", "id": "group3_content",
-      "x": 720, "y": 350, "width": 345, "height": 24,
-      "text": "~/.zshrc (alias) · PATH (7 brew deps)",
-      "originalText": "~/.zshrc (alias) · PATH (7 brew deps)",
+      "x": 720, "y": 350, "width": 345, "height": 42,
+      "text": "~/.zshrc (alias) · 8 CLI tools (brew + npm)\nPlaywright browsers · ccstatusline config",
+      "originalText": "~/.zshrc (alias) · 8 CLI tools (brew + npm)\nPlaywright browsers · ccstatusline config",
       "fontSize": 14, "fontFamily": 3, "textAlign": "left", "verticalAlign": "top",
       "strokeColor": "#374151", "backgroundColor": "transparent",
       "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "solid",
