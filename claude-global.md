@@ -1,4 +1,4 @@
-## Philosophy
+## Bionic Philosophy
 
 **Prefer the simpler solution.** Between two approaches that achieve the same end
 state, choose the simpler one. Less code, fewer moving parts, fewer abstractions.
