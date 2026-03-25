@@ -1,10 +1,10 @@
-# claude-setup
+# bionic
 
-One script transforms Claude Code from a generalist into a fully agentic engineering team — 100+ specialists, structured SDLC, safety guardrails.
+One engineer, mass-augmented. A single bootstrap transforms Claude Code into a fully agentic engineering team — 100+ specialists, structured SDLC, safety guardrails.
 
 ```bash
-git clone git@github.com:chrisalehman/claude-setup.git
-cd claude-setup
+git clone git@github.com:chrisalehman/bionic.git
+cd bionic
 ./claude-bootstrap.sh
 ```
 
@@ -65,7 +65,7 @@ Optional tools (cloud, databases, deployment) are commented out at the bottom of
 Bootstrap is idempotent — run it anytime, always get the same result. Modify [`claude-config.txt`](claude-config.txt) to add or remove tools, skills, plugins. Fork this repo for team standardization.
 
 ```
-claude-setup/
+bionic/
 ├── claude-config.txt        # What gets installed
 ├── claude-global.md         # Philosophy → ~/.claude/CLAUDE.md
 ├── claude-bootstrap.sh      # Install (idempotent)
@@ -174,6 +174,12 @@ Generates Excalidraw diagram JSON files for visualizing workflows, architectures
 
 A skill pack from Paul Bakaus (Google) containing 20+ design skills. Installed as individual skills — each subdirectory in the repo's `.claude/skills/` becomes a separate skill in `~/.claude/skills/`. Includes: `adapt`, `animate`, `arrange`, `audit`, `bolder`, `clarify`, `colorize`, `critique`, `delight`, `distill`, `extract`, `harden`, `normalize`, `onboard`, `optimize`, `overdrive`, `polish`, `quieter`, `teach-impeccable`, `typeset`.
 
+**bionic** — `skills/` (local, shipped with this repo)
+
+Custom skills that enforce engineering discipline in agentic workflows. Designed to close the gaps where agents cut corners — skipping tests, self-grading, claiming success without proof. Skills are invoked as `bionic:*`.
+
+*Coming soon: `bionic:rigorous-refactor` — enforces a strict Plan → Test → Implement → Validate state machine for complex refactors.*
+
 ### Hooks (Safety Guardrails)
 
 Hooks are shell scripts that intercept Claude Code tool calls before execution. Registered as `PreToolUse` hooks on the `Bash` matcher in `~/.claude/settings.json`. Exit code 0 allows the command; exit code 2 hard-blocks it. Both hooks receive JSON on stdin with the structure `{"tool_input":{"command":"..."}}`.
@@ -229,7 +235,7 @@ Why this is safe despite the name: The hooks provide the actual safety net. `--d
 
 ### Global Philosophy (`CLAUDE.md`)
 
-The file [`claude-global.md`](claude-global.md) is installed to `~/.claude/CLAUDE.md` (wrapped in `<!-- claude-setup:start/end -->` markers so re-runs update without clobbering your additions). This is the instructions file that Claude Code reads at the start of every session, in every project.
+The file [`claude-global.md`](claude-global.md) is installed to `~/.claude/CLAUDE.md` (wrapped in HTML comment markers so re-runs update without clobbering your additions). This is the instructions file that Claude Code reads at the start of every session, in every project.
 
 **Why global, not project-level:** Claude Code reads both `~/.claude/CLAUDE.md` (global) and `.claude/CLAUDE.md` (project-level) — they compose. The principles here are *agent-level behavior*, not project-specific conventions. "Deploy the team," "prove it works," and "guard your context" apply regardless of what you're building. Making them global means bootstrap sets it once and every project inherits automatically — no per-project setup, no drift between repos. Project-level `CLAUDE.md` files are still the right place for project-specific instructions (coding style, architecture decisions, repo-specific boundaries). The two layers stack: global provides the base operating model, project-level adds local context.
 
