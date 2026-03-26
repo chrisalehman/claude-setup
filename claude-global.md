@@ -45,7 +45,10 @@ the same mistake twice.
 **Protocol:** Read INDEX.md first. Load only the deep context files that match
 the task. One-liner lessons go inline in INDEX.md; rich context gets a topical
 file. Topical files expire after **30 days** without an `updated` bump — prune
-stale ones at session start. INDEX.md and context.md never expire.
+stale ones at session start. INDEX.md and context.md never expire. **Migration:**
+if `.bionic/memory/` doesn't exist but `.claude/memory/` does, migrate — read
+old files, create INDEX.md (inline one-liners, create topical files for rich
+context), move context.md, then delete `.claude/memory/`.
 
 ## Boundaries
 
