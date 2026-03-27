@@ -50,6 +50,8 @@ github-skill-pack | impeccable   | pbakaus/impeccable
 
 local-skill  | rigorous-refactor
 local-skill  | ralph-loop
+local-skill  | map-instrument-narrow
+local-skill  | skill-factory
 
 env-var      | CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS | 1
 
