@@ -12,7 +12,7 @@
 #   brew-dep      |  binary              (package = binary)
 #   brew-dep      |  binary  |  package  (when binary ≠ package)
 #   npm-global    |  package
-#   mcp-server    |  name   |  package
+#   mcp-server    |  name   |  package  |  ENV_VAR1,ENV_VAR2  (optional: required env vars)
 #   env-var       |  key    |  value
 #   statusline    |  command
 
@@ -65,17 +65,17 @@ mcp-server   | context7      | @upstash/context7-mcp@latest
 # brew-dep     | stern
 # brew-dep     | kubectx
 # brew-dep     | argocd
-# brew-dep     | docker
+brew-dep     | docker
 # brew-dep     | k9s
 
 # ─── Optional: GCP ────────────────────────────────────────────────────────
 # Note: gcloud requires a cask — run manually: brew install --cask google-cloud-sdk
 #
-# brew-dep     | gcloud
+brew-dep     | gcloud
 
 # ─── Optional: AWS ────────────────────────────────────────────────────────
 #
-# brew-dep     | aws           | awscli
+brew-dep     | aws           | awscli
 
 # ─── Optional: Databases ──────────────────────────────────────────────────
 #
@@ -86,13 +86,19 @@ mcp-server   | context7      | @upstash/context7-mcp@latest
 
 # ─── Optional: Deployment Platforms ───────────────────────────────────────
 #
-# brew-dep     | vercel
-# brew-dep     | supabase
+brew-dep     | vercel
+brew-dep     | supabase
 # brew-dep     | firebase      | firebase-cli
 
 # ─── Optional: API & Serialization ───────────────────────────────────────
 #
-# brew-dep     | http          | httpie
-# brew-dep     | yq
-# brew-dep     | grpcurl
-# brew-dep     | protoc        | protobuf
+brew-dep     | http          | httpie
+brew-dep     | yq
+brew-dep     | grpcurl
+brew-dep     | protoc        | protobuf
+
+# ─── Optional: Productivity Tools ───────────────────────────────────────
+# Requires Trello API credentials. Get yours at https://trello.com/app-key
+# Set TRELLO_API_KEY and TRELLO_TOKEN in your shell environment, then uncomment and re-run.
+#
+mcp-server   | trello        | @delorenj/mcp-server-trello | TRELLO_API_KEY,TRELLO_TOKEN

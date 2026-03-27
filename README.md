@@ -52,7 +52,7 @@ Everything lives in [`claude-config.txt`](claude-config.txt) — edit it and re-
 | **CLI tools** | git, node, pnpm, gh, jq, ripgrep, uv, @playwright/cli |
 | **Plugins** | superpowers, frontend-design, document-skills, example-skills |
 | **Subagents** | voltagent-core-dev, voltagent-lang, voltagent-infra, voltagent-qa-sec, voltagent-data-ai, voltagent-dev-exp, voltagent-meta |
-| **MCP servers** | context7 |
+| **MCP servers** | context7, trello *(optional)* |
 | **Skills** | excalidraw-diagram, impeccable (20+ design skills), bionic:rigorous-refactor, bionic:ralph-loop |
 | **Hooks** | protect-main.sh, protect-database.sh |
 | **Philosophy** | 9 principles for agentic development → [`~/.claude/CLAUDE.md`](claude-global.md) |
@@ -77,6 +77,8 @@ bionic/
 ├── skills/                  # Bionic skills → ~/.claude/skills/
 │   ├── rigorous-refactor/   # Disciplined multi-file refactoring
 │   └── ralph-loop/          # Build-test-diagnose iteration cycle
+├── ccstatusline/            # Status line config → ~/.config/ccstatusline/
+│   └── settings.json        # Model, context %, cost, git branch
 └── README.md
 ```
 
@@ -116,6 +118,24 @@ MCP (Model Context Protocol) servers give Claude runtime capabilities beyond its
 Documentation lookup. Gives Claude tools to query up-to-date library documentation and code examples at runtime, rather than relying on training data. When Claude needs to use a library API it's unsure about, it can look it up live.
 
 Why Context7 over other doc servers: Context7 indexes the actual source documentation of libraries and returns relevant code examples. It's purpose-built for LLM consumption — returns concise, structured results rather than raw HTML pages.
+
+**Trello** *(optional)* — `mcp-server | trello | @delorenj/mcp-server-trello | TRELLO_API_KEY,TRELLO_TOKEN`
+
+Board and card management. Gives Claude tools to list boards, create and update cards, manage checklists, add comments, and attach files — all through natural language. Useful for project management workflows where Claude can read task context from Trello cards and update status as work progresses.
+
+Setup:
+1. Get your API key at https://trello.com/app-key
+2. Generate a token from the same page (click the "Token" link)
+3. Set both in your shell environment:
+   ```bash
+   export TRELLO_API_KEY="your-api-key"
+   export TRELLO_TOKEN="your-token"
+   ```
+4. Uncomment the `mcp-server | trello` line in `claude-config.txt` and re-run `./claude-bootstrap.sh`
+
+The bootstrap reads `TRELLO_API_KEY` and `TRELLO_TOKEN` from your environment and wires them into the MCP server configuration. If either is missing, the server is skipped with a warning.
+
+Why delorenj/mcp-server-trello over alternatives: Most actively maintained, listed in the official MCP Registry, type-safe TypeScript with built-in rate limiting and input validation. Migrated to Bun runtime for performance. Covers the core operations (boards, lists, cards, checklists, comments, attachments) without unnecessary complexity.
 
 ### Plugins & Subagents
 
@@ -282,7 +302,7 @@ The first two are hard-blocked by hooks. The last two rely on Claude's judgment 
 
 ### Optional Tools
 
-The bottom of [`claude-config.txt`](claude-config.txt) contains commented-out entries organized by use case. Uncomment what you need and re-run `./claude-bootstrap.sh`.
+The bottom of [`claude-config.txt`](claude-config.txt) contains entries organized by use case. Toggle what you need (comment/uncomment) and re-run `./claude-bootstrap.sh`.
 
 **Cloud & Infrastructure** — `kubectl`, `helm`, `stern`, `kubectx`, `argocd`, `docker`, `k9s`. Enable if you're working with Kubernetes clusters. The voltagent-infra subagents (Kubernetes specialist, Terraform engineer, etc.) will use these tools when available.
 
@@ -295,6 +315,8 @@ The bottom of [`claude-config.txt`](claude-config.txt) contains commented-out en
 **Deployment Platforms** — `vercel`, `supabase`, `firebase`. For deploying directly from Claude sessions.
 
 **API & Serialization** — `httpie` (friendlier curl), `yq` (YAML processor, companion to jq), `grpcurl` (gRPC CLI), `protoc` (protobuf compiler). Enable for API development and testing workflows.
+
+**Productivity Tools** — `@delorenj/mcp-server-trello` MCP server for Trello board and card management. Requires `TRELLO_API_KEY` and `TRELLO_TOKEN` environment variables — the bootstrap reads them from your shell and wires them into the MCP config. See [Trello](#mcp-servers) above for full setup instructions.
 
 ## Safety
 

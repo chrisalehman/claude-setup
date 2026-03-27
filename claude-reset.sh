@@ -39,15 +39,17 @@ if ! command -v claude &>/dev/null; then
 fi
 
 # ─── Config reader ──────────────────────────────────────────────────────────
+# callback receives: field1 field2 field3 (trimmed, pipe-delimited; f2 and f3 may be empty)
 
 read_config() {
   local type="$1" callback="$2"
-  while IFS='|' read -r entry_type f1 f2; do
+  while IFS='|' read -r entry_type f1 f2 f3; do
     entry_type="$(echo "$entry_type" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     [ "$entry_type" = "$type" ] || continue
     f1="$(echo "$f1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     f2="$(echo "${f2:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-    "$callback" "$f1" "$f2"
+    f3="$(echo "${f3:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    "$callback" "$f1" "$f2" "$f3"
   done < <(grep -v '^\s*#' "$CONFIG" | grep -v '^\s*$')
 }
 

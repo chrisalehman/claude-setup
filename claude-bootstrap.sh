@@ -41,15 +41,16 @@ fi
 
 # Reads claude-config.txt and calls a callback for each entry of a given type.
 # Usage: read_config <type> <callback>
-#   callback receives: field1 field2 (trimmed, pipe-delimited)
+#   callback receives: field1 field2 field3 (trimmed, pipe-delimited; f2 and f3 may be empty)
 read_config() {
   local type="$1" callback="$2"
-  while IFS='|' read -r entry_type f1 f2; do
+  while IFS='|' read -r entry_type f1 f2 f3; do
     entry_type="$(echo "$entry_type" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     [ "$entry_type" = "$type" ] || continue
     f1="$(echo "$f1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     f2="$(echo "${f2:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-    "$callback" "$f1" "$f2"
+    f3="$(echo "${f3:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    "$callback" "$f1" "$f2" "$f3"
   done < <(grep -v '^\s*#' "$CONFIG" | grep -v '^\s*$')
 }
 
@@ -94,8 +95,11 @@ do_build_local_package() {
   echo "✓"
 }
 
+# Registers an MCP server via claude mcp add. If env_vars is provided (comma-separated
+# list of env var names, e.g. "KEY1,KEY2"), reads their values from the current shell
+# environment and passes them as -e flags. Skips with a warning if any are missing.
 do_configure_mcp_server() {
-  local name="$1" pkg="$2"
+  local name="$1" pkg="$2" env_vars="${3:-}"
 
   echo -n "  ${name} (${pkg})... "
 
@@ -103,6 +107,26 @@ do_configure_mcp_server() {
   if claude mcp get "$name" &>/dev/null; then
     echo "✓ (already configured)"
     return 0
+  fi
+
+  # Build env-var flags from comma-separated list (e.g. "TRELLO_API_KEY,TRELLO_TOKEN")
+  local env_flags=()
+  if [ -n "$env_vars" ]; then
+    local missing=()
+    IFS=',' read -ra vars <<< "$env_vars"
+    for var in "${vars[@]}"; do
+      var="$(echo "$var" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+      local val="${!var:-}"
+      if [ -z "$val" ]; then
+        missing+=("$var")
+      else
+        env_flags+=("-e" "${var}=${val}")
+      fi
+    done
+    if [ ${#missing[@]} -gt 0 ]; then
+      echo "⚠ skipped (set ${missing[*]} in your environment, then re-run)"
+      return 0
+    fi
   fi
 
   # Check if the package exists as a local subdirectory with a built server
@@ -113,11 +137,11 @@ do_configure_mcp_server() {
     local abs_path
     abs_path="$(cd "$(dirname "$local_server")" && pwd)/$(basename "$local_server")"
 
-    claude mcp add "$name" -s user -- node "$abs_path" &>/dev/null
+    claude mcp add "$name" -s user "${env_flags[@]}" -- node "$abs_path" &>/dev/null
     echo "✓ (local)"
   else
     # Remote package — register via claude mcp add
-    claude mcp add "$name" -s user -- npx -y "$pkg" &>/dev/null
+    claude mcp add "$name" -s user "${env_flags[@]}" -- npx -y "$pkg" &>/dev/null
     echo "✓"
   fi
 }
