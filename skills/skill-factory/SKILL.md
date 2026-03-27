@@ -4,6 +4,7 @@ description: Use when creating a new bionic skill — interviews the user to ext
 layer: governance
 needs:
   - superpowers:writing-skills
+  - document-skills:skill-creator
 loading: deferred
 ---
 
@@ -20,7 +21,8 @@ A skill is a constraint on behavior. Its value is not what it tells Claude to do
 **Layer:** Governance (process constraint). Constrains how skills are authored to ensure composability schema compliance.
 
 **REQUIRED SUB-SKILLS** (declared in `needs` frontmatter):
-- `superpowers:writing-skills` — handles file writing, description trigger testing, and optimization
+- `superpowers:writing-skills` — handles file writing and skill verification
+- `document-skills:skill-creator` — handles eval testing, description optimization, and performance benchmarking
 
 ## The Iron Law
 
@@ -162,7 +164,7 @@ Before presenting the skeleton to the user:
 
 Present the generated skeleton to the user for review. After approval:
 
-1. Invoke `superpowers:writing-skills` to write the file to `skills/[skill-name]/SKILL.md`
+1. Invoke `superpowers:writing-skills` to write the file to `skills/[skill-name]/SKILL.md`, then use `document-skills:skill-creator` for eval testing and description optimization
 2. Add `local-skill  | [skill-name]` to `claude-config.txt`
 3. Commit both files
 
