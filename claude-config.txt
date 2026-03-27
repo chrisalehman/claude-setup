@@ -88,7 +88,7 @@ brew-dep     | aws           | awscli
 
 # ─── Optional: Deployment Platforms ───────────────────────────────────────
 #
-brew-dep     | vercel
+brew-dep     | vercel        | vercel-cli
 brew-dep     | supabase
 # brew-dep     | firebase      | firebase-cli
 
