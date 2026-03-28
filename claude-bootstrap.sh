@@ -137,11 +137,11 @@ do_configure_mcp_server() {
     local abs_path
     abs_path="$(cd "$(dirname "$local_server")" && pwd)/$(basename "$local_server")"
 
-    claude mcp add "$name" -s user "${env_flags[@]}" -- node "$abs_path" &>/dev/null
+    claude mcp add "$name" -s user ${env_flags[@]+"${env_flags[@]}"} -- node "$abs_path" &>/dev/null
     echo "✓ (local)"
   else
     # Remote package — register via claude mcp add
-    claude mcp add "$name" -s user "${env_flags[@]}" -- npx -y "$pkg" &>/dev/null
+    claude mcp add "$name" -s user ${env_flags[@]+"${env_flags[@]}"} -- npx -y "$pkg" &>/dev/null
     echo "✓"
   fi
 }
