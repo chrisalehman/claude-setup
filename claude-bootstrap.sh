@@ -226,8 +226,9 @@ do_install_global_memory() {
   local file="$1"
   local source="${SCRIPT_DIR}/${file}"
   local target=~/.claude/CLAUDE.md
-  local start_marker="<!-- claude-setup:start -->"
-  local end_marker="<!-- claude-setup:end -->"
+  local start_marker="<!-- bionic:start -->"
+  local end_marker="<!-- bionic:end -->"
+  local old_start="<!-- claude-setup:start -->"
 
   echo -n "  ${file} → ~/.claude/CLAUDE.md... "
 
@@ -243,6 +244,11 @@ do_install_global_memory() {
   local section="${start_marker}
 ${content}
 ${end_marker}"
+
+  # Migrate old claude-setup markers to bionic
+  if [ -f "$target" ] && grep -q "$old_start" "$target"; then
+    sed -i '' "s|<!-- claude-setup:start -->|${start_marker}|;s|<!-- claude-setup:end -->|${end_marker}|" "$target"
+  fi
 
   if [ ! -f "$target" ]; then
     # No existing file — create with managed section
@@ -372,16 +378,37 @@ echo ""
 
 echo "Shell alias:"
 echo -n "  claude → claude --dangerously-skip-permissions... "
-ALIAS_LINE="alias claude='claude --dangerously-skip-permissions'"
 ZSHRC=~/.zshrc
-if grep -q "alias claude=.*dangerously-skip-permissions" "$ZSHRC" 2>/dev/null; then
+ZSHRC_START="# ─── bionic:start ───"
+ZSHRC_END="# ─── bionic:end ───"
+ZSHRC_CONTENT="alias claude='claude --dangerously-skip-permissions'"
+ZSHRC_SECTION="${ZSHRC_START}
+${ZSHRC_CONTENT}
+${ZSHRC_END}"
+
+# Migrate old unmarked alias to marker-based section
+if [ -f "$ZSHRC" ] && grep -q "alias claude=.*dangerously-skip-permissions" "$ZSHRC" && ! grep -qF "$ZSHRC_START" "$ZSHRC"; then
+  grep -v "alias claude=.*dangerously-skip-permissions" "$ZSHRC" > "${ZSHRC}.tmp" && mv "${ZSHRC}.tmp" "$ZSHRC"
+  printf '\n%s\n' "$ZSHRC_SECTION" >> "$ZSHRC"
+  echo "✓ (migrated to markers)"
+elif grep -qF "$ZSHRC_START" "$ZSHRC" 2>/dev/null; then
+  # Markers exist — replace managed section
+  local tmp="${ZSHRC}.tmp"
+  {
+    awk -v start="$ZSHRC_START" '
+      $0 == start { exit }
+      { print }
+    ' "$ZSHRC"
+    echo "$ZSHRC_SECTION"
+    awk -v end="$ZSHRC_END" '
+      found { print }
+      $0 == end { found=1 }
+    ' "$ZSHRC"
+  } > "$tmp" && mv "$tmp" "$ZSHRC"
   echo "✓ (already installed)"
 else
-  # Remove any old alias variant first
-  if [ -f "$ZSHRC" ]; then
-    grep -v "alias claude=.*dangerously-skip-permissions" "$ZSHRC" > "${ZSHRC}.tmp" && mv "${ZSHRC}.tmp" "$ZSHRC"
-  fi
-  printf '\n%s\n' "$ALIAS_LINE" >> "$ZSHRC"
+  # No markers, no alias — append
+  printf '\n%s\n' "$ZSHRC_SECTION" >> "$ZSHRC"
   echo "✓"
 fi
 echo ""
@@ -622,7 +649,7 @@ fi
 
 echo ""
 echo "  Global memory:"
-if [ -f ~/.claude/CLAUDE.md ] && grep -q "<!-- claude-setup:start -->" ~/.claude/CLAUDE.md; then
+if [ -f ~/.claude/CLAUDE.md ] && grep -q "<!-- bionic:start -->" ~/.claude/CLAUDE.md; then
   echo "    ~/.claude/CLAUDE.md ✓"
 else
   echo "    ~/.claude/CLAUDE.md — not installed"
@@ -630,7 +657,7 @@ fi
 
 echo ""
 echo "  Shell alias:"
-if [ -f ~/.zshrc ] && grep -qF "dangerously-skip-permissions" ~/.zshrc; then
+if [ -f ~/.zshrc ] && grep -qF "# ─── bionic:start ───" ~/.zshrc; then
   echo "    ~/.zshrc ✓"
 else
   echo "    ~/.zshrc — not installed"

@@ -126,8 +126,8 @@ do_remove_marketplace() {
 do_remove_global_memory() {
   local file="$1"
   local target=~/.claude/CLAUDE.md
-  local start_marker="<!-- claude-setup:start -->"
-  local end_marker="<!-- claude-setup:end -->"
+  local start_marker="<!-- bionic:start -->"
+  local end_marker="<!-- bionic:end -->"
 
   if ! confirm "global memory (${file})"; then
     echo "  global memory — skipped"
@@ -417,17 +417,31 @@ echo ""
 
 echo "Shell alias:"
 ZSHRC=~/.zshrc
+ZSHRC_START="# ─── bionic:start ───"
+ZSHRC_END="# ─── bionic:end ───"
 if ! confirm "shell alias (dangerously-skip-permissions)"; then
   echo "  shell alias — skipped"
 else
   echo -n "  ~/.zshrc alias... "
-  if [ -f "$ZSHRC" ] && grep -q "alias claude=.*dangerously-skip-permissions" "$ZSHRC"; then
-    grep -v "alias claude=.*dangerously-skip-permissions" "$ZSHRC" > "${ZSHRC}.tmp" && mv "${ZSHRC}.tmp" "$ZSHRC"
+  if [ -f "$ZSHRC" ] && grep -qF "$ZSHRC_START" "$ZSHRC"; then
+    # Remove marker-delimited section
+    awk -v start="$ZSHRC_START" -v end="$ZSHRC_END" '
+      $0 == start { skip=1; next }
+      $0 == end { skip=0; next }
+      !skip { print }
+    ' "$ZSHRC" > "${ZSHRC}.tmp" && mv "${ZSHRC}.tmp" "$ZSHRC"
     # Delete file if only whitespace remains
     if [ ! -s "$ZSHRC" ] || ! grep -q '[^[:space:]]' "$ZSHRC"; then
       rm -f "$ZSHRC"
     fi
     echo "✓"
+  elif [ -f "$ZSHRC" ] && grep -q "alias claude=.*dangerously-skip-permissions" "$ZSHRC"; then
+    # Fallback: remove old unmarked alias
+    grep -v "alias claude=.*dangerously-skip-permissions" "$ZSHRC" > "${ZSHRC}.tmp" && mv "${ZSHRC}.tmp" "$ZSHRC"
+    if [ ! -s "$ZSHRC" ] || ! grep -q '[^[:space:]]' "$ZSHRC"; then
+      rm -f "$ZSHRC"
+    fi
+    echo "✓ (removed legacy unmarked alias)"
   else
     echo "✓ (already removed)"
   fi
@@ -472,7 +486,7 @@ fi
 
 echo ""
 echo "  Global memory:"
-if [ -f ~/.claude/CLAUDE.md ] && grep -q "<!-- claude-setup:start -->" ~/.claude/CLAUDE.md; then
+if [ -f ~/.claude/CLAUDE.md ] && grep -q "<!-- bionic:start -->" ~/.claude/CLAUDE.md; then
   echo "    ~/.claude/CLAUDE.md — managed section still present"
 else
   echo "    ~/.claude/CLAUDE.md ✓ (clean)"
@@ -480,8 +494,10 @@ fi
 
 echo ""
 echo "  Shell alias:"
-if [ -f ~/.zshrc ] && grep -qF "dangerously-skip-permissions" ~/.zshrc; then
-  echo "    ~/.zshrc — alias still present"
+if [ -f ~/.zshrc ] && grep -qF "# ─── bionic:start ───" ~/.zshrc; then
+  echo "    ~/.zshrc — bionic section still present"
+elif [ -f ~/.zshrc ] && grep -qF "dangerously-skip-permissions" ~/.zshrc; then
+  echo "    ~/.zshrc — legacy alias still present"
 else
   echo "    ~/.zshrc ✓ (clean)"
 fi
