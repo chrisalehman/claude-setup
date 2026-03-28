@@ -104,4 +104,4 @@ brew-dep     | protoc        | protobuf
 # Requires Trello API credentials. Get yours at https://trello.com/app-key
 # Set TRELLO_API_KEY and TRELLO_TOKEN in your shell environment, then uncomment and re-run.
 #
-# mcp-server   | trello        | @delorenj/mcp-server-trello | TRELLO_API_KEY,TRELLO_TOKEN
+mcp-server   | trello        | @delorenj/mcp-server-trello | TRELLO_API_KEY,TRELLO_TOKEN

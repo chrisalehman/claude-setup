@@ -191,7 +191,7 @@ do_clean_local_package() {
 }
 
 do_remove_mcp_server() {
-  local name="$1" pkg="$2"
+  local name="$1" pkg="$2" env_vars="${3:-}"
 
   if ! confirm "MCP server: ${name}"; then
     echo "  ${name} — skipped"

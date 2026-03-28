@@ -275,7 +275,7 @@ verify_brew_dep() {
     echo "    ${binary} ✓"
   else
     echo "    ${binary} — not found"
-    verify_failures=$((verify_failures + 1))
+    verify_errors+=("${binary} CLI tool — not found")
   fi
 }
 
@@ -285,18 +285,34 @@ verify_npm_global() {
     echo "    ${pkg} ✓"
   else
     echo "    ${pkg} — not found"
-    verify_failures=$((verify_failures + 1))
+    verify_errors+=("${pkg} npm package — not found")
   fi
 }
 
 verify_mcp_server() {
-  local name="$1"
+  local name="$1" pkg="${2:-}" env_vars="${3:-}"
   if claude mcp get "$name" &>/dev/null; then
     echo "    ${name} ✓"
-  else
-    echo "    ${name} — not configured"
-    verify_failures=$((verify_failures + 1))
+    return 0
   fi
+  # If the server requires env vars that aren't set, it was intentionally skipped
+  if [ -n "$env_vars" ]; then
+    local missing=()
+    IFS=',' read -ra vars <<< "$env_vars"
+    for var in "${vars[@]}"; do
+      var="$(echo "$var" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+      if [ -z "${!var:-}" ]; then
+        missing+=("$var")
+      fi
+    done
+    if [ ${#missing[@]} -gt 0 ]; then
+      echo "    ${name} — skipped (${missing[*]} not set)"
+      verify_warnings+=("${name} MCP server — skipped (set ${missing[*]} in your environment)")
+      return 0
+    fi
+  fi
+  echo "    ${name} — not configured"
+  verify_errors+=("${name} MCP server — not configured")
 }
 
 verify_local_package_built() {
@@ -307,7 +323,7 @@ verify_local_package_built() {
     echo "    ${pkg} ✓"
   else
     echo "    ${pkg} — node_modules/ or dist/ missing"
-    verify_failures=$((verify_failures + 1))
+    verify_errors+=("${pkg} local package — node_modules/ or dist/ missing")
   fi
 }
 
@@ -526,7 +542,8 @@ echo ""
 
 # ─── Verification ───────────────────────────────────────────────────────────
 
-verify_failures=0
+verify_errors=()
+verify_warnings=()
 echo "Verification:"
 
 echo ""
@@ -543,7 +560,7 @@ if ls ~/Library/Caches/ms-playwright/chromium-* &>/dev/null; then
   echo "    chromium ✓"
 else
   echo "    chromium — not found"
-  verify_failures=$((verify_failures + 1))
+  verify_errors+=("chromium browser — not found")
 fi
 
 echo ""
@@ -600,7 +617,7 @@ if diff -q "${SCRIPT_DIR}/ccstatusline/settings.json" ~/.config/ccstatusline/set
   echo "    settings.json ✓"
 else
   echo "    settings.json — out of sync"
-  verify_failures=$((verify_failures + 1))
+  verify_errors+=("ccstatusline settings.json — out of sync")
 fi
 
 echo ""
@@ -619,10 +636,36 @@ else
   echo "    ~/.zshrc — not installed"
 fi
 
+# ─── Summary Report ─────────────────────────────────────────────────────────
+
 echo ""
-if [ "$verify_failures" -gt 0 ]; then
-  echo "Done (${verify_failures} issues detected)"
-  exit 1
-else
+error_count=${#verify_errors[@]}
+warning_count=${#verify_warnings[@]}
+
+if [ "$error_count" -eq 0 ] && [ "$warning_count" -eq 0 ]; then
   echo "Done ✓"
+else
+  if [ "$error_count" -gt 0 ]; then
+    echo "Done (${error_count} error(s), ${warning_count} warning(s))"
+  else
+    echo "Done ✓ (${warning_count} warning(s))"
+  fi
+  echo ""
+  if [ "$error_count" -gt 0 ]; then
+    echo "  Errors:"
+    for msg in "${verify_errors[@]}"; do
+      echo "    ✗ ${msg}"
+    done
+  fi
+  if [ "$warning_count" -gt 0 ]; then
+    if [ "$error_count" -gt 0 ]; then echo ""; fi
+    echo "  Warnings:"
+    for msg in "${verify_warnings[@]}"; do
+      echo "    ⚠ ${msg}"
+    done
+  fi
+fi
+
+if [ "$error_count" -gt 0 ]; then
+  exit 1
 fi

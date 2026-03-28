@@ -49,16 +49,16 @@ Everything lives in [`claude-config.txt`](claude-config.txt) — edit it and re-
 
 | Category | What |
 |----------|------|
-| **CLI tools** | git, node, pnpm, gh, jq, ripgrep, uv, @playwright/cli |
+| **CLI tools** | git, node, pnpm, gh, jq, ripgrep, uv, @playwright/cli + cloud (docker, gcloud, aws), deployment (stripe, vercel, supabase), API (httpie, yq, grpcurl, protoc) |
 | **Plugins** | superpowers, frontend-design, document-skills, example-skills |
 | **Subagents** | voltagent-core-dev, voltagent-lang, voltagent-infra, voltagent-qa-sec, voltagent-data-ai, voltagent-dev-exp, voltagent-meta |
-| **MCP servers** | context7, trello *(optional)* |
+| **MCP servers** | context7, trello *(requires env vars)* |
 | **Skills** | excalidraw-diagram, impeccable (20+ design skills), bionic:rigorous-refactor, bionic:ralph-loop, bionic:map-instrument-narrow, bionic:skill-factory |
 | **Hooks** | protect-main.sh, protect-database.sh |
 | **Philosophy** | 10 principles for agentic development → [`~/.claude/CLAUDE.md`](claude-global.md) |
 | **Shell alias** | `claude` → `claude --dangerously-skip-permissions` |
 
-Optional tools (cloud, databases, deployment) are at the bottom of `claude-config.txt` — some active, some commented out. Toggle what you need and re-run.
+Additional tools (Kubernetes, databases, Firebase) are commented out at the bottom of `claude-config.txt` — uncomment what you need and re-run.
 
 ## How It Works
 
@@ -121,7 +121,7 @@ Documentation lookup. Gives Claude tools to query up-to-date library documentati
 
 Why Context7 over other doc servers: Context7 indexes the actual source documentation of libraries and returns relevant code examples. It's purpose-built for LLM consumption — returns concise, structured results rather than raw HTML pages.
 
-**Trello** *(optional)* — `mcp-server | trello | @delorenj/mcp-server-trello | TRELLO_API_KEY,TRELLO_TOKEN`
+**Trello** — `mcp-server | trello | @delorenj/mcp-server-trello | TRELLO_API_KEY,TRELLO_TOKEN`
 
 Board and card management. Gives Claude tools to list boards, create and update cards, manage checklists, add comments, and attach files — all through natural language. Useful for project management workflows where Claude can read task context from Trello cards and update status as work progresses.
 
@@ -133,7 +133,7 @@ Setup:
    export TRELLO_API_KEY="your-api-key"
    export TRELLO_TOKEN="your-token"
    ```
-4. Uncomment the `mcp-server | trello` line in `claude-config.txt` and re-run `./claude-bootstrap.sh`
+4. Re-run `./claude-bootstrap.sh`
 
 The bootstrap reads `TRELLO_API_KEY` and `TRELLO_TOKEN` from your environment and wires them into the MCP server configuration. If either is missing, the server is skipped with a warning.
 
@@ -307,23 +307,27 @@ The notebook lives at `.bionic/memory/` rather than `.claude/memory/` by design.
 
 The first two are hard-blocked by hooks. The last two rely on Claude's judgment informed by the philosophy. This is defense in depth — hooks catch what they can mechanically; principles cover the rest.
 
-### Optional Tools
+### Active Extended Tools
 
-The bottom of [`claude-config.txt`](claude-config.txt) contains entries organized by use case. Toggle what you need (comment/uncomment) and re-run `./claude-bootstrap.sh`.
+The bottom of [`claude-config.txt`](claude-config.txt) contains additional tools organized by use case. Most are already active (uncommented) and install with the bootstrap. Here's what they provide:
 
-**Cloud & Infrastructure** — `kubectl`, `helm`, `stern`, `kubectx`, `argocd`, `docker`, `k9s`. Enable if you're working with Kubernetes clusters. The voltagent-infra subagents (Kubernetes specialist, Terraform engineer, etc.) will use these tools when available.
+**Cloud** — `docker`, `gcloud` (requires cask: `brew install --cask google-cloud-sdk`), `aws` (package: `awscli`). For containerization and cloud infrastructure work.
 
-**GCP** — `gcloud`. Requires a manual cask install (`brew install --cask google-cloud-sdk`) since it's not a standard Homebrew formula.
+**Deployment Platforms** — `stripe`, `vercel`, `supabase`. For deploying directly from Claude sessions and managing payment infrastructure.
 
-**AWS** — `aws` (package: `awscli`). For AWS infrastructure work.
+**API & Serialization** — `httpie` (friendlier curl), `yq` (YAML processor, companion to jq), `grpcurl` (gRPC CLI), `protoc` (protobuf compiler). For API development and testing workflows.
+
+**Productivity Tools** — The Trello MCP server (`@delorenj/mcp-server-trello`) is enabled by default but requires `TRELLO_API_KEY` and `TRELLO_TOKEN` environment variables. If they're not set, bootstrap skips it with a warning. See [Trello](#mcp-servers) above for setup.
+
+### Commented-Out Tools
+
+These are disabled by default. Uncomment in `claude-config.txt` and re-run `./claude-bootstrap.sh` to enable.
+
+**Kubernetes** — `kubectl`, `helm`, `stern`, `kubectx`, `argocd`, `k9s`. Enable if you're working with Kubernetes clusters. The voltagent-infra subagents (Kubernetes specialist, Terraform engineer, etc.) will use these tools when available.
 
 **Databases** — `psql` (package: `libpq`), `mongosh`, `redis`. Also includes an optional `@anthropic-ai/mcp-server-postgres` MCP server that gives Claude direct PostgreSQL access via MCP tools (read-only queries, schema inspection). Enable this if you want Claude to query your database directly rather than generating SQL for you to run.
 
-**Deployment Platforms** — `stripe`, `vercel`, `supabase`, `firebase`. For deploying directly from Claude sessions and managing payment infrastructure.
-
-**API & Serialization** — `httpie` (friendlier curl), `yq` (YAML processor, companion to jq), `grpcurl` (gRPC CLI), `protoc` (protobuf compiler). Enable for API development and testing workflows.
-
-**Productivity Tools** — `@delorenj/mcp-server-trello` MCP server for Trello board and card management. Requires `TRELLO_API_KEY` and `TRELLO_TOKEN` environment variables — the bootstrap reads them from your shell and wires them into the MCP config. See [Trello](#mcp-servers) above for full setup instructions.
+**Firebase** — `firebase` (package: `firebase-cli`). For Firebase deployment and management.
 
 ## Safety
 
