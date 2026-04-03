@@ -3,7 +3,7 @@
 # claude-bootstrap.sh
 # Sets up Claude Code plugins, skills, and dependencies.
 # Idempotent — safe to run multiple times; produces the same result.
-# Requires: claude CLI (macOS + Homebrew)
+# Requires: claude CLI + Homebrew (macOS or Linux/WSL)
 #
 set -euo pipefail
 
@@ -24,17 +24,17 @@ check_cmd() {
 
 check_cmd claude  "Install with: brew install claude-code"
 
+# ─── Platform Detection ─────────────────────────────────────────────────────
+
+source "${SCRIPT_DIR}/lib/platform.sh"
+
 # ─── Homebrew ────────────────────────────────────────────────────────────────
 
 if ! command -v brew &>/dev/null; then
   echo "Installing Homebrew..."
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-fi
-# Ensure brew is on PATH (handles both Apple Silicon and Intel)
-if [ -x /opt/homebrew/bin/brew ]; then
-  eval "$(/opt/homebrew/bin/brew shellenv)"
-elif [ -x /usr/local/bin/brew ]; then
-  eval "$(/usr/local/bin/brew shellenv)"
+  # Re-source to pick up the newly installed brew
+  source "${SCRIPT_DIR}/lib/platform.sh"
 fi
 
 # ─── Config reader ──────────────────────────────────────────────────────────
@@ -258,7 +258,7 @@ ${end_marker}"
 
   # Migrate old claude-setup markers to bionic
   if [ -f "$target" ] && grep -q "$old_start" "$target"; then
-    sed -i '' "s|<!-- claude-setup:start -->|${start_marker}|;s|<!-- claude-setup:end -->|${end_marker}|" "$target"
+    sed_inplace "s|<!-- claude-setup:start -->|${start_marker}|;s|<!-- claude-setup:end -->|${end_marker}|" "$target"
   fi
 
   if [ ! -f "$target" ]; then
@@ -414,36 +414,36 @@ echo ""
 
 echo "Shell alias:"
 echo -n "  claude → claude --dangerously-skip-permissions... "
-ZSHRC=~/.zshrc
-ZSHRC_START="# ─── bionic:start ───"
-ZSHRC_END="# ─── bionic:end ───"
-ZSHRC_CONTENT="alias claude='claude --dangerously-skip-permissions'"
-ZSHRC_SECTION="${ZSHRC_START}
-${ZSHRC_CONTENT}
-${ZSHRC_END}"
+ALIAS_RC="$SHELL_RC"
+ALIAS_START="# ─── bionic:start ───"
+ALIAS_END="# ─── bionic:end ───"
+ALIAS_CONTENT="alias claude='claude --dangerously-skip-permissions'"
+ALIAS_SECTION="${ALIAS_START}
+${ALIAS_CONTENT}
+${ALIAS_END}"
 
 # Migrate old unmarked alias to marker-based section
-if [ -f "$ZSHRC" ] && grep -q "alias claude=.*dangerously-skip-permissions" "$ZSHRC" && ! grep -qF "$ZSHRC_START" "$ZSHRC"; then
-  grep -v "alias claude=.*dangerously-skip-permissions" "$ZSHRC" > "${ZSHRC}.tmp" && mv "${ZSHRC}.tmp" "$ZSHRC"
-  printf '\n%s\n' "$ZSHRC_SECTION" >> "$ZSHRC"
+if [ -f "$ALIAS_RC" ] && grep -q "alias claude=.*dangerously-skip-permissions" "$ALIAS_RC" && ! grep -qF "$ALIAS_START" "$ALIAS_RC"; then
+  grep -v "alias claude=.*dangerously-skip-permissions" "$ALIAS_RC" > "${ALIAS_RC}.tmp" && mv "${ALIAS_RC}.tmp" "$ALIAS_RC"
+  printf '\n%s\n' "$ALIAS_SECTION" >> "$ALIAS_RC"
   echo "✓ (migrated to markers)"
-elif grep -qF "$ZSHRC_START" "$ZSHRC" 2>/dev/null; then
+elif grep -qF "$ALIAS_START" "$ALIAS_RC" 2>/dev/null; then
   # Markers exist — replace managed section
   {
-    awk -v start="$ZSHRC_START" '
+    awk -v start="$ALIAS_START" '
       $0 == start { exit }
       { print }
-    ' "$ZSHRC"
-    echo "$ZSHRC_SECTION"
-    awk -v end="$ZSHRC_END" '
+    ' "$ALIAS_RC"
+    echo "$ALIAS_SECTION"
+    awk -v end="$ALIAS_END" '
       found { print }
       $0 == end { found=1 }
-    ' "$ZSHRC"
-  } > "${ZSHRC}.tmp" && mv "${ZSHRC}.tmp" "$ZSHRC"
+    ' "$ALIAS_RC"
+  } > "${ALIAS_RC}.tmp" && mv "${ALIAS_RC}.tmp" "$ALIAS_RC"
   echo "✓ (already installed)"
 else
   # No markers, no alias — append
-  printf '\n%s\n' "$ZSHRC_SECTION" >> "$ZSHRC"
+  printf '\n%s\n' "$ALIAS_SECTION" >> "$ALIAS_RC"
   echo "✓"
 fi
 echo ""
@@ -628,7 +628,7 @@ read_config "uv-tool" verify_uv_tool
 
 echo ""
 echo "  Playwright browsers:"
-if ls ~/Library/Caches/ms-playwright/chromium-* &>/dev/null; then
+if ls "${PLAYWRIGHT_CACHE}"/chromium-* &>/dev/null; then
   echo "    chromium ✓"
 else
   echo "    chromium — not found"
@@ -707,10 +707,10 @@ fi
 
 echo ""
 echo "  Shell alias:"
-if [ -f ~/.zshrc ] && grep -qF "# ─── bionic:start ───" ~/.zshrc; then
-  echo "    ~/.zshrc ✓"
+if [ -f "$SHELL_RC" ] && grep -qF "# ─── bionic:start ───" "$SHELL_RC"; then
+  echo "    ~/${SHELL_RC_NAME} ✓"
 else
-  echo "    ~/.zshrc — not installed"
+  echo "    ~/${SHELL_RC_NAME} — not installed"
 fi
 
 # ─── Summary Report ─────────────────────────────────────────────────────────
