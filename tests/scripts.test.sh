@@ -420,6 +420,10 @@ _bootstrap_fn="$(awk '/^read_config\(\)/{found=1} found{print} found && /^\}$/{e
 _reset_fn="$(awk '/^read_config\(\)/{found=1} found{print} found && /^\}$/{exit}' "$RESET")"
 expect_eq "read_config function body identical in bootstrap and reset" "$_bootstrap_fn" "$_reset_fn"
 
+# 3o: Both scripts source lib/platform.sh
+expect_true "bootstrap sources lib/platform.sh" grep -q 'source.*lib/platform\.sh' "$BOOTSTRAP"
+expect_true "reset sources lib/platform.sh" grep -q 'source.*lib/platform\.sh' "$RESET"
+
 # ============================================================
 # SECTION 4: Hook file consistency
 # ============================================================
@@ -493,21 +497,21 @@ expect_true "hooks/ contains at least one non-test hook" [ "$_hook_count" -gt 0 
 echo ""
 echo "=== Section 5: Shell alias marker consistency ==="
 
-# 5a: Bootstrap defines ZSHRC_START containing 'bionic:start'
-_bootstrap_start="$(grep 'ZSHRC_START=' "$BOOTSTRAP" | head -1)"
-expect_contains "bootstrap ZSHRC_START contains bionic:start" "bionic:start" "$_bootstrap_start"
+# 5a: Bootstrap defines ALIAS_START containing 'bionic:start'
+_bootstrap_start="$(grep 'ALIAS_START=' "$BOOTSTRAP" | head -1)"
+expect_contains "bootstrap ALIAS_START contains bionic:start" "bionic:start" "$_bootstrap_start"
 
-# 5b: Bootstrap defines ZSHRC_END containing 'bionic:end'
-_bootstrap_end="$(grep 'ZSHRC_END=' "$BOOTSTRAP" | head -1)"
-expect_contains "bootstrap ZSHRC_END contains bionic:end" "bionic:end" "$_bootstrap_end"
+# 5b: Bootstrap defines ALIAS_END containing 'bionic:end'
+_bootstrap_end="$(grep 'ALIAS_END=' "$BOOTSTRAP" | head -1)"
+expect_contains "bootstrap ALIAS_END contains bionic:end" "bionic:end" "$_bootstrap_end"
 
-# 5c: Reset defines ZSHRC_START with the same value as bootstrap
-_reset_start="$(grep 'ZSHRC_START=' "$RESET" | head -1)"
-expect_eq "reset ZSHRC_START matches bootstrap ZSHRC_START" "$_bootstrap_start" "$_reset_start"
+# 5c: Reset defines ALIAS_START with the same value as bootstrap
+_reset_start="$(grep 'ALIAS_START=' "$RESET" | head -1)"
+expect_eq "reset ALIAS_START matches bootstrap ALIAS_START" "$_bootstrap_start" "$_reset_start"
 
-# 5d: Reset defines ZSHRC_END with the same value as bootstrap
-_reset_end="$(grep 'ZSHRC_END=' "$RESET" | head -1)"
-expect_eq "reset ZSHRC_END matches bootstrap ZSHRC_END" "$_bootstrap_end" "$_reset_end"
+# 5d: Reset defines ALIAS_END with the same value as bootstrap
+_reset_end="$(grep 'ALIAS_END=' "$RESET" | head -1)"
+expect_eq "reset ALIAS_END matches bootstrap ALIAS_END" "$_bootstrap_end" "$_reset_end"
 
 # 5e: Bootstrap uses bionic:start marker (may also reference old claude-setup:start for migration)
 expect_true "bootstrap references bionic:start" grep -q 'bionic:start' "$BOOTSTRAP"
@@ -531,13 +535,13 @@ expect_true "reset global-memory start_marker is bionic:start" \
 expect_true "reset global-memory end_marker is bionic:end" \
   grep -q 'bionic:end' "$RESET"
 
-# 5i: Bootstrap verification section checks for bionic:start in .zshrc
+# 5i: Bootstrap verification section checks for bionic:start in shell rc
 _bootstrap_verify_shell="$(grep -A 3 '"  Shell alias:"' "$BOOTSTRAP" 2>/dev/null || grep -A 3 'Shell alias:' "$BOOTSTRAP" | head -6)"
-expect_contains "bootstrap verification checks bionic:start in zshrc" "bionic:start" "$_bootstrap_verify_shell"
+expect_contains "bootstrap verification checks bionic:start in shell rc" "bionic:start" "$_bootstrap_verify_shell"
 
-# 5j: Reset verification section checks for bionic:start in .zshrc
+# 5j: Reset verification section checks for bionic:start in shell rc
 _reset_verify_shell="$(grep -A 3 'Shell alias:' "$RESET" | head -8)"
-expect_contains "reset verification checks bionic:start in zshrc" "bionic:start" "$_reset_verify_shell"
+expect_contains "reset verification checks bionic:start in shell rc" "bionic:start" "$_reset_verify_shell"
 
 # ============================================================
 # Results

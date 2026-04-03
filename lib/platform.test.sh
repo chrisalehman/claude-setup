@@ -198,7 +198,8 @@ expect_false "platform.sh does not run apt install" grep -q "apt install\|apt-ge
 expect_false "platform.sh does not run brew install" grep -q "brew install" "${REPO}/lib/platform.sh"
 
 # 7b: Both bootstrap and reset source the library
-# NOTE: Added by Task 5 after bootstrap/reset are updated (Tasks 3-4)
+expect_true "bootstrap sources lib/platform.sh" grep -q 'source.*lib/platform\.sh' "${REPO}/claude-bootstrap.sh"
+expect_true "reset sources lib/platform.sh" grep -q 'source.*lib/platform\.sh' "${REPO}/claude-reset.sh"
 
 # ============================================================
 # Results
