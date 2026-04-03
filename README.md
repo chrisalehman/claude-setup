@@ -70,7 +70,11 @@ bionic/
 ├── claude-global.md         # Philosophy → ~/.claude/CLAUDE.md
 ├── claude-bootstrap.sh      # Install (idempotent)
 ├── claude-reset.sh          # Remove everything
+├── wsl-setup.sh             # One-time WSL2 setup (Windows)
 ├── test.sh                  # Run all test suites locally
+├── lib/                     # Shared libraries
+│   ├── platform.sh          # OS detection (macOS/Linux)
+│   └── platform.test.sh     # Platform detection tests
 ├── hooks/                   # Safety guardrails
 │   ├── protect-main.sh      # Blocks pushes to main/master
 │   ├── protect-database.sh  # Blocks destructive SQL
@@ -293,7 +297,7 @@ Why these metrics: Context window % tells you when you're approaching compressio
 
 **Shell alias: `claude → claude --dangerously-skip-permissions`**
 
-Added to `~/.zshrc`. Bypasses Claude Code's interactive permission prompts for every tool call. Without this, Claude pauses and asks "Allow this Bash command? [y/n]" on every operation, breaking autonomous workflows.
+Added to your shell rc file (`~/.zshrc` on macOS, `~/.bashrc` on Linux/WSL). Bypasses Claude Code's interactive permission prompts for every tool call. Without this, Claude pauses and asks "Allow this Bash command? [y/n]" on every operation, breaking autonomous workflows.
 
 Why this is safe despite the name: The hooks provide the actual safety net. `--dangerously-skip-permissions` removes the interactive friction, while `protect-main.sh` and `protect-database.sh` hard-block the operations that are genuinely dangerous. The philosophy in `CLAUDE.md` adds the judgment layer — teaching Claude when to act and when to escalate. The result: Claude operates autonomously on safe operations and is physically prevented from the dangerous ones.
 
@@ -373,4 +377,20 @@ Hooks intercept `Bash` commands to catch accidental pushes to main and destructi
 
 ## Requirements
 
-macOS with Homebrew. Claude Code CLI installed (`brew install claude-code`).
+**macOS:** Homebrew and Claude Code CLI (`brew install claude-code`).
+
+**Windows (WSL2):**
+
+1. Open PowerShell as Administrator: `wsl --install`
+2. Restart your computer
+3. Open the Ubuntu terminal from the Start menu
+4. Clone this repo and run the one-time setup:
+   ```bash
+   git clone git@github.com:chrisalehman/bionic.git
+   cd bionic
+   ./wsl-setup.sh
+   ```
+5. Then run the bootstrap:
+   ```bash
+   ./claude-bootstrap.sh
+   ```

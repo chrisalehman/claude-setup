@@ -21,8 +21,11 @@ jobs:
           bash -n hooks/protect-database.sh
           bash -n tests/scripts.test.sh
           bash -n test.sh
+          bash -n lib/platform.sh
+          bash -n lib/platform.test.sh
+          bash -n wsl-setup.sh
       - name: ShellCheck main scripts
-        run: shellcheck --severity=warning claude-bootstrap.sh claude-reset.sh test.sh
+        run: shellcheck --severity=warning claude-bootstrap.sh claude-reset.sh test.sh lib/platform.sh wsl-setup.sh
       - name: ShellCheck hooks
         run: shellcheck hooks/protect-main.sh hooks/protect-database.sh
 
