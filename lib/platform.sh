@@ -45,6 +45,7 @@ if [ -n "$BREW_PREFIX" ] && [ -x "${BREW_PREFIX}/bin/brew" ]; then
 fi
 
 # ─── Shell rc file ─────────────────────────────────────────────────────────
+# shellcheck disable=SC2034  # SHELL_RC and SHELL_RC_NAME are consumed by sourcing scripts (bootstrap/reset)
 
 case "$(basename "${SHELL:-/bin/bash}")" in
   zsh)
@@ -58,6 +59,7 @@ case "$(basename "${SHELL:-/bin/bash}")" in
 esac
 
 # ─── Playwright cache ─────────────────────────────────────────────────────
+# shellcheck disable=SC2034  # PLAYWRIGHT_CACHE is consumed by sourcing scripts (bootstrap/reset)
 
 case "$OS" in
   Darwin) PLAYWRIGHT_CACHE=~/Library/Caches/ms-playwright ;;

@@ -195,7 +195,8 @@ do_clean_local_package() {
 }
 
 do_remove_mcp_server() {
-  local name="$1" pkg="$2" env_vars="${3:-}"
+  local name="$1"
+  # $2 (pkg) and $3 (env_vars) are unused — removal only needs the name.
 
   if ! confirm "MCP server: ${name}"; then
     echo "  ${name} — skipped"
@@ -301,6 +302,7 @@ else
     # live under any event, so we iterate rather than hardcoding PreToolUse.
     if [ -f "$settings" ] && jq -e '.hooks' "$settings" &>/dev/null; then
       # Note: uses literal ~ to match what bootstrap stored in settings.json
+      # shellcheck disable=SC2088  # literal tilde is intentional — string-matches the settings.json entry
       cmd="~/.claude/hooks/${name}"
       tmp="${settings}.tmp"
       jq --arg c "$cmd" '
