@@ -110,6 +110,7 @@ cat > "$_cfg_file" << 'EOF'
 brew-dep     | git
 brew-dep     | rg            | ripgrep
 npm-global   | @playwright/cli
+npm-global   | @sentry/cli
 mcp-server   | context7      | @upstash/context7-mcp@latest
 mcp-server   | trello        | @delorenj/mcp-server-trello | TRELLO_API_KEY,TRELLO_TOKEN
 mcp-server   | sentry        | @sentry/mcp-server@latest   | SENTRY_ACCESS_TOKEN
@@ -147,11 +148,15 @@ _check_rg() {
 read_config "brew-dep" _check_rg
 expect_eq "brew-dep three-field: rg maps to ripgrep" "ripgrep" "$_found_rg_pkg"
 
-# 1c: npm-global entry parses correctly
-_got_npm=""
-_capture_npm() { _got_npm="$1"; }
-read_config "npm-global" _capture_npm
-expect_eq "npm-global: package name parsed" "@playwright/cli" "$_got_npm"
+# 1c: npm-global entry parses correctly (@playwright/cli)
+_found_playwright=0
+_check_playwright() {
+  if [ "$1" = "@playwright/cli" ]; then
+    _found_playwright=1
+  fi
+}
+read_config "npm-global" _check_playwright
+expect_eq "npm-global: @playwright/cli entry found" "1" "$_found_playwright"
 
 # 1d: mcp-server two-field entry (name + package, no env vars)
 _ctx7_pkg=""
@@ -244,13 +249,23 @@ _check_sentry() {
 read_config "mcp-server" _check_sentry
 expect_eq "mcp-server: sentry f3 has SENTRY_ACCESS_TOKEN" "SENTRY_ACCESS_TOKEN" "$_sentry_env"
 
-# 1o: Unknown type yields zero callbacks
+# 1o: npm-global sentry-cli entry parses correctly
+_found_sentry_cli=0
+_check_sentry_cli() {
+  if [ "$1" = "@sentry/cli" ]; then
+    _found_sentry_cli=1
+  fi
+}
+read_config "npm-global" _check_sentry_cli
+expect_eq "npm-global: @sentry/cli entry found" "1" "$_found_sentry_cli"
+
+# 1p: Unknown type yields zero callbacks
 _unknown_count=0
 _count_unknown() { _unknown_count=$((_unknown_count + 1)); }
 read_config "no-such-type" _count_unknown
 expect_eq "unknown type yields zero callbacks" "0" "$_unknown_count"
 
-# 1p: mcp-server callback receives all three fields (f1, f2, f3) for three-field entry
+# 1q: mcp-server callback receives all three fields (f1, f2, f3) for three-field entry
 _trello_f1="" _trello_f2="" _trello_f3=""
 _check_trello_all() {
   if [ "$1" = "trello" ]; then

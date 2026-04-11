@@ -119,4 +119,5 @@ mcp-server   | trello        | @delorenj/mcp-server-trello | TRELLO_API_KEY,TREL
 # Requires a Sentry User Auth Token. Create one at https://sentry.io/settings/auth-tokens/
 # Set SENTRY_ACCESS_TOKEN in your shell environment, then re-run.
 #
+npm-global   | @sentry/cli
 mcp-server   | sentry        | @sentry/mcp-server@latest   | SENTRY_ACCESS_TOKEN

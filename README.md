@@ -49,7 +49,7 @@ Everything lives in [`claude-config.txt`](claude-config.txt) — edit it and re-
 
 | Category | What |
 |----------|------|
-| **CLI tools** | git, node, pnpm, gh, jq, ripgrep, uv, @playwright/cli, notebooklm *(via uv)* + cloud (docker, gcloud, aws), deployment (stripe, vercel, supabase, fastlane, eas-cli), API (httpie, yq, grpcurl, protoc) |
+| **CLI tools** | git, node, pnpm, gh, jq, ripgrep, uv, @playwright/cli, @sentry/cli, notebooklm *(via uv)* + cloud (docker, gcloud, aws), deployment (stripe, vercel, supabase, fastlane, eas-cli), API (httpie, yq, grpcurl, protoc) |
 | **Plugins** | superpowers, frontend-design, document-skills, example-skills, ui-ux-pro-max |
 | **Subagents** | voltagent-core-dev, voltagent-lang, voltagent-infra, voltagent-qa-sec, voltagent-data-ai, voltagent-dev-exp, voltagent-meta |
 | **MCP servers** | context7, sentry *(requires env vars)*, trello *(requires env vars)* |
@@ -111,6 +111,7 @@ System-level dependencies that Claude Code and the bootstrap itself depend on. M
 | **ripgrep** | `brew-dep \| rg \| ripgrep` | Claude Code's built-in `Grep` tool is powered by ripgrep (`rg`). Without it, code search falls back to slower alternatives. The binary is `rg` but the Homebrew package name is `ripgrep`, hence the two-field config entry. |
 | **uv** | `brew-dep \| uv` | Python package manager from Astral. Used for the excalidraw-diagram skill setup (`uv sync`, `uv run`) and for installing Python CLI tools via `uv tool install` (e.g., notebooklm-py). Chosen over pip/poetry for speed — installs Python dependencies in seconds, not minutes. |
 | **@playwright/cli** | `npm-global \| @playwright/cli` | Token-efficient browser automation. See below. |
+| **@sentry/cli** | `npm-global \| @sentry/cli` | Release management, source map uploads, and deploy notifications for Sentry. Complements the Sentry MCP server (which is read-heavy — querying issues) with write-heavy CI/CD operations. See below. |
 | **notebooklm** | `uv-tool \| notebooklm-py \| notebooklm` | Unofficial Python CLI and agentic skill for Google NotebookLM. Provides notebook management, source handling, audio/video generation, and research capabilities. Installed via `uv tool install` into an isolated venv with the `notebooklm` binary on PATH. Requires `notebooklm login` for Google OAuth authentication. |
 
 **Playwright CLI** — Token-efficient browser automation. Where the Playwright MCP server injects full page snapshots and screenshots into Claude's context window (~114K tokens per task), the CLI keeps browser state on disk and gives Claude compact YAML snapshots and file paths (~27K tokens per task) — roughly a 4x token reduction. Claude runs `playwright-cli snapshot` to get element references, `playwright-cli click` to interact, and `playwright-cli screenshot` to capture images to disk. At no point does the full DOM or image binary enter the context window unless Claude explicitly reads those files.
@@ -118,6 +119,8 @@ System-level dependencies that Claude Code and the bootstrap itself depend on. M
 Why CLI over MCP: The MCP server works well for short, interactive sessions where Claude needs to reason about page state in real time. But for the "Autonomous Debug Cycles" pattern — where Claude iterates through test → fix → validate loops — the CLI's token efficiency means longer sessions before context compression kicks in, and lower cost per cycle. The CLI is best for well-defined browser tasks; MCP is better when the agent needs rich page reasoning for ambiguous situations.
 
 The bootstrap also runs `npx playwright install chromium` to ensure the browser binary is available.
+
+**Sentry CLI** — CI/CD tool for Sentry release management. Creates releases, uploads source maps and debug symbols, sends deploy notifications, and manages project settings from scripts and pipelines. Where the Sentry MCP server gives Claude read access to issues and events, the CLI handles the write side — tagging releases, associating commits, and uploading artifacts so Sentry can symbolicate stack traces. Requires `SENTRY_AUTH_TOKEN` (or `SENTRY_ACCESS_TOKEN`) in the environment for authentication.
 
 ### MCP Servers
 
