@@ -158,6 +158,18 @@ expect_allow "ls command"                             "ls -la"
 expect_allow "grep mentioning git push"               "grep 'git push' README.md"
 expect_allow "cat file with push content"             "cat deploy.sh"
 
+# Regression: commands with GIT_ env var prefix that are NOT pushes must pass.
+# Previously the ^GIT_ alternative in the segment regex caught any command
+# starting with GIT_, even git commit with a GIT_AUTHOR_DATE prefix.
+expect_allow "GIT_AUTHOR_DATE prefix on commit"       "GIT_AUTHOR_DATE='2026-04-11' git commit -m 'test'"
+expect_allow "GIT_COMMITTER_DATE prefix on commit"    "GIT_COMMITTER_DATE='2026-04-11' git commit -m 'test'"
+expect_allow "env GIT_AUTHOR_DATE on commit"          "env GIT_AUTHOR_DATE='2026-04-11' git commit -m 'test'"
+
+# But GIT_ env var prefix on an actual push MUST still be caught by the
+# downstream "git push anywhere in segment" check.
+expect_block "GIT_SSH_COMMAND prefix on push"         "GIT_SSH_COMMAND=ssh git push origin main"
+expect_block "GIT_ASKPASS prefix on push"             "GIT_ASKPASS=cat git push origin main"
+
 # ============================================================
 # Results
 # ============================================================

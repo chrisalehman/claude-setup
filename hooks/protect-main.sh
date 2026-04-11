@@ -14,7 +14,7 @@ PUSH_CMD=""
 while IFS= read -r segment; do
   # Trim leading whitespace
   segment="${segment#"${segment%%[![:space:]]*}"}"
-  if echo "$segment" | grep -qE '^(git push|GIT_|cd .* git push|env .* git push)'; then
+  if echo "$segment" | grep -qE '^(git push|cd .* git push|env .* git push)'; then
     PUSH_CMD="$segment"
     break
   fi
