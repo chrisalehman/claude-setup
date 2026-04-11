@@ -80,6 +80,36 @@ is still opt-in per project. When you want to adopt it for a new project,
 create `.bionic/memory/INDEX.md` and `.bionic/memory/context.md` and the
 hooks will start firing on the next session.
 
+## Skill precedence
+
+When `superpowers:` and `agent-skills:` could both fire for a task, pick
+per-task — neither wins blanket.
+
+**Prefer `superpowers:`** for the constraint-heavy workflows where its
+failure-mode circuit breakers matter more than content depth:
+
+- `test-driven-development` — "delete code written before the test"
+- `systematic-debugging` — root-cause enforcement, 3-fix architectural stop
+- `writing-plans` — the "no placeholders" rule (`TBD` / `implement later`
+  are plan failures)
+- `receiving-code-review` — forbids sycophantic responses, requires
+  verify-before-implement
+- `using-git-worktrees` — tight executable procedure with safety checks
+
+**Prefer `agent-skills:`** for content-rich workflows where superpowers
+is thinner:
+
+- `idea-refine` — 6 divergent lenses + "Not Doing" list produce sharper
+  ideation than "propose 2-3 approaches"
+- `code-review-and-quality` — for the 5-axis rubric and severity labels
+  (Critical/Nit/Optional/FYI) *content*, then hand off to
+  `superpowers:receiving-code-review` for response behavior
+- `git-workflow-and-versioning` — for the "THINGS I DIDN'T TOUCH"
+  change-summary pattern; superpowers has no equivalent
+
+**Default outside these pairs**: whichever plugin has the more specific
+skill. On ties, prefer `superpowers:` — more battle-tested in the field.
+
 ## Boundaries
 
 Operate without approval EXCEPT:
