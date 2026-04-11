@@ -50,7 +50,7 @@ Everything lives in [`claude-config.txt`](claude-config.txt) — edit it and re-
 | Category | What |
 |----------|------|
 | **CLI tools** | git, node, pnpm, gh, jq, ripgrep, uv, @playwright/cli, @sentry/cli, notebooklm *(via uv)* + cloud (docker, gcloud, aws), deployment (stripe, vercel, supabase, fastlane, eas-cli), API (httpie, yq, grpcurl, protoc) |
-| **Plugins** | superpowers, frontend-design, document-skills, example-skills, ui-ux-pro-max |
+| **Plugins** | superpowers, agent-skills, frontend-design, document-skills, example-skills, ui-ux-pro-max |
 | **Subagents** | voltagent-core-dev, voltagent-lang, voltagent-infra, voltagent-qa-sec, voltagent-data-ai, voltagent-dev-exp, voltagent-meta |
 | **MCP servers** | context7, sentry *(requires env vars)*, trello *(requires env vars)* |
 | **Skills** | excalidraw-diagram, humanizer, notebooklm, impeccable (20+ design skills), bionic:rigorous-refactor, bionic:ralph-loop, bionic:map-instrument-narrow, bionic:skill-factory |
@@ -191,6 +191,14 @@ Plugins extend Claude Code with additional skills and agent types. Installed via
 The critical design choice: the pipeline surfaces architectural *decisions* to you (technology choices, boundary definitions, tradeoffs) rather than burying them in generated code. You make the calls that matter.
 
 Also includes: `dispatching-parallel-agents`, `subagent-driven-development`, `using-git-worktrees`, `finishing-a-development-branch`, `receiving-code-review`.
+
+**agent-skills** (`addy-agent-skills`) — Production-grade engineering skills from Addy Osmani (Google Chrome) covering the full SDLC. Pulls explicit patterns from *Software Engineering at Google*: Hyrum's Law, the Beyonce Rule, Chesterton's Fence, trunk-based development. Complements superpowers rather than replacing it.
+
+**Non-overlapping coverage (filling gaps superpowers doesn't touch)**: `shipping-and-launch` (staged rollouts, feature flag lifecycle), `incremental-implementation` (thin vertical slices), `source-driven-development` (cite docs for every framework decision), `code-simplification` (Chesterton's Fence, Rule of 500), `context-engineering`, `deprecation-and-migration`, `api-and-interface-design`, `security-and-hardening`, `performance-optimization`, `documentation-and-adrs`.
+
+**Overlap with superpowers**: six workflows collide — TDD, debugging, ideation, planning, code review, git. [`claude-global.md`](claude-global.md) contains a per-task precedence rule naming the winner per overlap. Short version: superpowers wins TDD / debugging / planning / code-review-behavior / worktrees (its constraint-heavy circuit breakers — "delete code written before the test", "3-fix architectural stop", "no placeholders", "forbids sycophantic responses" — are the load-bearing advantage). agent-skills wins ideation (6 divergent lenses + "Not Doing" list), code-review *rubric content* (5-axis rubric + severity labels), and the git "THINGS I DIDN'T TOUCH" change-summary pattern.
+
+Why both instead of picking one: forcing a choice would suppress real value from whichever system loses. The precedence rule lets each win where it's strongest — superpowers' behavioral discipline + agent-skills' content depth, rather than a false dichotomy.
 
 #### Design & Document Skills
 
