@@ -414,6 +414,29 @@ _check_ctx7_config() {
 read_config "mcp-server" _check_ctx7_config
 expect_eq "context7 MCP server entry is active in config" "1" "$_ctx7_found"
 
+# 3p: agent-skills plugin entry is active (not commented out) in config
+_agent_skills_found=0
+_agent_skills_source=""
+_check_agent_skills() {
+  if [ "$1" = "agent-skills" ]; then
+    _agent_skills_found=1
+    _agent_skills_source="$2"
+  fi
+}
+read_config "plugin" _check_agent_skills
+expect_eq "agent-skills plugin entry is active in config" "1" "$_agent_skills_found"
+expect_eq "agent-skills plugin sourced from addy-agent-skills" "addy-agent-skills" "$_agent_skills_source"
+
+# 3q: addyosmani/agent-skills marketplace entry is active in config
+_addy_marketplace_found=0
+_check_addy_marketplace() {
+  if [ "$1" = "addyosmani/agent-skills" ]; then
+    _addy_marketplace_found=1
+  fi
+}
+read_config "marketplace" _check_addy_marketplace
+expect_eq "addyosmani/agent-skills marketplace entry is active in config" "1" "$_addy_marketplace_found"
+
 # 3m: Any active mcp-server entries with env vars list at least one var
 _mcp_with_empty_env=""
 _check_mcp_has_env() {

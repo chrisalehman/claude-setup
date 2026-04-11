@@ -34,6 +34,7 @@ uv-tool      | notebooklm-py       | notebooklm
 marketplace  | anthropics/skills
 marketplace  | VoltAgent/awesome-claude-code-subagents
 marketplace  | nextlevelbuilder/ui-ux-pro-max-skill
+marketplace  | addyosmani/agent-skills
 
 plugin       | superpowers         | claude-plugins-official
 plugin       | frontend-design     | claude-plugins-official
@@ -47,6 +48,7 @@ plugin       | voltagent-qa-sec    | voltagent-subagents
 plugin       | voltagent-data-ai   | voltagent-subagents
 plugin       | voltagent-dev-exp   | voltagent-subagents
 plugin       | voltagent-meta      | voltagent-subagents
+plugin       | agent-skills        | addy-agent-skills
 
 global-memory | claude-global.md
 
