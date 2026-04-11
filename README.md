@@ -54,7 +54,7 @@ Everything lives in [`claude-config.txt`](claude-config.txt) — edit it and re-
 | **Subagents** | voltagent-core-dev, voltagent-lang, voltagent-infra, voltagent-qa-sec, voltagent-data-ai, voltagent-dev-exp, voltagent-meta |
 | **MCP servers** | context7, sentry *(requires env vars)*, trello *(requires env vars)* |
 | **Skills** | excalidraw-diagram, humanizer, notebooklm, impeccable (20+ design skills), bionic:rigorous-refactor, bionic:ralph-loop, bionic:map-instrument-narrow, bionic:skill-factory |
-| **Hooks** | protect-main.sh, protect-database.sh |
+| **Hooks** | protect-main.sh, protect-database.sh, memory-update.sh, memory-cleanup.sh |
 | **Philosophy** | 10 principles for agentic development → [`~/.claude/CLAUDE.md`](claude-global.md) |
 | **Shell alias** | `claude` → `claude --dangerously-skip-permissions` |
 
@@ -78,6 +78,8 @@ bionic/
 ├── hooks/                   # Safety guardrails
 │   ├── protect-main.sh      # Blocks pushes to main/master
 │   ├── protect-database.sh  # Blocks destructive SQL
+│   ├── memory-update.sh     # Stop hook: auto-saves session state to .bionic/memory/
+│   ├── memory-cleanup.sh    # SessionStart hook: prunes stale topical files
 │   └── *.test.sh            # Hook test suites
 ├── tests/                   # Script-level test suites
 │   └── scripts.test.sh      # Config parsing, consistency, symmetry
@@ -251,9 +253,9 @@ All bionic skills follow the composability schema: every skill declares a `layer
 | **map-instrument-narrow** | Technique | Evidence-gathering for complex debugging. Prevents guessing without data, fixing without understanding, and instrumenting without architecture. MAP → INSTRUMENT → NARROW phases. |
 | **skill-factory** | Governance | Interviews the user to extract a constraint, layer, dependencies, and rationalizations, then hands off to skill-creator for file generation and eval testing. Prevents creating skills without an identified failure mode. |
 
-### Hooks (Safety Guardrails)
+### Hooks (Safety Guardrails + Memory Automation)
 
-Hooks are shell scripts that intercept Claude Code tool calls before execution. Registered as `PreToolUse` hooks on the `Bash` matcher in `~/.claude/settings.json`. Exit code 0 allows the command; exit code 2 hard-blocks it. Both hooks receive JSON on stdin with the structure `{"tool_input":{"command":"..."}}`.
+Hooks are shell scripts that Claude Code invokes at defined lifecycle events. Bionic ships four: two `PreToolUse` hooks that hard-block dangerous `Bash` commands (`protect-main.sh`, `protect-database.sh`), one `Stop` hook that auto-saves session state (`memory-update.sh`), and one `SessionStart` hook that prunes stale memory (`memory-cleanup.sh`). All four are registered in `~/.claude/settings.json` by `claude-bootstrap.sh`. Safety hooks use exit code 2 to hard-block; memory hooks use JSON output to inject instructions into the conversation.
 
 **protect-main.sh** — [`hooks/protect-main.sh`](hooks/protect-main.sh) → `~/.claude/hooks/protect-main.sh`
 
@@ -279,6 +281,18 @@ Prevents Claude from running destructive SQL. First checks if the command involv
 | `DROP`/`TRUNCATE` piped to a DB client | Catches `echo "DROP TABLE..." \| psql` patterns |
 
 Both hooks have test suites ([`hooks/protect-main.test.sh`](hooks/protect-main.test.sh), [`hooks/protect-database.test.sh`](hooks/protect-database.test.sh)) run in CI via GitHub Actions.
+
+**memory-update.sh** — [`hooks/memory-update.sh`](hooks/memory-update.sh) → `~/.claude/hooks/memory-update.sh`
+
+`Stop` hook that auto-saves session state to `.bionic/memory/context.md` at the end of each turn. Only fires when the project has adopted a `.bionic/memory/` notebook AND git shows meaningful activity AND `context.md` hasn't been touched in the last 15 minutes (debounced to avoid thrashing on every exchange). Returns `{"decision": "block", "reason": "..."}` to inject a save instruction that Claude executes in the same turn. The `stop_hook_active` guard prevents infinite loops — once Claude has saved, the next Stop exits cleanly.
+
+The activity check uses `git status --porcelain -uall` and filters out changes under `.bionic/memory/` itself (to avoid circular triggers from the save) plus `git log --since='30 minutes ago'` to catch recent commits. Non-git projects are skipped entirely.
+
+**memory-cleanup.sh** — [`hooks/memory-cleanup.sh`](hooks/memory-cleanup.sh) → `~/.claude/hooks/memory-cleanup.sh`
+
+`SessionStart` hook (with `startup` matcher, so it doesn't re-fire on compact/clear/resume) that scans `.bionic/memory/*.md` for topical files whose `updated:` frontmatter is older than 30 days. If any are found, emits `hookSpecificOutput.additionalContext` listing the stale files and asking Claude to verify/prune/consolidate before starting the user's task. `INDEX.md` and `context.md` never expire per the protocol. When nothing is stale, exits silently.
+
+Both memory hooks are no-ops for projects without `.bionic/memory/` — the notebook remains opt-in. Create `.bionic/memory/INDEX.md` and `.bionic/memory/context.md` in a project to activate them. Test suites live in [`hooks/memory-update.test.sh`](hooks/memory-update.test.sh) and [`hooks/memory-cleanup.test.sh`](hooks/memory-cleanup.test.sh).
 
 ### Claude Code Configuration
 

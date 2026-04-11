@@ -496,10 +496,15 @@ if [ ! -f "$settings" ]; then
 fi
 
 # Define all managed hooks (event|matcher_or_empty|command pairs)
-# PreToolUse hooks have a matcher; PostToolUse and PermissionRequest hooks do not.
+# PreToolUse uses a Bash matcher; SessionStart uses a source matcher
+# (startup — don't fire on compact/clear/resume since cleanup was already
+# done for this notebook); Stop takes no matcher (fires on every turn end
+# and is debounced inside the hook script itself).
 MANAGED_HOOKS=(
   "PreToolUse|Bash|~/.claude/hooks/protect-main.sh"
   "PreToolUse|Bash|~/.claude/hooks/protect-database.sh"
+  "Stop||~/.claude/hooks/memory-update.sh"
+  "SessionStart|startup|~/.claude/hooks/memory-cleanup.sh"
 )
 
 hooks_added=0

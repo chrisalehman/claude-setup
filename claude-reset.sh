@@ -296,21 +296,25 @@ else
       echo "✓ (already removed)"
     fi
     hooks_removed=$((hooks_removed + 1))
-    # Remove matching entries from settings.json
-    if [ -f "$settings" ] && jq -e '.hooks.PreToolUse' "$settings" &>/dev/null; then
+    # Remove matching entries from settings.json across every hook event
+    # type (PreToolUse, Stop, SessionStart, ...). Bionic-managed hooks can
+    # live under any event, so we iterate rather than hardcoding PreToolUse.
+    if [ -f "$settings" ] && jq -e '.hooks' "$settings" &>/dev/null; then
       # Note: uses literal ~ to match what bootstrap stored in settings.json
       cmd="~/.claude/hooks/${name}"
       tmp="${settings}.tmp"
       jq --arg c "$cmd" '
-        .hooks.PreToolUse |= map(select(.hooks | all(.command != $c)))
+        .hooks |= with_entries(
+          .value |= map(select(.hooks | all(.command != $c)))
+        )
       ' "$settings" > "$tmp" && mv "$tmp" "$settings"
     fi
   done
-  # Clean up empty PreToolUse array, then clean up empty hooks object if nothing else remains
+  # Clean up: drop any event arrays that are now empty, then drop the
+  # whole hooks object if nothing is left.
   if [ -f "$settings" ]; then
     tmp="${settings}.tmp"
-    jq 'if .hooks.PreToolUse == [] then del(.hooks.PreToolUse) else . end' "$settings" > "$tmp" && mv "$tmp" "$settings"
-    # Clean up empty hooks object
+    jq 'if .hooks then .hooks |= with_entries(select(.value | length > 0)) else . end' "$settings" > "$tmp" && mv "$tmp" "$settings"
     jq 'if .hooks == {} then del(.hooks) else . end' "$settings" > "$tmp" && mv "$tmp" "$settings"
   fi
   if [ "$hooks_removed" -eq 0 ]; then

@@ -50,11 +50,35 @@ the same mistake twice.
 
 **Protocol:** Read INDEX.md first. Load only the deep context files that match
 the task. One-liner lessons go inline in INDEX.md; rich context gets a topical
-file. Topical files expire after **30 days** without an `updated` bump — prune
-stale ones at session start. INDEX.md and context.md never expire. **Migration:**
-if `.bionic/memory/` doesn't exist but `.claude/memory/` does, migrate — read
-old files, create INDEX.md (inline one-liners, create topical files for rich
-context), move context.md, then delete `.claude/memory/`.
+file. Topical files expire after **30 days** without an `updated` bump. INDEX.md
+and context.md never expire. **Migration:** if `.bionic/memory/` doesn't exist
+but `.claude/memory/` does, migrate — read old files, create INDEX.md (inline
+one-liners, create topical files for rich context), move context.md, then
+delete `.claude/memory/`.
+
+**Auto-hooks (installed globally by bionic):** Two hooks automate the
+bookkeeping so you don't have to remember to do it manually.
+
+- `memory-update.sh` fires on **Stop** (end of turn). If `.bionic/memory/`
+  exists, git shows meaningful activity, and `context.md` hasn't been
+  touched in the last 15 minutes, the hook returns `decision: block` with
+  a reason asking you to update `context.md` (branch state, what changed,
+  next steps) and add any lessons to INDEX.md. Do the update and return —
+  the loop guard (`stop_hook_active`) prevents infinite retriggering. If
+  nothing meaningful happened this session, respond "memory already
+  current" without making edits.
+- `memory-cleanup.sh` fires on **SessionStart** (new session only). It
+  scans topical files for `updated:` dates older than 30 days and injects
+  `additionalContext` listing the stale files. When you see that list,
+  do one tidying pass before starting the user's task: verify each stale
+  file's continued relevance, bump `updated:` if still accurate, prune if
+  obsolete, and consolidate duplicate INDEX.md rules. Skip files the
+  user's task will naturally touch.
+
+Both hooks are no-ops for projects without `.bionic/memory/` — the notebook
+is still opt-in per project. When you want to adopt it for a new project,
+create `.bionic/memory/INDEX.md` and `.bionic/memory/context.md` and the
+hooks will start firing on the next session.
 
 ## Boundaries
 

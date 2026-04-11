@@ -495,7 +495,15 @@ expect_true "MANAGED_HOOKS includes protect-main.sh" grep -q 'protect-main\.sh' 
 # 4e: MANAGED_HOOKS includes protect-database.sh
 expect_true "MANAGED_HOOKS includes protect-database.sh" grep -q 'protect-database\.sh' "$BOOTSTRAP"
 
-# 4f: hooks/ dir contains at least one non-test hook
+# 4f: MANAGED_HOOKS includes memory-update.sh as a Stop hook
+expect_true "MANAGED_HOOKS includes memory-update.sh as Stop hook" \
+  grep -qE '^\s*"Stop\|\|.*memory-update\.sh"' "$BOOTSTRAP"
+
+# 4g: MANAGED_HOOKS includes memory-cleanup.sh as a SessionStart hook with startup matcher
+expect_true "MANAGED_HOOKS includes memory-cleanup.sh as SessionStart|startup" \
+  grep -qE '^\s*"SessionStart\|startup\|.*memory-cleanup\.sh"' "$BOOTSTRAP"
+
+# 4h: hooks/ dir contains at least one non-test hook
 _hook_count=0
 for hook in "${REPO}/hooks/"*.sh; do
   [ -f "$hook" ] || continue
