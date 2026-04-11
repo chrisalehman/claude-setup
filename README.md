@@ -296,6 +296,8 @@ Both hooks have test suites ([`hooks/protect-main.test.sh`](hooks/protect-main.t
 
 `Stop` hook that auto-saves session state to `.bionic/memory/context.md` at the end of each turn. Only fires when the project has adopted a `.bionic/memory/` notebook AND git shows meaningful activity AND `context.md` hasn't been touched in the last 15 minutes (debounced to avoid thrashing on every exchange). Returns `{"decision": "block", "reason": "..."}` to inject a save instruction that Claude executes in the same turn. The `stop_hook_active` guard prevents infinite loops — once Claude has saved, the next Stop exits cleanly.
 
+**On the "Stop hook error" label**: Claude Code's UI labels any Stop hook returning `decision: block` as "Stop hook error" — this is a cosmetic label, not a real failure. The hook is working as designed; `decision: block` is the only documented Stop hook mechanism that both prevents termination and injects instructions into Claude's current turn. Alternatives (`hookSpecificOutput.additionalContext`, `systemMessage`, exit code 2) are either undocumented for Stop events or fail to reach Claude. Verified against the [hooks documentation](https://code.claude.com/docs/en/hooks).
+
 The activity check uses `git status --porcelain -uall` and filters out changes under `.bionic/memory/` itself (to avoid circular triggers from the save) plus `git log --since='30 minutes ago'` to catch recent commits. Non-git projects are skipped entirely.
 
 **memory-cleanup.sh** — [`hooks/memory-cleanup.sh`](hooks/memory-cleanup.sh) → `~/.claude/hooks/memory-cleanup.sh`
