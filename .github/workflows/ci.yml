@@ -18,7 +18,13 @@ jobs:
           bash -n claude-bootstrap.sh
           bash -n claude-reset.sh
           bash -n hooks/protect-main.sh
+          bash -n hooks/protect-main.test.sh
           bash -n hooks/protect-database.sh
+          bash -n hooks/protect-database.test.sh
+          bash -n hooks/memory-update.sh
+          bash -n hooks/memory-update.test.sh
+          bash -n hooks/memory-cleanup.sh
+          bash -n hooks/memory-cleanup.test.sh
           bash -n tests/scripts.test.sh
           bash -n test.sh
           bash -n lib/platform.sh
@@ -27,7 +33,7 @@ jobs:
       - name: ShellCheck main scripts
         run: shellcheck --severity=warning claude-bootstrap.sh claude-reset.sh test.sh lib/platform.sh wsl-setup.sh
       - name: ShellCheck hooks
-        run: shellcheck hooks/protect-main.sh hooks/protect-database.sh
+        run: shellcheck hooks/protect-main.sh hooks/protect-database.sh hooks/memory-update.sh hooks/memory-cleanup.sh
 
   test:
     runs-on: ubuntu-latest

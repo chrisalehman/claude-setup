@@ -280,7 +280,7 @@ Prevents Claude from running destructive SQL. First checks if the command involv
 | `.drop()` / `.dropDatabase()` / `.deleteMany({})` | MongoDB destructive methods |
 | `DROP`/`TRUNCATE` piped to a DB client | Catches `echo "DROP TABLE..." \| psql` patterns |
 
-Both hooks have test suites ([`hooks/protect-main.test.sh`](hooks/protect-main.test.sh), [`hooks/protect-database.test.sh`](hooks/protect-database.test.sh)) run in CI via GitHub Actions.
+Both hooks have test suites ([`hooks/protect-main.test.sh`](hooks/protect-main.test.sh), [`hooks/protect-database.test.sh`](hooks/protect-database.test.sh)), run in CI via GitHub Actions alongside the memory hook suites.
 
 **memory-update.sh** — [`hooks/memory-update.sh`](hooks/memory-update.sh) → `~/.claude/hooks/memory-update.sh`
 
@@ -292,7 +292,7 @@ The activity check uses `git status --porcelain -uall` and filters out changes u
 
 `SessionStart` hook (with `startup` matcher, so it doesn't re-fire on compact/clear/resume) that scans `.bionic/memory/*.md` for topical files whose `updated:` frontmatter is older than 30 days. If any are found, emits `hookSpecificOutput.additionalContext` listing the stale files and asking Claude to verify/prune/consolidate before starting the user's task. `INDEX.md` and `context.md` never expire per the protocol. When nothing is stale, exits silently.
 
-Both memory hooks are no-ops for projects without `.bionic/memory/` — the notebook remains opt-in. Create `.bionic/memory/INDEX.md` and `.bionic/memory/context.md` in a project to activate them. Test suites live in [`hooks/memory-update.test.sh`](hooks/memory-update.test.sh) and [`hooks/memory-cleanup.test.sh`](hooks/memory-cleanup.test.sh).
+Both memory hooks are no-ops for projects without `.bionic/memory/` — the notebook remains opt-in. Create `.bionic/memory/INDEX.md` and `.bionic/memory/context.md` in a project to activate them. Test suites live in [`hooks/memory-update.test.sh`](hooks/memory-update.test.sh) and [`hooks/memory-cleanup.test.sh`](hooks/memory-cleanup.test.sh), run in CI alongside the safety hook suites.
 
 ### Claude Code Configuration
 
