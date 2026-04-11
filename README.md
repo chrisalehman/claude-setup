@@ -194,13 +194,13 @@ The critical design choice: the pipeline surfaces architectural *decisions* to y
 
 Also includes: `dispatching-parallel-agents`, `subagent-driven-development`, `using-git-worktrees`, `finishing-a-development-branch`, `receiving-code-review`.
 
-**agent-skills** (`addy-agent-skills`) — Production-grade engineering skills from Addy Osmani (Google Chrome) covering the full SDLC. Pulls explicit patterns from *Software Engineering at Google*: Hyrum's Law, the Beyonce Rule, Chesterton's Fence, trunk-based development. Complements superpowers rather than replacing it.
+**agent-skills** (`addy-agent-skills`) — Production-grade engineering skills from Addy Osmani (Google Chrome). Pulls explicit patterns from *Software Engineering at Google*: Hyrum's Law, the Beyonce Rule, Chesterton's Fence, trunk-based development. Complements superpowers rather than replacing it — superpowers brings behavioral discipline, agent-skills brings content depth.
 
 **Non-overlapping coverage (filling gaps superpowers doesn't touch)**: `shipping-and-launch` (staged rollouts, feature flag lifecycle), `incremental-implementation` (thin vertical slices), `source-driven-development` (cite docs for every framework decision), `code-simplification` (Chesterton's Fence, Rule of 500), `context-engineering`, `deprecation-and-migration`, `api-and-interface-design`, `security-and-hardening`, `performance-optimization`, `documentation-and-adrs`.
 
-**Overlap with superpowers**: six workflows collide — TDD, debugging, ideation, planning, code review, git. [`claude-global.md`](claude-global.md) contains a per-task precedence rule naming the winner per overlap. Short version: superpowers wins TDD / debugging / planning / code-review-behavior / worktrees (its constraint-heavy circuit breakers — "delete code written before the test", "3-fix architectural stop", "no placeholders", "forbids sycophantic responses" — are the load-bearing advantage). agent-skills wins ideation (6 divergent lenses + "Not Doing" list), code-review *rubric content* (5-axis rubric + severity labels), and the git "THINGS I DIDN'T TOUCH" change-summary pattern.
+**Overlap with superpowers**: six workflows collide — TDD, debugging, ideation, planning, code review, git. [`claude-global.md`](claude-global.md) contains a per-task precedence rule naming the winner per overlap.
 
-Why both instead of picking one: forcing a choice would suppress real value from whichever system loses. The precedence rule lets each win where it's strongest — superpowers' behavioral discipline + agent-skills' content depth, rather than a false dichotomy.
+Short version: superpowers wins TDD, debugging, planning, code-review behavior, and worktrees — its constraint-heavy circuit breakers ("delete code written before the test", "3-fix architectural stop", "no placeholders", "forbids sycophantic responses") are the load-bearing advantage. agent-skills wins ideation (6 divergent lenses + "Not Doing" list), code-review *rubric content* (5-axis rubric + severity labels), and the git "THINGS I DIDN'T TOUCH" change-summary pattern.
 
 #### Design & Document Skills
 
