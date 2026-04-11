@@ -170,11 +170,13 @@ Why @sentry/mcp-server: Official Sentry MCP server maintained by the Sentry core
 
 ### Plugins & Subagents
 
-Plugins extend Claude Code with additional skills and agent types. Installed via `claude plugin install` from two marketplaces.
+Plugins extend Claude Code with additional skills and agent types. Installed via `claude plugin install` from four marketplaces.
 
 **Marketplaces** — Where plugins are sourced from:
 - `anthropics/skills` — Anthropic's official skill marketplace
 - `VoltAgent/awesome-claude-code-subagents` — Community subagent collection
+- `nextlevelbuilder/ui-ux-pro-max-skill` — UI/UX design intelligence marketplace
+- `addyosmani/agent-skills` — Addy Osmani's production-grade SDLC skills marketplace
 
 #### SDLC Pipeline
 
