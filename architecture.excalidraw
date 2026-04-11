@@ -207,7 +207,7 @@
 
     {
       "type": "rectangle", "id": "group1_rect",
-      "x": 700, "y": 75, "width": 380, "height": 140,
+      "x": 700, "y": 75, "width": 440, "height": 140,
       "strokeColor": "#1e40af", "backgroundColor": "#dbeafe",
       "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "dashed",
       "roughness": 0, "opacity": 100, "angle": 0,
@@ -230,9 +230,9 @@
     },
     {
       "type": "text", "id": "group1_content",
-      "x": 720, "y": 108, "width": 345, "height": 95,
-      "text": "settings.json — hooks, env, MCP, statusline\nCLAUDE.md — philosophy & boundaries\nhooks/ — protect-main, protect-database\nskills/ — excalidraw, impeccable (20+)",
-      "originalText": "settings.json — hooks, env, MCP, statusline\nCLAUDE.md — philosophy & boundaries\nhooks/ — protect-main, protect-database\nskills/ — excalidraw, impeccable (20+)",
+      "x": 720, "y": 108, "width": 405, "height": 95,
+      "text": "settings.json — hooks, env, MCP, statusline\nCLAUDE.md — philosophy, boundaries, skill precedence\nhooks/ — protect-main, protect-db, memory-* (2)\nskills/ — excalidraw, impeccable (20+), bionic (4)",
+      "originalText": "settings.json — hooks, env, MCP, statusline\nCLAUDE.md — philosophy, boundaries, skill precedence\nhooks/ — protect-main, protect-db, memory-* (2)\nskills/ — excalidraw, impeccable (20+), bionic (4)",
       "fontSize": 14, "fontFamily": 3, "textAlign": "left", "verticalAlign": "top",
       "strokeColor": "#374151", "backgroundColor": "transparent",
       "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "solid",
@@ -243,7 +243,7 @@
     },
     {
       "type": "rectangle", "id": "group2_rect",
-      "x": 700, "y": 235, "width": 380, "height": 65,
+      "x": 700, "y": 235, "width": 440, "height": 65,
       "strokeColor": "#1e40af", "backgroundColor": "#dbeafe",
       "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "dashed",
       "roughness": 0, "opacity": 100, "angle": 0,
@@ -266,9 +266,9 @@
     },
     {
       "type": "text", "id": "group2_content",
-      "x": 720, "y": 265, "width": 345, "height": 24,
-      "text": "superpowers · 7 voltagent packs · 3 more",
-      "originalText": "superpowers · 7 voltagent packs · 3 more",
+      "x": 720, "y": 265, "width": 405, "height": 24,
+      "text": "superpowers · agent-skills · 7 voltagent packs · 4 more",
+      "originalText": "superpowers · agent-skills · 7 voltagent packs · 4 more",
       "fontSize": 14, "fontFamily": 3, "textAlign": "left", "verticalAlign": "top",
       "strokeColor": "#374151", "backgroundColor": "transparent",
       "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "solid",
@@ -279,7 +279,7 @@
     },
     {
       "type": "rectangle", "id": "group3_rect",
-      "x": 700, "y": 320, "width": 380, "height": 90,
+      "x": 700, "y": 320, "width": 440, "height": 90,
       "strokeColor": "#1e40af", "backgroundColor": "#dbeafe",
       "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "dashed",
       "roughness": 0, "opacity": 100, "angle": 0,
@@ -302,9 +302,9 @@
     },
     {
       "type": "text", "id": "group3_content",
-      "x": 720, "y": 350, "width": 345, "height": 42,
-      "text": "~/.zshrc (alias) · 8 CLI tools (brew + npm)\nPlaywright browsers · ccstatusline config",
-      "originalText": "~/.zshrc (alias) · 8 CLI tools (brew + npm)\nPlaywright browsers · ccstatusline config",
+      "x": 720, "y": 350, "width": 405, "height": 42,
+      "text": "~/.zshrc (alias) · 20+ CLI tools (brew + npm + uv)\nPlaywright browsers · ccstatusline config",
+      "originalText": "~/.zshrc (alias) · 20+ CLI tools (brew + npm + uv)\nPlaywright browsers · ccstatusline config",
       "fontSize": 14, "fontFamily": 3, "textAlign": "left", "verticalAlign": "top",
       "strokeColor": "#374151", "backgroundColor": "transparent",
       "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "solid",
