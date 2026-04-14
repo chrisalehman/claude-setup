@@ -61,6 +61,7 @@ local-skill  | rigorous-refactor
 local-skill  | ralph-loop
 local-skill  | map-instrument-narrow
 local-skill  | skill-factory
+local-skill  | canonical-sdlc
 
 env-var      | CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS | 1
 

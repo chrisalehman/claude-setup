@@ -30,6 +30,8 @@ When `superpowers:` and `agent-skills:` could both fire, pick per-task.
 
 Outside these pairs: whichever plugin has the more specific skill. On ties, `superpowers:`.
 
+For large-scale efforts (new feature, architectural change, multi-day project), invoke `canonical-sdlc` at session start. It routes to the right skill per phase and enforces evidence per phase. Always prefer `idea-refine` over `brainstorming`.
+
 ## Boundaries
 
 Operate without approval EXCEPT:
