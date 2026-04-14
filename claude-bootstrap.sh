@@ -233,6 +233,19 @@ do_install_local_skill() {
   echo "✓"
 }
 
+do_install_local_command() {
+  local name="$1"
+  local source="${SCRIPT_DIR}/commands/${name}.md"
+  echo -n "  /${name} (local)... "
+  if [ ! -f "$source" ]; then
+    echo "ERROR: commands/${name}.md not found in ${SCRIPT_DIR}" >&2
+    exit 1
+  fi
+  mkdir -p ~/.claude/commands
+  cp "$source" ~/.claude/commands/"${name}.md"
+  echo "✓"
+}
+
 do_install_global_memory() {
   local file="$1"
   local source="${SCRIPT_DIR}/${file}"
@@ -454,6 +467,12 @@ echo "Custom skills:"
 read_config "github-skill" do_install_github_skill
 read_config "github-skill-pack" do_install_github_skill_pack
 read_config "local-skill" do_install_local_skill
+echo ""
+
+# ─── Custom Commands ────────────────────────────────────────────────────────
+
+echo "Custom commands:"
+read_config "local-command" do_install_local_command
 echo ""
 
 # ─── Skill Setup ────────────────────────────────────────────────────────────
@@ -683,6 +702,17 @@ for skill_dir in ~/.claude/skills/*/; do
     echo "    ${name} ⚠ (missing SKILL.md)"
   fi
 done
+
+echo ""
+echo "  Custom commands:"
+if [ -d ~/.claude/commands ] && [ -n "$(ls -A ~/.claude/commands 2>/dev/null)" ]; then
+  for cmd_file in ~/.claude/commands/*.md; do
+    [ -f "$cmd_file" ] || continue
+    echo "    /$(basename "$cmd_file" .md) ✓"
+  done
+else
+  echo "    (none installed)"
+fi
 
 
 echo ""

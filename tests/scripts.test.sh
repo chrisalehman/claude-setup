@@ -286,7 +286,7 @@ echo "=== Section 2: Config file consistency (claude-config.txt) ==="
 
 _cfg_file="$CONFIG"
 
-KNOWN_TYPES="brew-dep npm-global uv-tool mcp-server plugin marketplace github-skill github-skill-pack local-skill global-memory env-var statusline"
+KNOWN_TYPES="brew-dep npm-global uv-tool mcp-server plugin marketplace github-skill github-skill-pack local-skill local-command global-memory env-var statusline"
 
 # 2a: Every uncommented, non-blank line has at least one pipe delimiter
 _bad_lines=""
@@ -329,6 +329,17 @@ _check_local_skill_exists() {
 }
 read_config "local-skill" _check_local_skill_exists
 expect_eq "all local-skill entries have SKILL.md" "" "$_missing_skills"
+
+# 2c-bis: Every local-command entry has a commands/<name>.md file
+_missing_commands=""
+_check_local_command_exists() {
+  local name="$1"
+  if [ ! -f "${REPO}/commands/${name}.md" ]; then
+    _missing_commands="${_missing_commands}${name} "
+  fi
+}
+read_config "local-command" _check_local_command_exists
+expect_eq "all local-command entries have commands/<name>.md" "" "$_missing_commands"
 
 # 2d: Every global-memory file exists in the repo root
 _missing_gm=""
@@ -399,7 +410,7 @@ expect_true "bootstrap uses CONFIG variable from SCRIPT_DIR" grep -q 'CONFIG=.*c
 expect_true "reset uses CONFIG variable from SCRIPT_DIR" grep -q 'CONFIG=.*claude-config' "$RESET"
 
 # 3c-3k: Every config type read in bootstrap is also read in reset
-for config_type in mcp-server env-var statusline plugin global-memory github-skill local-skill npm-global uv-tool marketplace; do
+for config_type in mcp-server env-var statusline plugin global-memory github-skill local-skill local-command npm-global uv-tool marketplace; do
   expect_true "bootstrap reads type: ${config_type}" grep -q "\"${config_type}\"" "$BOOTSTRAP"
   expect_true "reset reads type: ${config_type}" grep -q "\"${config_type}\"" "$RESET"
 done

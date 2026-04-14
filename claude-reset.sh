@@ -80,6 +80,21 @@ do_remove_skill() {
   fi
 }
 
+do_remove_command() {
+  local name="$1"
+  if ! confirm "/${name}"; then
+    echo "  /${name} — skipped"
+    return 0
+  fi
+  echo -n "  /${name}... "
+  if [ -f ~/.claude/commands/"${name}.md" ]; then
+    rm -f ~/.claude/commands/"${name}.md"
+    echo "✓"
+  else
+    echo "✓ (already removed)"
+  fi
+}
+
 do_remove_github_skill_pack() {
   local name="$1" repo="$2"
   if ! confirm "${name} (all skills from ${repo})"; then
@@ -439,6 +454,12 @@ read_config "github-skill-pack" do_remove_github_skill_pack
 read_config "local-skill" do_remove_skill
 echo ""
 
+# ─── Custom Commands ────────────────────────────────────────────────────────
+
+echo "Custom commands:"
+read_config "local-command" do_remove_command
+echo ""
+
 # ─── Skill Setup ────────────────────────────────────────────────────────────
 
 echo "Skill setup:"
@@ -524,6 +545,17 @@ if [ -d ~/.claude/skills ] && [ "$(ls -A ~/.claude/skills 2>/dev/null)" ]; then
   for skill_dir in ~/.claude/skills/*/; do
     [ -d "$skill_dir" ] || continue
     echo "    $(basename "$skill_dir") — still present"
+  done
+else
+  echo "    (none installed) ✓"
+fi
+
+echo ""
+echo "  Custom commands:"
+if [ -d ~/.claude/commands ] && [ -n "$(ls -A ~/.claude/commands 2>/dev/null)" ]; then
+  for cmd_file in ~/.claude/commands/*.md; do
+    [ -f "$cmd_file" ] || continue
+    echo "    /$(basename "$cmd_file" .md) — still present"
   done
 else
   echo "    (none installed) ✓"

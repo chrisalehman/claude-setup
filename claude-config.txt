@@ -8,6 +8,7 @@
 #   github-skill  |  name  |  owner/repo
 #   github-skill-pack | name | owner/repo  (multi-skill repo, each subdir = skill)
 #   local-skill   |  name              (directory under skills/)
+#   local-command |  name              (file under commands/<name>.md)
 #   global-memory |  filename
 #   brew-dep      |  binary              (package = binary)
 #   brew-dep      |  binary  |  package  (when binary ≠ package)
@@ -62,6 +63,8 @@ local-skill  | ralph-loop
 local-skill  | map-instrument-narrow
 local-skill  | skill-factory
 local-skill  | canonical-sdlc
+
+local-command | memory-sweep
 
 env-var      | CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS | 1
 
