@@ -54,7 +54,7 @@ Everything lives in [`claude-config.txt`](claude-config.txt) — edit it and re-
 | **Subagents** | voltagent-core-dev, voltagent-lang, voltagent-infra, voltagent-qa-sec, voltagent-data-ai, voltagent-dev-exp, voltagent-meta |
 | **MCP servers** | context7, sentry *(requires env vars)*, trello *(requires env vars)* |
 | **Skills** | excalidraw-diagram, humanizer, notebooklm, impeccable (20+ design skills), bionic:rigorous-refactor, bionic:ralph-loop, bionic:map-instrument-narrow, bionic:skill-factory |
-| **Hooks** | protect-main.sh, protect-database.sh, memory-update.sh, memory-cleanup.sh |
+| **Hooks** | protect-main.sh, protect-database.sh, memory-update.sh, memory-commit-save.sh, memory-cleanup.sh, canonical-sdlc-evidence-gate.sh |
 | **Philosophy** | 10 principles for agentic development → [`~/.claude/CLAUDE.md`](claude-global.md) |
 | **Shell alias** | `claude` → `claude --dangerously-skip-permissions` |
 
@@ -78,8 +78,10 @@ bionic/
 ├── hooks/                   # Safety guardrails
 │   ├── protect-main.sh      # Blocks pushes to main/master
 │   ├── protect-database.sh  # Blocks destructive SQL
-│   ├── memory-update.sh     # Stop hook: auto-saves session state to .bionic/memory/
+│   ├── memory-commit-save.sh # PostToolUse hook: auto-saves memory after each git commit
+│   ├── memory-update.sh     # Stop hook: fallback auto-save for commitless sessions
 │   ├── memory-cleanup.sh    # SessionStart hook: prunes stale topical files
+│   ├── canonical-sdlc-evidence-gate.sh # PreToolUse hook: blocks commits missing plan evidence
 │   └── *.test.sh            # Hook test suites
 ├── tests/                   # Script-level test suites
 │   └── scripts.test.sh      # Config parsing, consistency, symmetry
@@ -265,7 +267,7 @@ All bionic skills follow the composability schema: every skill declares a `layer
 
 ### Hooks (Safety Guardrails + Memory Automation)
 
-Hooks are shell scripts that Claude Code invokes at defined lifecycle events. Bionic ships four: two `PreToolUse` hooks that hard-block dangerous `Bash` commands (`protect-main.sh`, `protect-database.sh`), one `Stop` hook that auto-saves session state (`memory-update.sh`), and one `SessionStart` hook that prunes stale memory (`memory-cleanup.sh`). All four are registered in `~/.claude/settings.json` by `claude-bootstrap.sh`. Safety hooks use exit code 2 to hard-block; memory hooks use JSON output to inject instructions into the conversation.
+Hooks are shell scripts that Claude Code invokes at defined lifecycle events. Bionic ships six: three `PreToolUse` hooks (`protect-main.sh`, `protect-database.sh`, `canonical-sdlc-evidence-gate.sh`) that hard-block dangerous or premature `Bash` commands, one `PostToolUse` hook (`memory-commit-save.sh`) that fires a memory save after each successful `git commit`, one `Stop` hook (`memory-update.sh`) that catches commitless bursts as a fallback save, and one `SessionStart` hook (`memory-cleanup.sh`) that prunes stale memory. All six are registered in `~/.claude/settings.json` by `claude-bootstrap.sh`. Safety hooks use exit code 2 to hard-block; memory hooks use JSON output to inject instructions into the conversation.
 
 **protect-main.sh** — [`hooks/protect-main.sh`](hooks/protect-main.sh) → `~/.claude/hooks/protect-main.sh`
 
@@ -292,11 +294,22 @@ Prevents Claude from running destructive SQL. First checks if the command involv
 
 Both hooks have test suites ([`hooks/protect-main.test.sh`](hooks/protect-main.test.sh), [`hooks/protect-database.test.sh`](hooks/protect-database.test.sh)), run in CI via GitHub Actions alongside the memory hook suites.
 
+**memory-commit-save.sh** — [`hooks/memory-commit-save.sh`](hooks/memory-commit-save.sh) → `~/.claude/hooks/memory-commit-save.sh`
+
+`PostToolUse|Bash` hook that fires a memory save right after a successful `git commit` (or `git commit --amend`). Commits are the natural unit-of-work boundary, so this produces one save per logical change and keeps `context.md`'s narrative aligned with git history. The hook splits the command on `&&`/`||`/`;`, strips quoted strings (to ignore `git commit` as prose in commit messages), and matches `git commit` as a whole word — so `git commit-tree` and `git commit-graph` don't trigger. Returns `{"decision": "block", "reason": "..."}` to inject the save instruction into Claude's context, identical to `memory-update.sh`'s mechanism.
+
+Four gates prevent over-firing:
+
+1. **Not a commit** → silent. Non-`git commit` Bash calls exit immediately after the segmentation check. The hook does NOT currently fire on `git merge`, `git rebase --continue`, `git cherry-pick`, or `git revert` — those paths are caught by `memory-update.sh`'s 45-min fallback at turn-end.
+2. **No `.bionic/memory/`** → silent. Projects without the notebook are opt-out.
+3. **60-second debounce** via `context.md` mtime. Back-to-back commits (e.g. from subagent-driven workflows) collapse into one save. Note: any write to `context.md` — including a manual editor save or a `touch` — resets this window, so a user actively editing `context.md` at commit-time will suppress that commit's save. Accepted tradeoff; the mechanism intentionally unifies both memory hooks' debounce state via one shared file.
+4. **Circular guard** — HEAD commits whose files are all under `.bionic/memory/` skip. Prevents the save's own commit from re-triggering the save. Uses `git show -m --name-only --format= HEAD` (the `-m` matters: without it, clean merges emit empty output and would be misclassified as memory-only).
+
 **memory-update.sh** — [`hooks/memory-update.sh`](hooks/memory-update.sh) → `~/.claude/hooks/memory-update.sh`
 
-`Stop` hook that auto-saves session state to `.bionic/memory/context.md` at the end of each turn. Only fires when the project has adopted a `.bionic/memory/` notebook AND git shows meaningful activity AND `context.md` hasn't been touched in the last 15 minutes (debounced to avoid thrashing on every exchange). Returns `{"decision": "block", "reason": "..."}` to inject a save instruction that Claude executes in the same turn. The `stop_hook_active` guard prevents infinite loops — once Claude has saved, the next Stop exits cleanly.
+`Stop` hook that serves as the **fallback** to `memory-commit-save.sh`. Fires at turn end to catch meaningful work that hasn't been committed yet (exploratory debugging, multi-turn investigation, writing-before-committing sessions). Only fires when the project has adopted a `.bionic/memory/` notebook AND git shows meaningful activity AND `context.md` hasn't been touched in the last **45 minutes** (the longer window reflects that commit-based saves handle the common case). Returns `{"decision": "block", "reason": "..."}` to inject a save instruction that Claude executes in the same turn. The `stop_hook_active` guard prevents infinite loops.
 
-**On the "Stop hook error" label**: Claude Code's UI labels any Stop hook returning `decision: block` as "Stop hook error" — this is a cosmetic label, not a real failure. The hook is working as designed; `decision: block` is the only documented Stop hook mechanism that both prevents termination and injects instructions into Claude's current turn. Alternatives (`hookSpecificOutput.additionalContext`, `systemMessage`, exit code 2) are either undocumented for Stop events or fail to reach Claude. Verified against the [hooks documentation](https://code.claude.com/docs/en/hooks).
+**On the "Stop hook error" label**: Claude Code's UI labels any Stop or PostToolUse hook returning `decision: block` as "Stop hook error" — this is a cosmetic label, not a real failure. Both memory hooks are working as designed; `decision: block` is the only documented mechanism that both prevents termination and injects instructions into Claude's current turn. Alternatives (`hookSpecificOutput.additionalContext`, `systemMessage`, exit code 2) are either undocumented or fail to reach Claude. Verified against the [hooks documentation](https://code.claude.com/docs/en/hooks).
 
 The activity check uses `git status --porcelain -uall` and filters out changes under `.bionic/memory/` itself (to avoid circular triggers from the save) plus `git log --since='30 minutes ago'` to catch recent commits. Non-git projects are skipped entirely.
 
@@ -304,7 +317,7 @@ The activity check uses `git status --porcelain -uall` and filters out changes u
 
 `SessionStart` hook (with `startup` matcher, so it doesn't re-fire on compact/clear/resume) that scans `.bionic/memory/*.md` for topical files whose `updated:` frontmatter is older than 30 days. If any are found, emits `hookSpecificOutput.additionalContext` listing the stale files and asking Claude to verify/prune/consolidate before starting the user's task. `INDEX.md` and `context.md` never expire per the protocol. When nothing is stale, exits silently.
 
-Both memory hooks are no-ops for projects without `.bionic/memory/` — the notebook remains opt-in. Create `.bionic/memory/INDEX.md` and `.bionic/memory/context.md` in a project to activate them. Test suites live in [`hooks/memory-update.test.sh`](hooks/memory-update.test.sh) and [`hooks/memory-cleanup.test.sh`](hooks/memory-cleanup.test.sh), run in CI alongside the safety hook suites.
+All three memory hooks are no-ops for projects without `.bionic/memory/` — the notebook remains opt-in. Create `.bionic/memory/INDEX.md` and `.bionic/memory/context.md` in a project to activate them. Test suites live in [`hooks/memory-commit-save.test.sh`](hooks/memory-commit-save.test.sh), [`hooks/memory-update.test.sh`](hooks/memory-update.test.sh), and [`hooks/memory-cleanup.test.sh`](hooks/memory-cleanup.test.sh), run in CI alongside the safety hook suites.
 
 ### Claude Code Configuration
 

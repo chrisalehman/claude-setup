@@ -1,10 +1,16 @@
 #!/bin/bash
-# AUTO-UPDATE: Prompts Claude to save session state to .bionic/memory/
-# at turn end. Fires on Stop. Only activates when:
+# AUTO-UPDATE (Stop, fallback): Prompts Claude to save session state to
+# .bionic/memory/ at turn end. Fires on Stop. Only activates when:
 #   1. The project has adopted the .bionic/memory/ notebook
-#   2. context.md hasn't been touched in the last 15 minutes (debounce)
+#   2. context.md hasn't been touched in the last 45 minutes (debounce)
 #   3. The project has meaningful git activity worth recording
 #   4. We're not already in a stop-hook-triggered continuation (loop guard)
+#
+# Fallback role: memory-commit-save.sh (PostToolUse|Bash) is the primary
+# trigger — commits are the natural unit-of-work boundary. This Stop
+# hook's longer 45-min debounce catches sessions with meaningful state
+# that hasn't yet been committed (exploratory debug, multi-turn
+# investigation, writing before committing).
 #
 # When it fires, it returns a block decision with a reason that Claude
 # reads as in-turn feedback — Claude updates memory, then the Stop hook
@@ -40,12 +46,15 @@ if [ ! -d "$MEMORY_DIR" ]; then
   exit 0
 fi
 
-# Debounce: if context.md was touched in the last 15 minutes, skip.
+# Debounce: if context.md was touched in the last 45 minutes, skip.
 # Uses find -mmin which is portable across macOS and Linux.
-# Rationale: Stop fires on every turn — without debouncing, Claude would
-# do memory work on every single exchange, which is expensive and pointless.
+# Rationale: the primary save path is memory-commit-save.sh (PostToolUse
+# on git commit). This Stop hook is the fallback for commitless bursts,
+# so the window widens from the original 15 min to 45 min — enough to
+# catch a long exploration but coarse enough not to compete with the
+# commit path for normal development.
 if [ -f "${MEMORY_DIR}/context.md" ] && \
-   find "${MEMORY_DIR}/context.md" -mmin -15 2>/dev/null | grep -q .; then
+   find "${MEMORY_DIR}/context.md" -mmin -45 2>/dev/null | grep -q .; then
   exit 0
 fi
 
