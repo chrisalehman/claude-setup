@@ -25,6 +25,8 @@ jobs:
           bash -n hooks/memory-update.test.sh
           bash -n hooks/memory-cleanup.sh
           bash -n hooks/memory-cleanup.test.sh
+          bash -n hooks/canonical-sdlc-evidence-gate.sh
+          bash -n hooks/canonical-sdlc-evidence-gate.test.sh
           bash -n tests/scripts.test.sh
           bash -n test.sh
           bash -n lib/platform.sh
@@ -33,7 +35,7 @@ jobs:
       - name: ShellCheck main scripts
         run: shellcheck --severity=warning claude-bootstrap.sh claude-reset.sh test.sh lib/platform.sh wsl-setup.sh
       - name: ShellCheck hooks
-        run: shellcheck hooks/protect-main.sh hooks/protect-database.sh hooks/memory-update.sh hooks/memory-cleanup.sh
+        run: shellcheck hooks/protect-main.sh hooks/protect-database.sh hooks/memory-update.sh hooks/memory-cleanup.sh hooks/canonical-sdlc-evidence-gate.sh
 
   test:
     runs-on: ubuntu-latest

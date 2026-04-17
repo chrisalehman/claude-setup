@@ -537,7 +537,11 @@ expect_true "MANAGED_HOOKS includes memory-update.sh as Stop hook" \
 expect_true "MANAGED_HOOKS includes memory-cleanup.sh as SessionStart|startup" \
   grep -qE '^\s*"SessionStart\|startup\|.*memory-cleanup\.sh"' "$BOOTSTRAP"
 
-# 4h: hooks/ dir contains at least one non-test hook
+# 4h: MANAGED_HOOKS includes canonical-sdlc-evidence-gate.sh as a PreToolUse|Bash hook
+expect_true "MANAGED_HOOKS includes canonical-sdlc-evidence-gate.sh as PreToolUse|Bash" \
+  grep -qE '^\s*"PreToolUse\|Bash\|.*canonical-sdlc-evidence-gate\.sh"' "$BOOTSTRAP"
+
+# 4i: hooks/ dir contains at least one non-test hook
 _hook_count=0
 for hook in "${REPO}/hooks/"*.sh; do
   [ -f "$hook" ] || continue

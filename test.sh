@@ -25,6 +25,7 @@ run_suite "${SCRIPT_DIR}/hooks/protect-main.test.sh"
 run_suite "${SCRIPT_DIR}/hooks/protect-database.test.sh"
 run_suite "${SCRIPT_DIR}/hooks/memory-update.test.sh"
 run_suite "${SCRIPT_DIR}/hooks/memory-cleanup.test.sh"
+run_suite "${SCRIPT_DIR}/hooks/canonical-sdlc-evidence-gate.test.sh"
 run_suite "${SCRIPT_DIR}/tests/scripts.test.sh"
 run_suite "${SCRIPT_DIR}/lib/platform.test.sh"
 
