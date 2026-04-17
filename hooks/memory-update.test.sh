@@ -130,7 +130,7 @@ mkdir -p "$p3/.bionic/memory"
 # context.md touched RIGHT NOW — should debounce
 touch "$p3/.bionic/memory/context.md"
 echo "dirty" > "$p3/newfile.txt"
-expect_silent_exit "recent context.md within 15 min — silent" "$p3" '{}'
+expect_silent_exit "recent context.md within 45 min — silent" "$p3" '{}'
 
 p3b=$(make_project); cleanup_projects+=("$p3b")
 mkdir -p "$p3b/.bionic/memory"

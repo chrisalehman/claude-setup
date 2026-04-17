@@ -515,14 +515,15 @@ if [ ! -f "$settings" ]; then
 fi
 
 # Define all managed hooks (event|matcher_or_empty|command pairs)
-# PreToolUse uses a Bash matcher; SessionStart uses a source matcher
-# (startup — don't fire on compact/clear/resume since cleanup was already
-# done for this notebook); Stop takes no matcher (fires on every turn end
-# and is debounced inside the hook script itself).
+# PreToolUse and PostToolUse use a Bash matcher; SessionStart uses a
+# source matcher (startup — don't fire on compact/clear/resume since
+# cleanup was already done for this notebook); Stop takes no matcher
+# (fires on every turn end and is debounced inside the hook script itself).
 MANAGED_HOOKS=(
   "PreToolUse|Bash|~/.claude/hooks/protect-main.sh"
   "PreToolUse|Bash|~/.claude/hooks/protect-database.sh"
   "PreToolUse|Bash|~/.claude/hooks/canonical-sdlc-evidence-gate.sh"
+  "PostToolUse|Bash|~/.claude/hooks/memory-commit-save.sh"
   "Stop||~/.claude/hooks/memory-update.sh"
   "SessionStart|startup|~/.claude/hooks/memory-cleanup.sh"
 )
