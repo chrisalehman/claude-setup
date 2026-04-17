@@ -33,6 +33,25 @@ make_home() {
   echo "$dir"
 }
 
+# Creates an isolated project dir with docs/bionic/plans/ ready to receive
+# plan files. Returned path plays the CLAUDE_PROJECT_DIR role.
+make_project() {
+  local dir
+  dir=$(mktemp -d)
+  mkdir -p "$dir/docs/bionic/plans"
+  cleanup_dirs+=("$dir")
+  echo "$dir"
+}
+
+# Writes $2 as a plan file inside $1/docs/bionic/plans/ (project-local dir).
+write_project_plan() {
+  local project_dir="$1" content="$2" name="${3:-active.md}"
+  local path="$project_dir/docs/bionic/plans/$name"
+  printf '%s\n' "$content" > "$path"
+  touch "$path"
+  echo "$path"
+}
+
 # Writes $2 as the content of a plan file inside $1/.claude/plans/.
 # Touches mtime to "now" so it becomes the newest.
 write_plan() {
@@ -55,7 +74,24 @@ run_hook() {
   tmp_err=$(mktemp)
   # Capture exit code without letting errexit kill the test runner, and
   # without the `|| true` trick (which replaces $? with 0).
-  if HOME="$home_dir" bash "$HOOK" <<< "$input" >/dev/null 2>"$tmp_err"; then
+  if HOME="$home_dir" CLAUDE_PROJECT_DIR="" bash "$HOOK" <<< "$input" >/dev/null 2>"$tmp_err"; then
+    HOOK_EXIT=0
+  else
+    HOOK_EXIT=$?
+  fi
+  HOOK_STDERR=$(cat "$tmp_err")
+  rm -f "$tmp_err"
+}
+
+# Like run_hook but also sets CLAUDE_PROJECT_DIR so the hook will scan
+# project-local plan directories (docs/bionic/plans/, docs/superpowers/plans/).
+run_hook_with_project() {
+  local home_dir="$1" project_dir="$2" command="$3"
+  local input
+  input=$(jq -n --arg c "$command" '{tool_input: {command: $c}}')
+  local tmp_err
+  tmp_err=$(mktemp)
+  if HOME="$home_dir" CLAUDE_PROJECT_DIR="$project_dir" bash "$HOOK" <<< "$input" >/dev/null 2>"$tmp_err"; then
     HOOK_EXIT=0
   else
     HOOK_EXIT=$?
@@ -276,6 +312,109 @@ touch -t 202001010000 "$h7b/.claude/plans/old-bad.md" 2>/dev/null || \
 write_plan "$h7b" "# unrelated plan, no SDLC State" "new-neutral.md" > /dev/null
 expect_allow "newest plan without SDLC State — allow despite bad older plan" \
   "$h7b" 'git commit -m "x"'
+
+# ============================================================
+# Section 8: project-local plan directory (docs/bionic/plans/)
+# ============================================================
+
+echo ""
+echo "=== Section 8: Project-local plan dir (CLAUDE_PROJECT_DIR) ==="
+
+# Helpers that exercise both plan-dir paths at once.
+expect_allow_both() {
+  local label="$1" home_dir="$2" project_dir="$3" command="$4"
+  TOTAL=$((TOTAL + 1))
+  run_hook_with_project "$home_dir" "$project_dir" "$command"
+  if [ "$HOOK_EXIT" -eq 0 ] && [ -z "$HOOK_STDERR" ]; then
+    echo "PASS: $label"
+    PASS=$((PASS + 1))
+  else
+    echo "FAIL (expected allow): $label"
+    echo "  exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+expect_block_both() {
+  local label="$1" home_dir="$2" project_dir="$3" command="$4" substr="${5:-BLOCKED}"
+  TOTAL=$((TOTAL + 1))
+  run_hook_with_project "$home_dir" "$project_dir" "$command"
+  if [ "$HOOK_EXIT" -eq 2 ] && echo "$HOOK_STDERR" | grep -q "$substr"; then
+    echo "PASS: $label"
+    PASS=$((PASS + 1))
+  else
+    echo "FAIL (expected block with '$substr'): $label"
+    echo "  exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+# 8a — project-local plan alone, global empty: hook honors project plan.
+h8a=$(make_home); p8a=$(make_project)
+write_project_plan "$p8a" "## SDLC State
+current: 5
+Phase 5: TODO" > /dev/null
+expect_block_both "project-local plan (bad) blocks with no global plan" \
+  "$h8a" "$p8a" 'git commit -m "x"' "placeholder"
+
+# 8b — project-local plan alone, global empty: good evidence allows.
+h8b=$(make_home); p8b=$(make_project)
+write_project_plan "$p8b" "## SDLC State
+current: 5
+Phase 5: commit abc123 tests green" > /dev/null
+expect_allow_both "project-local plan (good) allows with no global plan" \
+  "$h8b" "$p8b" 'git commit -m "x"'
+
+# 8c — both plans exist, project is newer → project wins.
+h8c=$(make_home); p8c=$(make_project)
+write_plan "$h8c" "## SDLC State
+current: 5
+Phase 5: commit xyz green" "old-global.md" > /dev/null
+touch -t 202001010000 "$h8c/.claude/plans/old-global.md" 2>/dev/null || \
+  touch -d "2020-01-01" "$h8c/.claude/plans/old-global.md" 2>/dev/null || true
+write_project_plan "$p8c" "## SDLC State
+current: 5
+Phase 5: TODO" > /dev/null
+expect_block_both "newer project plan (bad) wins over older global (good)" \
+  "$h8c" "$p8c" 'git commit -m "x"' "placeholder"
+
+# 8d — both plans exist, global is newer → global wins.
+h8d=$(make_home); p8d=$(make_project)
+write_project_plan "$p8d" "## SDLC State
+current: 5
+Phase 5: TODO" "old-proj.md" > /dev/null
+touch -t 202001010000 "$p8d/docs/bionic/plans/old-proj.md" 2>/dev/null || \
+  touch -d "2020-01-01" "$p8d/docs/bionic/plans/old-proj.md" 2>/dev/null || true
+write_plan "$h8d" "## SDLC State
+current: 5
+Phase 5: commit xyz green" > /dev/null
+expect_allow_both "newer global plan (good) wins over older project (bad)" \
+  "$h8d" "$p8d" 'git commit -m "x"'
+
+# 8e — project dir lacks docs/bionic/plans/: hook falls back to global.
+h8e=$(make_home)
+p8e=$(mktemp -d); cleanup_dirs+=("$p8e") # no docs/bionic/plans/ inside
+write_plan "$h8e" "## SDLC State
+current: 5
+Phase 5: TODO" > /dev/null
+expect_block_both "project without docs/bionic/plans/ falls back to global plan" \
+  "$h8e" "$p8e" 'git commit -m "x"' "placeholder"
+
+# 8f — CLAUDE_PROJECT_DIR unset: original behavior (global only).
+h8f=$(make_home)
+write_plan "$h8f" "## SDLC State
+current: 5
+Phase 5: TODO" > /dev/null
+expect_block "CLAUDE_PROJECT_DIR unset: still gates on global plan" \
+  "$h8f" 'git commit -m "x"' "placeholder"
+
+# 8g — also covers superpowers convention.
+h8g=$(make_home); p8g=$(mktemp -d); cleanup_dirs+=("$p8g")
+mkdir -p "$p8g/docs/superpowers/plans"
+printf '## SDLC State\ncurrent: 5\nPhase 5: TODO\n' > "$p8g/docs/superpowers/plans/active.md"
+touch "$p8g/docs/superpowers/plans/active.md"
+expect_block_both "docs/superpowers/plans/ plan is honored alongside bionic" \
+  "$h8g" "$p8g" 'git commit -m "x"' "placeholder"
 
 # ============================================================
 # Summary

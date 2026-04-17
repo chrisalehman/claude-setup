@@ -52,20 +52,42 @@ if [ "$IS_COMMIT" -eq 0 ]; then
   exit 0
 fi
 
-# Locate the newest plan file under ~/.claude/plans/. If the directory
-# doesn't exist or has no markdown files, this isn't a canonical-sdlc
-# session — let the commit through.
-PLANS_DIR="${HOME}/.claude/plans"
-if [ ! -d "$PLANS_DIR" ]; then
-  exit 0
+# Locate the newest plan file across the supported plan-directory
+# conventions:
+#   - ~/.claude/plans/            (Claude Code global convention)
+#   - <project>/docs/bionic/plans/ (bionic canonical-sdlc convention)
+#   - <project>/docs/superpowers/plans/ (superpowers convention)
+#
+# Picks the newest .md across all that exist. If none exist, this isn't a
+# canonical-sdlc session — let the commit through.
+#
+# Project resolution mirrors memory-update.sh: CLAUDE_PROJECT_DIR first,
+# then the hook input's cwd field, then pwd. Consistent with existing hooks.
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-}"
+if [ -z "$PROJECT_DIR" ]; then
+  PROJECT_DIR=$(echo "$INPUT" | jq -r '.cwd // empty')
+fi
+if [ -z "$PROJECT_DIR" ]; then
+  PROJECT_DIR=$(pwd)
+fi
+
+PLAN_DIRS=( "${HOME}/.claude/plans" )
+if [ -n "$PROJECT_DIR" ]; then
+  PLAN_DIRS+=(
+    "${PROJECT_DIR}/docs/bionic/plans"
+    "${PROJECT_DIR}/docs/superpowers/plans"
+  )
 fi
 
 PLAN=""
-while IFS= read -r -d '' f; do
-  if [ -z "$PLAN" ] || [ "$f" -nt "$PLAN" ]; then
-    PLAN="$f"
-  fi
-done < <(find "$PLANS_DIR" -maxdepth 1 -type f -name '*.md' -print0 2>/dev/null)
+for d in "${PLAN_DIRS[@]}"; do
+  [ -d "$d" ] || continue
+  while IFS= read -r -d '' f; do
+    if [ -z "$PLAN" ] || [ "$f" -nt "$PLAN" ]; then
+      PLAN="$f"
+    fi
+  done < <(find "$d" -maxdepth 1 -type f -name '*.md' -print0 2>/dev/null)
+done
 
 if [ -z "$PLAN" ] || [ ! -f "$PLAN" ]; then
   exit 0
