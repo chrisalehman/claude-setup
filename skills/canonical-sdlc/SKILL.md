@@ -92,13 +92,24 @@ Declare the mode at entry. The mode determines which phases apply.
 
 Mode declaration is reviewable. A feature disguised as `bugfix` to skip phases is drift with a label; declarations must match the actual work.
 
-**Overnight mode in particular** is the mode to declare when the user sets up the problem, gives discovery guidance, and walks away. Its tighter constraints exist because self-discipline alone is insufficient when there's no one watching: the adversarial critic catches what self-review misses, checkpoint commits produce an auditable trail, and the stop-and-wake list halts on classes of decisions that should never be made autonomously.
+**Overnight mode in particular** is the mode to declare when the user sets up the problem, gives discovery guidance, then walks away. Its tighter constraints exist because self-discipline alone is insufficient when there's no one watching: the adversarial critic catches what self-review misses, checkpoint commits produce an auditable trail, and the stop-and-wake list halts on classes of decisions that should never be made autonomously.
+
+**Overnight does NOT mean "skip Phase 1 Q&A".** The autonomous span is **Phases 4–13**, not Phases 1–13. The user-engagement sequence is:
+
+| Phase | Engagement |
+|---|---|
+| 1. Ideate | **Interactive Q&A with the user.** Extensive back-and-forth on scope, non-goals, alternatives. No shortcuts. |
+| 2. Spec | **Semi-interactive.** Translate Phase 1 into a testable contract. Surface remaining ambiguities as Wake Notes; otherwise proceed. |
+| 3. Plan | **Autonomous write → one approval checkpoint.** Claude writes the plan; user reviews and approves before Phase 4 begins. This is the "walk away" boundary. |
+| 4–13 | **Fully autonomous** within the stop-and-wake rules. |
+
+Skipping Phase 1 Q&A to "save time" for the user is the single highest-risk move in overnight mode — it guarantees silent wrong assumptions. Every minute spent in Phase 1 Q&A is cheaper than every hour spent reviewing a wrong overnight build in the morning.
 
 ## Always-On Prerequisites
 
 These load at session start, not as numbered phases:
 - `agent-skills:context-engineering` — load the right files before work begins.
-- Memory sweep — read `.bionic/memory/INDEX.md` and `context.md`.
+- **Memory sweep — recursive.** Read `.bionic/memory/INDEX.md`, `context.md`, AND every file they link to — especially entries under "Deep Context" or equivalent headings. INDEX.md is an *index*, not the whole notebook. Skipping its pointers means missing design decisions already captured in the repo. A stale design picked from an incomplete alternatives set is the #1 autonomous-run failure mode. Plan file conventions vary by project: bionic uses `docs/bionic/plans/`; other projects may use `~/.claude/plans/`, `docs/superpowers/plans/`, or similar. Read prior plans in the active convention as part of the sweep.
 
 ## Woven-In Practices
 
@@ -114,7 +125,12 @@ Each phase has: **goal** · **action** · **completion gate** · **evidence arti
 ### Phase 1 — Ideate (`agent-skills:idea-refine`)
 - **Goal:** Pin scope and non-goals before they get encoded as requirements.
 - **Action:** Run the 6-lens refinement + "Not Doing" list. Always prefer `idea-refine` over `superpowers:brainstorming` (user durable preference).
-- **Gate:** Refined idea statement + explicit "Not Doing" list written.
+- **Engagement:** Interactive Q&A with the user. **Mandatory in every mode, including `overnight`.** Ask what you do not yet know; do not fill in silently. The alternatives lens specifically must check:
+  1. Existing design docs in the repo's memory/notebook (e.g., `.bionic/memory/*.md` including every file linked from `INDEX.md`).
+  2. Prior plans in the project's plan directory (`docs/bionic/plans/`, `docs/superpowers/plans/`, `~/.claude/plans/`, or the project's convention).
+  3. Any explicit TODO file or pending-design-decision note already surfaced by the user.
+  Missing a prior design document here produces the #1 autonomous-run failure mode — option selected from an incomplete alternatives set.
+- **Gate:** Refined idea statement + explicit "Not Doing" list written + alternatives lens cites (or explicitly asserts absence of) prior design artifacts.
 - **Evidence:** Both artifacts in the plan file or a dedicated brief.
 
 ### Phase 2 — Spec (`agent-skills:spec-driven-development`)
@@ -127,10 +143,18 @@ Each phase has: **goal** · **action** · **completion gate** · **evidence arti
 ### Phase 3 — Plan (`superpowers:writing-plans`)
 - **Goal:** Produce the execution contract that survives compaction.
 - **Action:** Write an ordered, verifiable step list with no placeholders. Every plan file used by `canonical-sdlc` must contain two structured sections:
-  - `## SDLC State` — the mode declared at entry, the current phase, and for each phase walked so far a line `Phase N: <evidence path or artifact link>`. The evidence-gate hook reads this section on every `git commit`.
+  - `## SDLC State` — the mode declared at entry, the current phase, and one line per phase of the form `Phase N: <evidence path or artifact link>`. The evidence-gate hook reads this section on every `git commit`. **When advancing phases, replace the existing `Phase N: (pending)` placeholder in-place — do not prepend a new line. One line per phase, forever.**
   - `## Assumptions` — seeded from the Phase 1 "Not Doing" list plus any spec ambiguities resolved during planning. Phase 5 appends to this section inline.
-- **Gate:** Plan file passes writing-plans' own "no placeholders" check **and** contains both structured sections.
-- **Evidence:** Plan file at `~/.claude/plans/<name>.md` or equivalent.
+- **Gate:** Plan file passes writing-plans' own "no placeholders" check **and** contains both structured sections **and** receives explicit user approval before Phase 4 begins (see Approval Checkpoint below).
+- **Evidence:** Plan file in the project's plan directory. Convention varies by project: bionic → `docs/bionic/plans/<name>.md`; superpowers → `docs/superpowers/plans/<name>.md`; otherwise `~/.claude/plans/<name>.md`.
+
+#### Approval Checkpoint (end of Phase 3)
+
+This is the "walk away" boundary. After the plan file is complete:
+- Main thread summarizes the plan for the user: mode, scope, Not-Doing list, ordered steps, critical files.
+- User approves, requests revisions, or halts.
+- **Only on explicit approval** does Phase 4 begin. In `overnight` mode, this is the last interactive moment until Phases 4–13 complete or a stop-and-wake fires.
+- Revisions loop back to Phase 1, 2, or 3 — whichever the revision targets. Do not patch the plan silently.
 
 ### Phase 4 — Isolate (`superpowers:using-git-worktrees`)
 - **Goal:** Physically isolate in-progress work from the main workspace.
@@ -234,6 +258,7 @@ Every subagent invoked during a canonical-sdlc phase — implementer, reviewer, 
 2. **Scope constraint** — what this agent may touch; what it must not.
 3. **Artifact expected** — the evidence shape required for the phase gate.
 4. **Exit condition** — when to stop and report. Includes: "do not pivot approach; surface blockers to the main thread."
+5. **Phase-specific duties.** For dispatches during Phase 5 (implement) in particular: *"Append a one-line entry to the plan file's `## Assumptions` section before your final commit whenever a decision resolves ambiguity that a reviewer could reasonably question. No silent choices. If you make no novel decisions, report that explicitly so the main thread knows no log update was required."* Phase 5 is the phase where the subagent has sole visibility into implementation-time judgment calls; only it can log them.
 
 This prevents subagent wander, the most common source of drift in dispatched work. The prefix scopes the task; it does not override the agent's identity.
 
