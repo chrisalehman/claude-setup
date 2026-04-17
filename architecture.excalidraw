@@ -231,8 +231,8 @@
     {
       "type": "text", "id": "group1_content",
       "x": 720, "y": 108, "width": 405, "height": 95,
-      "text": "settings.json — hooks, env, MCP, statusline\nCLAUDE.md — philosophy, boundaries, skill precedence\nhooks/ — protect-main, protect-db, memory-* (2)\nskills/ — excalidraw, impeccable (20+), bionic (4)",
-      "originalText": "settings.json — hooks, env, MCP, statusline\nCLAUDE.md — philosophy, boundaries, skill precedence\nhooks/ — protect-main, protect-db, memory-* (2)\nskills/ — excalidraw, impeccable (20+), bionic (4)",
+      "text": "settings.json — hooks, env, MCP, statusline\nCLAUDE.md — philosophy, boundaries, skill precedence\nhooks/ — protect-* (2), memory-* (2), sdlc-evidence-gate\nskills/ — excalidraw, impeccable (20+), bionic (5)",
+      "originalText": "settings.json — hooks, env, MCP, statusline\nCLAUDE.md — philosophy, boundaries, skill precedence\nhooks/ — protect-* (2), memory-* (2), sdlc-evidence-gate\nskills/ — excalidraw, impeccable (20+), bionic (5)",
       "fontSize": 14, "fontFamily": 3, "textAlign": "left", "verticalAlign": "top",
       "strokeColor": "#374151", "backgroundColor": "transparent",
       "fillStyle": "solid", "strokeWidth": 1, "strokeStyle": "solid",
