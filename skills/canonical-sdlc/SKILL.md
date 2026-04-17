@@ -44,6 +44,13 @@ Violating the letter of this process is violating the spirit of this process.
 
 **Layer:** Governance (process constraint). Loads when a large-scale effort begins or when picking the skill for the current phase.
 
+**Routing principle — superpowers vs agent-skills.** The two plugins are interleaved because they solve orthogonal problems:
+
+- `superpowers:` owns **discipline anchors** — planning, TDD, debugging, verification, review response, worktree isolation. Its rules are calibrated against Claude's known failure modes (fabrication, sycophancy, rationalization).
+- `agent-skills:` owns **content rubrics** — spec shape, 5-axis review, 6-lens ideation, domain deep-dives (security, performance, UI). Supplies the *shape* each phase's artifact should take.
+
+On overlap, route by kind, not by plugin. On ties, prefer `superpowers:`. When adding a new sub-skill to `needs`, place it by which kind of gap it fills.
+
 **REQUIRED SUB-SKILLS** (declared in `needs`):
 - Operational and technique skills listed in the frontmatter. Load each only when the phase that invokes it is active.
 
@@ -81,8 +88,11 @@ Declare the mode at entry. The mode determines which phases apply.
 | `bugfix` | Defect with known root cause; no behavior change beyond the fix | Woven debug → 5 (TDD + implement) → 8 → 9 (if non-obvious diagnosis) → 10 |
 | `refactor` | Internal change, no behavior change | 3 → 5 → 7 → 8 → 9 → 10 |
 | `spike` | Research or prototype; no code ships | Prereqs → woven source-driven → brief writeup |
+| `overnight` | Unattended autonomous run against a high-level problem statement with upfront guidance | 1–13 with Phase 8b adversarial critic **mandatory**, per-phase checkpoint commit, expanded stop-and-wake list |
 
 Mode declaration is reviewable. A feature disguised as `bugfix` to skip phases is drift with a label; declarations must match the actual work.
+
+**Overnight mode in particular** is the mode to declare when the user sets up the problem, gives discovery guidance, and walks away. Its tighter constraints exist because self-discipline alone is insufficient when there's no one watching: the adversarial critic catches what self-review misses, checkpoint commits produce an auditable trail, and the stop-and-wake list halts on classes of decisions that should never be made autonomously.
 
 ## Always-On Prerequisites
 
@@ -116,8 +126,10 @@ Each phase has: **goal** · **action** · **completion gate** · **evidence arti
 
 ### Phase 3 — Plan (`superpowers:writing-plans`)
 - **Goal:** Produce the execution contract that survives compaction.
-- **Action:** Write an ordered, verifiable step list with no placeholders.
-- **Gate:** Plan file passes writing-plans' own "no placeholders" check.
+- **Action:** Write an ordered, verifiable step list with no placeholders. Every plan file used by `canonical-sdlc` must contain two structured sections:
+  - `## SDLC State` — the mode declared at entry, the current phase, and for each phase walked so far a line `Phase N: <evidence path or artifact link>`. The evidence-gate hook reads this section on every `git commit`.
+  - `## Assumptions` — seeded from the Phase 1 "Not Doing" list plus any spec ambiguities resolved during planning. Phase 5 appends to this section inline.
+- **Gate:** Plan file passes writing-plans' own "no placeholders" check **and** contains both structured sections.
 - **Evidence:** Plan file at `~/.claude/plans/<name>.md` or equivalent.
 
 ### Phase 4 — Isolate (`superpowers:using-git-worktrees`)
@@ -131,8 +143,9 @@ Each phase has: **goal** · **action** · **completion gate** · **evidence arti
 - **Non-negotiable rhythm:** `superpowers:test-driven-development` — RED → GREEN → commit, per slice.
 - **Wrapper:** `superpowers:executing-plans` if a plan file exists.
 - **Woven:** source-driven on unfamiliar APIs; systematic-debugging on surprises; inline ADR capture on decisions.
-- **Gate:** Every slice has a passing test that was RED before implementation.
-- **Evidence:** Commit history shows RED→GREEN transitions.
+- **Assumption-log update:** whenever a decision resolves ambiguity that a reviewer could reasonably question, append a one-line entry to the plan file's `## Assumptions` section **before the commit**. No silent choices.
+- **Gate:** Every slice has a passing test that was RED before implementation; new assumptions are logged.
+- **Evidence:** Commit history shows RED→GREEN transitions; `## Assumptions` reflects any novel decisions.
 
 ### Phase 6 — Browser verify (`agent-skills:browser-testing-with-devtools`)
 - **Goal:** Real-browser evidence for UI/frontend work.
@@ -158,6 +171,15 @@ Each phase has: **goal** · **action** · **completion gate** · **evidence arti
   - Performance axis flags → `agent-skills:performance-optimization` deep dive.
   - Escalation evidence attached to review notes.
 
+### Phase 8b — Adversarial critic (overnight: mandatory · full: recommended · other modes: optional unless Phase 8 flagged)
+- **Goal:** Catch what self-review missed. Fresh context, red-team framing. Self-review finds what you knew to look for; the critic finds what you didn't.
+- **Action:** Dispatch a fresh-context subagent (a review-capable specialist like `code-reviewer`, or `general-purpose` with the prompt below) with the plan file, the diff, and the Phase 8 self-review notes. Prompt template:
+
+  > _Your job is to find what went wrong in this change. You have the spec, the plan, the diff, and the Phase 8 self-review notes. Read them and try to falsify the claim that this is ready to merge. Look specifically for: silent wrong assumptions not logged in the `## Assumptions` section, scope creep beyond the spec, missing edge cases, fabricated evidence (claims of passing tests without pasted output), and cross-cutting concerns a single-axis review would miss. Output either: at least one specific, reproducible issue, or an explicit "no issues found" followed by the three strongest falsification attempts you made and why each failed. Confirmation-seeking agreement is not acceptable output._
+- **Gate:** Critic output attached to plan file or review notes. Sycophantic output ("looks good") is **not** evidence — tighten the prompt and re-run.
+- **Evidence:** Critic report with either specific issues raised or specific falsification attempts that failed.
+- **Skip condition:** Non-overnight modes may skip only if Phase 8 raised zero axis flags.
+
 ### Phase 9 — Document decisions (`agent-skills:documentation-and-adrs`) — checkpoint
 - **Goal:** Forcing function. Catch decisions that weren't captured inline during phases 3 and 5.
 - **Action:** Review plan and implementation commits; verify every significant decision has an ADR or equivalent record.
@@ -167,8 +189,9 @@ Each phase has: **goal** · **action** · **completion gate** · **evidence arti
 
 ### Phase 10 — Commit (`agent-skills:git-workflow-and-versioning`)
 - **Goal:** Atomic commits with clean history.
-- **Action:** Stage scoped files; write commit body with "THINGS I DIDN'T TOUCH" summary.
-- **Gate:** Commit is atomic; scope matches the phase 2 spec.
+- **Action:** Stage scoped files; write commit body with "THINGS I DIDN'T TOUCH" summary. Update the plan file's `## SDLC State` section before staging so the evidence-gate hook lets the commit through.
+- **Overnight mode:** one checkpoint commit *per phase*, not one final commit. Each commit's scope = that phase's evidence artifact. This produces a chronological trail the user can audit in the morning without reconstructing from a single blob.
+- **Gate:** Commit is atomic; scope matches the Phase 2 spec. Overnight mode: one commit per completed phase before advancing.
 - **Evidence:** Commit SHA + commit body.
 
 ### Phase 11 — Request external review (`superpowers:requesting-code-review`)
@@ -197,13 +220,41 @@ Each phase has: **goal** · **action** · **completion gate** · **evidence arti
 - **Evidence must be pasted or linked**, not claimed. "Tests pass" is not evidence; the test output is.
 - **Escalation deep dives are conditional**, not routine. `security-and-hardening` and `performance-optimization` fire only when phase 8 flags.
 
+## Evidence Gate Hook
+
+Bionic installs `canonical-sdlc-evidence-gate.sh` as a `PreToolUse|Bash` hook. On any `git commit`, the hook locates the most recent plan file under `~/.claude/plans/`, reads the `## SDLC State` section, and **blocks the commit (exit 2) if the current phase's evidence artifact is missing or unreadable**.
+
+Plans without an `## SDLC State` section pass through unblocked — the hook only enforces against canonical-sdlc runs. This is the external backstop to the self-discipline rules: social enforcement + a single hard gate, not a sprawling enforcement web.
+
+## Subagent Dispatch Convention
+
+Every subagent invoked during a canonical-sdlc phase — implementer, reviewer, critic, or any specialist dispatched for a deep dive — must receive a prompt prefix containing:
+
+1. **Current phase** — number, name, sub-skill invoked.
+2. **Scope constraint** — what this agent may touch; what it must not.
+3. **Artifact expected** — the evidence shape required for the phase gate.
+4. **Exit condition** — when to stop and report. Includes: "do not pivot approach; surface blockers to the main thread."
+
+This prevents subagent wander, the most common source of drift in dispatched work. The prefix scopes the task; it does not override the agent's identity.
+
 ## Escalation Protocol
 
-If the same phase fails to produce valid evidence three times in a row:
+**Three-fail rule.** If the same phase fails to produce valid evidence three times in a row:
 
 1. Stop. Do not attempt a fourth time.
 2. Surface the blocker to the user with: what was attempted, why each attempt failed, what information would unblock.
 3. Wait for direction. Do not silently skip the phase or fabricate evidence.
+
+**Stop-and-wake list** (overnight mode: halt and leave a note; other modes: halt and ask directly):
+
+- Ambiguous spec requiring a judgment call that would take more than one paragraph to resolve.
+- New external-API authentication setup (OAuth flows, tokens, new credentials).
+- Configuration change that affects billing.
+- Destructive database migration (DROP, ALTER on tables with data).
+- Changes to secrets, API keys, or production infrastructure.
+- Any action the user's `CLAUDE.md` marks as requiring approval.
+
+**On halt:** append a `## Wake Note` section to the plan file describing the blocker, what was tried, and the specific decision needed from the user. Do not proceed past the block. Do not improvise a workaround.
 
 This matches the Bionic Philosophy's "When blocked: stop, re-plan, surface to the user. Don't brute-force past failures."
 
@@ -227,6 +278,9 @@ This skill references sub-skills listed in `needs`. Do not preload them. Load ea
 | "I declared a bugfix fast-path, so I'm covered" | Fast-path declarations must match the work. A feature disguised as bugfix to skip spec/plan is drift with a label. |
 | "Phase 9 is redundant if I captured ADRs inline" | Then the checkpoint is a 30-second verification. It's cheap when diligent and catches gaps when not. It's still required. |
 | "I can skip browser verify, the unit tests cover it" | Unit tests don't catch visual regressions, focus traps, or contrast failures. For UI work, real-browser evidence is distinct. |
+| "I'm confident in my self-review; the adversarial critic is overkill" | Self-review is bounded by what you thought to check. The critic exists to find the questions you didn't ask. Mandatory in overnight mode for that reason. |
+| "The assumption was obvious; no need to log it" | "Obvious" is judged from inside the moment. Six hours later when a test fails, the un-logged assumption is indistinguishable from a bug. Log it. |
+| "I can update `## SDLC State` after the commit" | Then the evidence gate hook will block the commit. Update first; commit second. |
 
 ## Red Flags — STOP and Correct
 
@@ -239,6 +293,11 @@ This skill references sub-skills listed in `needs`. Do not preload them. Load ea
 - Writing an ADR post-commit "as a follow-up" — the phase exists to prevent exactly this.
 - Reaching phase 13 with no artifact from phase 3 (plan).
 - Grinding past three failed evidence attempts on the same phase without escalating.
+- Committing without the plan file's `## SDLC State` section updated for the current phase (the evidence-gate hook will block this, but don't rely on the hook — update first).
+- Overnight mode without the `## Assumptions` section seeded at plan time.
+- Adversarial critic output that is pure agreement — tighten the prompt and re-run; do not accept as evidence.
+- Dispatching a subagent without the current-phase + scope-constraint prefix from the Subagent Dispatch Convention.
+- Improvising a workaround past a stop-and-wake trigger instead of halting and leaving a `## Wake Note`.
 
 ## Quick Reference
 
@@ -253,6 +312,7 @@ This skill references sub-skills listed in `needs`. Do not preload them. Load ea
 | 6. Browser verify | Golden path + edge case verified (or N/A declared) | DevTools transcript |
 | 7. Verify done | All tests pass | Command output |
 | 8. Self-review | Every axis has verdict | Review notes; escalation reports if flagged |
+| 8b. Adversarial critic | Specific issues raised or specific falsification attempts logged | Critic report (mandatory in overnight mode) |
 | 9. Document decisions | Every significant decision has a record | ADR file(s) |
 | 10. Commit | Atomic, scope matches spec | Commit SHA + body |
 | 11. External review | Review request open | PR link |
