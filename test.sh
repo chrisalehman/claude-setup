@@ -27,6 +27,7 @@ run_suite "${SCRIPT_DIR}/hooks/memory-update.test.sh"
 run_suite "${SCRIPT_DIR}/hooks/memory-commit-save.test.sh"
 run_suite "${SCRIPT_DIR}/hooks/memory-cleanup.test.sh"
 run_suite "${SCRIPT_DIR}/hooks/canonical-sdlc-evidence-gate.test.sh"
+run_suite "${SCRIPT_DIR}/hooks/canonical-sdlc-governing-skill.test.sh"
 run_suite "${SCRIPT_DIR}/tests/scripts.test.sh"
 run_suite "${SCRIPT_DIR}/lib/platform.test.sh"
 

@@ -93,10 +93,35 @@ if [ "$HAS_ACTIVITY" -eq 0 ]; then
   exit 0
 fi
 
+# Detect an active canonical-sdlc run. Heuristic mirrors
+# canonical-sdlc-evidence-gate.sh: scan the bionic plan directory
+# (recursively up to epic subdirectories) for the newest .md file and
+# check whether it contains a `## SDLC State` section. If so, Claude is
+# mid-run and the end-of-session save should also emit a continuation
+# checkpoint in the same epic directory.
+SDLC_PLAN=""
+PLAN_DIR="${PROJECT_DIR}/docs/bionic/plans"
+if [ -d "$PLAN_DIR" ]; then
+  while IFS= read -r -d '' f; do
+    if [ -z "$SDLC_PLAN" ] || [ "$f" -nt "$SDLC_PLAN" ]; then
+      SDLC_PLAN="$f"
+    fi
+  done < <(find "$PLAN_DIR" -maxdepth 2 -type f -name '*.md' -print0 2>/dev/null)
+fi
+
+SDLC_CHECKPOINT_DIR=""
+if [ -n "$SDLC_PLAN" ] && grep -q '^## SDLC State' "$SDLC_PLAN" 2>/dev/null; then
+  SDLC_CHECKPOINT_DIR=$(dirname "$SDLC_PLAN")
+fi
+
 # Block the stop and inject instructions. Claude will read the reason,
 # update memory in the current turn, then the next Stop will fire with
 # stop_hook_active=true and exit cleanly via the guard at the top.
 REASON='Auto-save to .bionic/memory/: briefly update context.md with current branch, what changed this session, and next steps. If any correction or lesson emerged, add a one-liner rule to INDEX.md under "Always Apply". Keep edits minimal — only real changes. Follow the protocol in ~/.claude/CLAUDE.md. If nothing meaningful to save, make no edits and respond with "memory already current."'
+
+if [ -n "$SDLC_CHECKPOINT_DIR" ]; then
+  REASON="$REASON"$'\n\nAdditionally: a canonical-sdlc run is active ('"$SDLC_PLAN"$'). Write '"$SDLC_CHECKPOINT_DIR"$'/continuation-checkpoint.md capturing: (a) the full ## SDLC State snapshot from the plan, (b) the last in-flight item (RED→GREEN slice, ADR draft, unresolved assumption), (c) the next recommended action on resume. Include governing-skill frontmatter per the canonical-sdlc skill. If a prior continuation-checkpoint.md exists in that directory, overwrite it.'
+fi
 
 jq -n --arg r "$REASON" '{decision: "block", reason: $r}'
 exit 0

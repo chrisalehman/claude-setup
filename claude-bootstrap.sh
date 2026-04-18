@@ -523,6 +523,8 @@ MANAGED_HOOKS=(
   "PreToolUse|Bash|~/.claude/hooks/protect-main.sh"
   "PreToolUse|Bash|~/.claude/hooks/protect-database.sh"
   "PreToolUse|Bash|~/.claude/hooks/canonical-sdlc-evidence-gate.sh"
+  "PreToolUse|Write|~/.claude/hooks/canonical-sdlc-governing-skill.sh"
+  "PreToolUse|Edit|~/.claude/hooks/canonical-sdlc-governing-skill.sh"
   "PostToolUse|Bash|~/.claude/hooks/memory-commit-save.sh"
   "Stop||~/.claude/hooks/memory-update.sh"
   "SessionStart|startup|~/.claude/hooks/memory-cleanup.sh"

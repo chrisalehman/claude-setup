@@ -187,6 +187,32 @@ Phase 4: git worktree at /tmp/wt
 Phase 5: tests passing, commit abc123
 
 ## Other section" > /dev/null
+
+# Step-vocabulary variant (new plans) — must be accepted equally.
+h3b=$(make_home)
+write_plan "$h3b" "# plan (new vocabulary)
+
+## SDLC State
+mode: full
+current: 5
+Step 1: /path/to/ideate.md
+Step 2: /path/to/spec.md
+Step 3: ~/.claude/plans/this.md
+Step 4: git worktree at /tmp/wt
+Step 5: tests passing, commit def456
+
+## Other section" > /dev/null
+expect_allow "Step N: vocabulary — allowed" "$h3b" 'git commit -m "x"'
+
+# Mixed Phase/Step — legacy plan that partially migrated. The current
+# step's line must exist under either prefix; hook accepts either.
+h3c=$(make_home)
+write_plan "$h3c" "## SDLC State
+current: 5
+Phase 1: done
+Phase 2: done
+Step 5: mixed-vocab evidence" > /dev/null
+expect_allow "mixed Phase/Step with Step for current — allowed" "$h3c" 'git commit -m "x"'
 expect_allow "valid phase 5 evidence — allow" "$h3" 'git commit -m "phase 5 done"'
 
 h3b=$(make_home)
@@ -221,7 +247,7 @@ current: 5
 Phase 1: done
 Phase 2: done
 # no Phase 5 line" > /dev/null
-expect_block "no matching Phase N line" "$h4b" 'git commit -m "x"' "no 'Phase 5:' line"
+expect_block "no matching Step N line (legacy Phase lines don't match)" "$h4b" 'git commit -m "x"' "no 'Step 5:' line"
 
 h4c=$(make_home)
 write_plan "$h4c" "## SDLC State

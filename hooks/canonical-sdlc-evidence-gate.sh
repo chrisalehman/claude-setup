@@ -1,22 +1,26 @@
 #!/bin/bash
 # EVIDENCE GATE: Blocks git commits during a canonical-sdlc run when the
-# plan file's ## SDLC State section is missing the current phase's evidence.
+# plan file's ## SDLC State section is missing the current step's evidence.
 #
-# Convention: the plan file under ~/.claude/plans/ contains a section like:
+# Convention: the plan file contains a section like:
 #
 #   ## SDLC State
 #   mode: overnight
 #   current: 5
-#   Phase 1: /path/or/link
-#   Phase 2: /path/to/spec.md
-#   Phase 3: ~/.claude/plans/<name>.md
-#   Phase 4: git worktree at /path
-#   Phase 5: tests passing, commit abc123
+#   Step 1: /path/or/link
+#   Step 2: /path/to/spec.md
+#   Step 3: docs/bionic/plans/epic-NN-<slug>/wave-NN-<slug>.plan.md
+#   Step 4: git worktree at /path
+#   Step 5: tests passing, commit abc123
 #
-# If the current phase's line is empty or a placeholder (TODO, pending,
+# The hook also accepts `Phase N:` lines for backward compatibility with
+# in-flight plans written under the prior "phase" vocabulary. Both forms
+# are parsed; new plans should use `Step N:`.
+#
+# If the current step's line is empty or a placeholder (TODO, pending,
 # in progress, XXX, TBD, placeholder), block the commit. The rule is:
 # the evidence artifact must be recorded in the plan file *before* the
-# commit that closes the phase.
+# commit that closes the step.
 #
 # Plans without ## SDLC State pass through unblocked — this hook only
 # enforces against canonical-sdlc runs.
@@ -82,11 +86,15 @@ fi
 PLAN=""
 for d in "${PLAN_DIRS[@]}"; do
   [ -d "$d" ] || continue
+  # Descend up to 2 levels deep to support the bionic directory-per-epic
+  # layout: docs/bionic/plans/epic-NN-<slug>/wave-NN-<slug>.plan.md.
+  # Flat conventions (~/.claude/plans/<name>.md) are still covered at
+  # depth 1.
   while IFS= read -r -d '' f; do
     if [ -z "$PLAN" ] || [ "$f" -nt "$PLAN" ]; then
       PLAN="$f"
     fi
-  done < <(find "$d" -maxdepth 1 -type f -name '*.md' -print0 2>/dev/null)
+  done < <(find "$d" -maxdepth 2 -type f -name '*.md' -print0 2>/dev/null)
 done
 
 if [ -z "$PLAN" ] || [ ! -f "$PLAN" ]; then
@@ -105,12 +113,12 @@ SECTION=$(awk '/^## SDLC State/{flag=1; next} /^## /{flag=0} flag' "$PLAN")
 if [ -z "$SECTION" ]; then
   echo "BLOCKED: canonical-sdlc plan file has an empty '## SDLC State' section." >&2
   echo "Plan: $PLAN" >&2
-  echo "Fix: populate the section with 'current: N' and per-phase evidence lines." >&2
+  echo "Fix: populate the section with 'current: N' and per-step evidence lines." >&2
   exit 2
 fi
 
-# Parse current phase. Accepts integers (1-13) and the 8b adversarial
-# critic phase.
+# Parse current step. Accepts integers (1-13) and the 8b adversarial
+# critic step.
 CURRENT=$(echo "$SECTION" \
           | grep -E '^[[:space:]]*current[[:space:]]*:' \
           | head -1 \
@@ -124,27 +132,28 @@ if [ -z "$CURRENT" ] || ! echo "$CURRENT" | grep -qE '^[0-9]+[ab]?$'; then
   exit 2
 fi
 
-# Find the evidence line for the current phase. Accepts:
-#   Phase 5: ...
-#   - Phase 5: ...
+# Find the evidence line for the current step. Accepts both "Step N:"
+# (current vocabulary) and "Phase N:" (legacy plans), with or without a
+# leading list marker. New plans should use "Step"; "Phase" is retained
+# for backward compatibility.
 LINE=$(echo "$SECTION" \
-       | grep -E "^[[:space:]]*-?[[:space:]]*Phase[[:space:]]+${CURRENT}[[:space:]]*:" \
+       | grep -E "^[[:space:]]*-?[[:space:]]*(Step|Phase)[[:space:]]+${CURRENT}[[:space:]]*:" \
        | head -1)
 
 if [ -z "$LINE" ]; then
-  echo "BLOCKED: canonical-sdlc plan file has no 'Phase ${CURRENT}:' line in '## SDLC State'." >&2
+  echo "BLOCKED: canonical-sdlc plan file has no 'Step ${CURRENT}:' line in '## SDLC State'." >&2
   echo "Plan: $PLAN" >&2
-  echo "Fix: add the evidence artifact for phase ${CURRENT} before committing." >&2
+  echo "Fix: add the evidence artifact for step ${CURRENT} before committing." >&2
   exit 2
 fi
 
-RAW_VALUE=$(echo "$LINE" | sed -E "s/^[[:space:]]*-?[[:space:]]*Phase[[:space:]]+${CURRENT}[[:space:]]*:[[:space:]]*//")
+RAW_VALUE=$(echo "$LINE" | sed -E "s/^[[:space:]]*-?[[:space:]]*(Step|Phase)[[:space:]]+${CURRENT}[[:space:]]*:[[:space:]]*//")
 VALUE_STRIPPED=$(echo "$RAW_VALUE" | tr -d '[:space:]')
 
 if [ -z "$VALUE_STRIPPED" ]; then
-  echo "BLOCKED: canonical-sdlc phase ${CURRENT} evidence line is empty in '## SDLC State'." >&2
+  echo "BLOCKED: canonical-sdlc step ${CURRENT} evidence line is empty in '## SDLC State'." >&2
   echo "Plan: $PLAN" >&2
-  echo "Fix: record the evidence artifact (commit SHA, path, link) for phase ${CURRENT} before committing." >&2
+  echo "Fix: record the evidence artifact (commit SHA, path, link) for step ${CURRENT} before committing." >&2
   exit 2
 fi
 
@@ -153,7 +162,7 @@ fi
 NORM=$(echo "$VALUE_STRIPPED" | tr '[:upper:]' '[:lower:]')
 case "$NORM" in
   *todo*|*pending*|*inprogress*|*xxx*|*tbd*|*placeholder*)
-    echo "BLOCKED: canonical-sdlc phase ${CURRENT} evidence line is a placeholder (\"${RAW_VALUE}\")." >&2
+    echo "BLOCKED: canonical-sdlc step ${CURRENT} evidence line is a placeholder (\"${RAW_VALUE}\")." >&2
     echo "Plan: $PLAN" >&2
     echo "Fix: replace with the actual evidence artifact before committing." >&2
     exit 2

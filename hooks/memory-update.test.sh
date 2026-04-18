@@ -217,6 +217,85 @@ else
 fi
 
 # ============================================================
+# Section 8: canonical-sdlc continuation-checkpoint instruction
+# ============================================================
+
+echo ""
+echo "=== Section 8: Continuation-checkpoint addendum for active SDLC runs ==="
+
+# Helper: expect block AND check for presence/absence of checkpoint text.
+expect_block_with_text() {
+  local label="$1" project="$2" input="$3" needle="$4"
+  TOTAL=$((TOTAL + 1))
+  run_hook "$project" "$input"
+  if [ "$HOOK_EXIT" -eq 0 ] \
+     && echo "$HOOK_STDOUT" | jq -e '.decision == "block"' >/dev/null 2>&1 \
+     && echo "$HOOK_STDOUT" | jq -r '.reason' | grep -q "$needle"; then
+    echo "PASS: $label"
+    PASS=$((PASS + 1))
+  else
+    echo "FAIL: $label"
+    echo "  exit=$HOOK_EXIT stdout='$HOOK_STDOUT'"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+expect_block_without_text() {
+  local label="$1" project="$2" input="$3" needle="$4"
+  TOTAL=$((TOTAL + 1))
+  run_hook "$project" "$input"
+  if [ "$HOOK_EXIT" -eq 0 ] \
+     && echo "$HOOK_STDOUT" | jq -e '.decision == "block"' >/dev/null 2>&1 \
+     && ! echo "$HOOK_STDOUT" | jq -r '.reason' | grep -q "$needle"; then
+    echo "PASS: $label"
+    PASS=$((PASS + 1))
+  else
+    echo "FAIL: $label"
+    echo "  exit=$HOOK_EXIT stdout='$HOOK_STDOUT'"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+# Project with active canonical-sdlc plan (## SDLC State present)
+p8a=$(make_project); cleanup_projects+=("$p8a")
+mkdir -p "$p8a/.bionic/memory"
+touch -t 202601010000 "$p8a/.bionic/memory/context.md" 2>/dev/null || \
+  touch -d "2026-01-01" "$p8a/.bionic/memory/context.md" 2>/dev/null || true
+echo "dirty" > "$p8a/newfile.txt"
+mkdir -p "$p8a/docs/bionic/plans/epic-01-demo"
+cat > "$p8a/docs/bionic/plans/epic-01-demo/wave-01-x.plan.md" <<'EOF'
+# plan
+
+## SDLC State
+mode: full
+current: 5
+Step 1: /x
+Step 5: mid-implementation
+EOF
+expect_block_with_text "active SDLC run → reason includes continuation-checkpoint" \
+  "$p8a" '{}' 'continuation-checkpoint.md'
+
+# Project with a plans dir but no SDLC State in the plan — no addendum
+p8b=$(make_project); cleanup_projects+=("$p8b")
+mkdir -p "$p8b/.bionic/memory"
+touch -t 202601010000 "$p8b/.bionic/memory/context.md" 2>/dev/null || \
+  touch -d "2026-01-01" "$p8b/.bionic/memory/context.md" 2>/dev/null || true
+echo "dirty" > "$p8b/newfile.txt"
+mkdir -p "$p8b/docs/bionic/plans"
+echo "# regular plan, no SDLC State" > "$p8b/docs/bionic/plans/random.md"
+expect_block_without_text "regular plan (no SDLC State) → no checkpoint addendum" \
+  "$p8b" '{}' 'continuation-checkpoint.md'
+
+# Project without any plans dir — no addendum
+p8c=$(make_project); cleanup_projects+=("$p8c")
+mkdir -p "$p8c/.bionic/memory"
+touch -t 202601010000 "$p8c/.bionic/memory/context.md" 2>/dev/null || \
+  touch -d "2026-01-01" "$p8c/.bionic/memory/context.md" 2>/dev/null || true
+echo "dirty" > "$p8c/newfile.txt"
+expect_block_without_text "no plans dir → no checkpoint addendum" \
+  "$p8c" '{}' 'continuation-checkpoint.md'
+
+# ============================================================
 # Results
 # ============================================================
 
