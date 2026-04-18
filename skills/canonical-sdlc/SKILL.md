@@ -194,9 +194,14 @@ Each step has: **goal** · **action** · **completion gate** · **evidence artif
 ### Step 3 — Plan (`superpowers:writing-plans`)
 - **Goal:** Produce the execution contract that survives compaction.
 - **Action:** Write an ordered, verifiable step list with no placeholders. Every plan file used by `canonical-sdlc` must contain two structured sections:
-  - `## SDLC State` — the mode declared at entry, the current step, and one line per step of the form `Step N: <evidence path or artifact link>`. The evidence-gate hook reads this section on every `git commit`. **When advancing steps, replace the existing `Step N: (pending)` placeholder in-place — do not prepend a new line. One line per step, forever.**
+  - `## SDLC State` — the mode declared at entry, the **integration branch** (the long-lived branch this wave's work merges back to at Step 12), the current step, and one line per step of the form `Step N: <evidence path or artifact link>`. The evidence-gate hook reads this section on every `git commit`. **When advancing steps, replace the existing `Step N: (pending)` placeholder in-place — do not prepend a new line. One line per step, forever.**
   - `## Assumptions` — seeded from the Step 1 "Not Doing" list plus any spec ambiguities resolved during planning. Step 5 appends to this section inline.
-- **Gate:** Plan file passes writing-plans' own "no placeholders" check **and** contains both structured sections **and** receives explicit user approval before Step 4 begins (see Approval Checkpoint below).
+- **Integration-branch declaration — ask once, stick to it.** When writing a plan file, the integration branch is declared in `## SDLC State` via an `integration-branch: <name>` line. Picking that name is part of the Step 3 interaction:
+  - In `epic-scope` mode: ask the user which long-lived branch all waves of this epic will merge back to. Candidates the user should consider: `main`, `develop`, a dedicated epic feature branch (e.g., `epic/02-v2-product-pass`). Record the choice in the epic plan. Every subsequent wave under this epic **inherits** the epic plan's `integration-branch` without re-asking.
+  - In any wave mode (`full`, `overnight`, `bugfix`, `refactor`, `spike`) launched under an existing epic: read the epic plan's `integration-branch` and copy it into the wave plan's `## SDLC State`. Do not re-prompt.
+  - In a standalone wave (no epic): ask the user at plan time. Default offer: `main`.
+  - Changing the integration branch mid-epic requires re-running `epic-scope` (treat as epic rescoping); do not silently edit the field.
+- **Gate:** Plan file passes writing-plans' own "no placeholders" check **and** contains both structured sections **and** `## SDLC State` includes a non-empty `integration-branch:` line **and** receives explicit user approval before Step 4 begins (see Approval Checkpoint below).
 - **Evidence:** Plan file at the canonical path. Bionic: `docs/bionic/plans/epic-NN-<slug>/wave-NN-<slug>.plan.md` (wave mode) or `docs/bionic/plans/epic-NN-<slug>/epic.plan.md` (`epic-scope` mode). Other projects: `docs/superpowers/plans/<name>.md` or `~/.claude/plans/<name>.md` per their convention.
 
 #### Approval Checkpoint (end of Step 3)
@@ -209,9 +214,9 @@ This is the "walk away" boundary. After the plan file is complete:
 
 ### Step 4 — Isolate (`superpowers:using-git-worktrees`)
 - **Goal:** Physically isolate in-progress work from the main workspace.
-- **Action:** Create worktree; record path in plan.
-- **Gate:** `git worktree list` shows the branch.
-- **Evidence:** Worktree path in plan + verification output.
+- **Action:** Create worktree. The wave's branch is cut **from the integration branch declared in `## SDLC State`** (not assumed `main`) — fetch/pull the integration branch first, then branch off its tip. Record worktree path AND the commit SHA the branch was cut from in the plan.
+- **Gate:** `git worktree list` shows the branch; the branch's merge-base with the integration branch equals the recorded SHA.
+- **Evidence:** Worktree path + base SHA in plan + `git worktree list` output.
 
 ### Step 5 — Implement (`agent-skills:incremental-implementation`)
 - **Goal:** Build in thin vertical slices with per-slice proof.
@@ -276,10 +281,11 @@ This is the "walk away" boundary. After the plan file is complete:
 - **Evidence:** PR link; on receipt, verification notes per `receiving-code-review`.
 
 ### Step 12 — Finish branch (`superpowers:finishing-a-development-branch`)
-- **Goal:** Close the branch cleanly; prevent orphaned work.
-- **Action:** Merge/PR/cleanup per the skill's structured options.
-- **Gate:** Branch is merged or explicitly parked with a note.
-- **Evidence:** Merge SHA or closed-PR link; worktree removed.
+- **Goal:** Close the branch cleanly; prevent orphaned work. Every wave's commits must exist on the declared integration branch before the wave is called done — this is the invariant that prevents cross-session work loss.
+- **Action:** Merge the wave branch into the integration branch declared in `## SDLC State` (local merge; pushing is the user's gate via `protect-main.sh`). Remove the worktree after the merge is verified.
+- **Default is merge.** Parking ("park with a note") is only permitted when the user has explicitly endorsed it via a `## Wake Note` in the plan file with a specific reason (e.g., external dependency blocking review, intentional hold for next wave). A parked branch without a Wake Note is drift.
+- **Gate:** The wave branch's tip commit is an ancestor of the integration branch's tip (`git merge-base --is-ancestor <wave-tip> <integration-branch>` exits 0), OR a `## Wake Note` documents the park. Worktree is removed.
+- **Evidence:** Merge SHA recorded in `## SDLC State` as Step 12's line; `git log --oneline <integration-branch>` showing the merge; worktree absent from `git worktree list`. For parked branches: Wake Note content.
 
 ### Step 13 — Ship (`agent-skills:shipping-and-launch`)
 - **Goal:** Production gate with pre-launch checklist, monitoring, rollback.
@@ -332,6 +338,7 @@ Long-running epics span sessions. Continuation artifacts make session handoff au
 
 **End-of-wave (`continuation.md`).** Step 13 emits `docs/bionic/plans/epic-NN-<slug>/continuation.md` summarizing:
 - Wave just completed (id, scope, outcome).
+- **Integration branch** the wave merged into + merge SHA. The next wave branches from this same integration branch at or after this SHA.
 - Next wave (id, scope, entry step = 1).
 - Open decisions or carry-overs from this wave's `## Assumptions`.
 - Pointers to the epic plan, last wave plan, and any relevant ADRs.
@@ -432,6 +439,10 @@ This skill references sub-skills listed in `needs`. Do not preload them. Load ea
 - Adversarial critic output that is pure agreement — tighten the prompt and re-run; do not accept as evidence.
 - Dispatching a subagent without the current-step + scope-constraint prefix from the Subagent Dispatch Convention.
 - Improvising a workaround past a stop-and-wake trigger instead of halting and leaving a `## Wake Note`.
+- Step 4 branching from `main` when `## SDLC State` declares a different `integration-branch`.
+- Step 12 parking a wave without a `## Wake Note` that records the reason and a user endorsement. Default is merge; park is exceptional.
+- Step 12 closing without the wave's commits reachable from the declared integration branch (`git merge-base --is-ancestor <wave-tip> <integration-branch>` must exit 0).
+- Declaring a plan without an `integration-branch:` line in `## SDLC State` — the gate doesn't pass.
 
 ## Quick Reference
 
@@ -441,7 +452,7 @@ This skill references sub-skills listed in `needs`. Do not preload them. Load ea
 | 1. Ideate | Refined idea + "Not Doing" list | Both in plan or brief |
 | 2. Spec | Every req has acceptance criterion | Spec doc |
 | 3. Plan | No placeholders | Plan file |
-| 4. Isolate | Worktree exists | `git worktree list` |
+| 4. Isolate | Worktree exists, branch cut from declared `integration-branch` | `git worktree list` + base SHA |
 | 5. Implement | Every slice has a passing test that was RED first | Commit history with RED→GREEN |
 | 6. Browser verify | Golden path + edge case verified (or N/A declared) | DevTools transcript |
 | 7. Verify done | All tests pass | Command output |
@@ -450,5 +461,5 @@ This skill references sub-skills listed in `needs`. Do not preload them. Load ea
 | 9. Document decisions | Every significant decision has a record | ADR file(s) |
 | 10. Commit | Atomic, scope matches spec | Commit SHA + body |
 | 11. External review | Review request open | PR link |
-| 12. Finish branch | Branch merged or parked | Merge SHA; worktree removed |
+| 12. Finish branch | Wave merged into declared `integration-branch` (default); park only via Wake Note | Merge SHA; worktree removed |
 | 13. Ship | Checklist complete, rollback documented | Deployment record |

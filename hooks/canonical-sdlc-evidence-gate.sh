@@ -6,11 +6,12 @@
 #
 #   ## SDLC State
 #   mode: overnight
+#   integration-branch: main
 #   current: 5
 #   Step 1: /path/or/link
 #   Step 2: /path/to/spec.md
 #   Step 3: docs/bionic/plans/epic-NN-<slug>/wave-NN-<slug>.plan.md
-#   Step 4: git worktree at /path
+#   Step 4: git worktree at /path, base SHA abc123
 #   Step 5: tests passing, commit abc123
 #
 # The hook also accepts `Phase N:` lines for backward compatibility with
