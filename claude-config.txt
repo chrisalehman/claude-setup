@@ -34,14 +34,14 @@ uv-tool      | notebooklm-py       | notebooklm
 
 marketplace  | anthropics/skills
 marketplace  | VoltAgent/awesome-claude-code-subagents
-marketplace  | nextlevelbuilder/ui-ux-pro-max-skill
+# marketplace  | nextlevelbuilder/ui-ux-pro-max-skill   # disabled: superseded by impeccable (see ADR / README)
 marketplace  | addyosmani/agent-skills
 
 plugin       | superpowers         | claude-plugins-official
-plugin       | frontend-design     | claude-plugins-official
+# plugin       | frontend-design     | claude-plugins-official   # disabled: superseded by impeccable (pbakaus/impeccable is a superset)
 plugin       | document-skills     | anthropic-agent-skills
 plugin       | example-skills      | anthropic-agent-skills
-plugin       | ui-ux-pro-max       | ui-ux-pro-max-skill
+# plugin       | ui-ux-pro-max       | ui-ux-pro-max-skill       # disabled: trust issues on paid tier + superseded by impeccable
 plugin       | voltagent-core-dev  | voltagent-subagents
 plugin       | voltagent-lang      | voltagent-subagents
 plugin       | voltagent-infra     | voltagent-subagents

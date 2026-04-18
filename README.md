@@ -50,7 +50,7 @@ Everything lives in [`claude-config.txt`](claude-config.txt) — edit it and re-
 | Category | What |
 |----------|------|
 | **CLI tools** | git, node, pnpm, gh, jq, ripgrep, uv, @playwright/cli, @sentry/cli, notebooklm *(via uv)* + cloud (docker, gcloud, aws), deployment (stripe, vercel, supabase, fastlane, eas-cli), API (httpie, yq, grpcurl, protoc) |
-| **Plugins** | superpowers, agent-skills, frontend-design, document-skills, example-skills, ui-ux-pro-max |
+| **Plugins** | superpowers, agent-skills, document-skills, example-skills |
 | **Subagents** | voltagent-core-dev, voltagent-lang, voltagent-infra, voltagent-qa-sec, voltagent-data-ai, voltagent-dev-exp, voltagent-meta |
 | **MCP servers** | context7, sentry *(requires env vars)*, trello *(requires env vars)* |
 | **Skills** | excalidraw-diagram, humanizer, notebooklm, impeccable (20+ design skills), bionic:rigorous-refactor, bionic:ralph-loop, bionic:map-instrument-narrow, bionic:skill-factory |
@@ -177,7 +177,6 @@ Plugins extend Claude Code with additional skills and agent types. Installed via
 **Marketplaces** — Where plugins are sourced from:
 - `anthropics/skills` — Anthropic's official skill marketplace
 - `VoltAgent/awesome-claude-code-subagents` — Community subagent collection
-- `nextlevelbuilder/ui-ux-pro-max-skill` — UI/UX design intelligence marketplace
 - `addyosmani/agent-skills` — Addy Osmani's production-grade SDLC skills marketplace
 
 #### SDLC Pipeline
@@ -206,7 +205,7 @@ Short version: superpowers wins TDD, debugging, planning, code-review behavior, 
 
 #### Design & Document Skills
 
-**frontend-design** (`claude-plugins-official`) — Design-quality frontend generation. Creates production-grade web components, pages, and applications that avoid the generic "AI-generated" look. Includes sub-skills: `animate`, `arrange`, `audit`, `bolder`, `clarify`, `colorize`, `critique`, `delight`, `distill`, `extract`, `harden`, `normalize`, `onboard`, `optimize`, `overdrive`, `polish`, `quieter`, `typeset`.
+Design-quality frontend generation is provided by the **impeccable** skill pack (see [Custom Skills](#custom-skills) below). `frontend-design` and `ui-ux-pro-max` were evaluated and removed — `impeccable` is a superset of `frontend-design` (properly attributed, stricter anti-patterns, teach-mode for project context) and avoids the trust issues on the paid `ui-ux-pro-max` tier.
 
 **document-skills** (`anthropic-agent-skills`) — Document creation and manipulation. Handles PDF, DOCX, PPTX, XLSX, and CSV files. Also includes `claude-api` (Anthropic SDK integration), `mcp-builder` (MCP server creation guide), `webapp-testing` (Playwright test toolkit), `canvas-design`, `algorithmic-art`, and more.
 
@@ -235,10 +234,6 @@ Skills are prompt files installed to `~/.claude/skills/` that Claude can invoke 
 **excalidraw-diagram** — `github-skill | excalidraw-diagram | coleam00/excalidraw-diagram-skill`
 
 Generates Excalidraw diagram JSON files for visualizing workflows, architectures, and concepts. Includes a Python renderer (set up via `uv sync` during bootstrap) that uses Playwright to convert diagrams to images.
-
-**ui-ux-pro-max** — `marketplace | nextlevelbuilder/ui-ux-pro-max-skill` + `plugin | ui-ux-pro-max | ui-ux-pro-max-skill`
-
-Design intelligence for building professional UI/UX. Installed as a plugin via the Claude Code marketplace. Provides 67 UI styles, 161 color palettes, 57 font pairings, 25 chart types, 99 UX guidelines, and a design system generator that analyzes your project type and produces a tailored design system. Supports 15+ tech stacks (React, Next.js, Vue, Svelte, SwiftUI, Flutter, and more).
 
 **humanizer** — `github-skill | humanizer | blader/humanizer`
 

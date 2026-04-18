@@ -27,8 +27,7 @@ needs:
   - superpowers:receiving-code-review
   - superpowers:finishing-a-development-branch
   - shape
-  - ui-ux-pro-max:ui-ux-pro-max
-  - frontend-design:frontend-design
+  - impeccable
 loading: deferred
 ---
 
@@ -189,7 +188,7 @@ Each step has: **goal** · **action** · **completion gate** · **evidence artif
 - **Action:** Write requirements + acceptance criteria.
 - **Gate:** Every requirement has an acceptance criterion.
 - **Evidence:** Spec doc at the canonical path. Bionic: `docs/bionic/specs/epic-NN-<slug>/wave-NN-<slug>.spec.md` (wave mode) or `docs/bionic/specs/epic-NN-<slug>/epic.spec.md` (`epic-scope` mode). Other projects: equivalent under their spec directory.
-- **UI/UX substitution:** prepend `shape` and consult `ui-ux-pro-max:ui-ux-pro-max` for user-facing work.
+- **UI/UX substitution:** prepend `shape` and consult `impeccable` for user-facing work.
 
 ### Step 3 — Plan (`superpowers:writing-plans`)
 - **Goal:** Produce the execution contract that survives compaction.
@@ -233,7 +232,7 @@ This is the "walk away" boundary. After the plan file is complete:
 - **Gate:** Golden path + at least one edge case verified.
 - **Evidence:** DevTools transcript or screenshot.
 - **Skip condition:** Non-UI work — declare N/A explicitly.
-- **UI/UX substitution:** use `frontend-design:frontend-design` in step 5 and `agent-skills:frontend-ui-engineering` for production hardening before this step.
+- **UI/UX substitution:** use `impeccable` in step 5 and `agent-skills:frontend-ui-engineering` for production hardening before this step.
 
 ### Step 7 — Verify done (`superpowers:verification-before-completion`)
 - **Goal:** Evidence before assertions. Match the Bionic Philosophy's "Prove it works."
