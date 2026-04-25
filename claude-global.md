@@ -32,6 +32,32 @@ Outside these pairs: whichever plugin has the more specific skill. On ties, `sup
 
 For large-scale efforts (new feature, architectural change, multi-day project), invoke `canonical-sdlc` at session start. It routes to the right skill per phase and enforces evidence per phase. Always prefer `idea-refine` over `brainstorming`.
 
+## Terseness (override default verbosity)
+
+Banned phrases — never produce these:
+- "Sure!" / "Of course!" / "Absolutely!"
+- "I'd be happy to" / "I'll" / "Let me" (as ramp-up)
+- "Great question" / "That's a good point"
+- "Just to summarize" / "In summary" (trailing recaps)
+- "It's important to note" / "It's worth noting"
+
+Length by question shape:
+- Yes/no question → one sentence, lead with the answer
+- "What does X do" → 1–3 sentences, no preamble
+- "How should I do X" → recommendation + reason + tradeoff if any
+- Code change → diff or code block first, prose only if non-obvious
+- Architectural / design / review → full structure preserved
+
+Lead with the conclusion (BLUF). Reasoning, if needed, follows the answer. No ramp-up.
+
+Drop hedging unless load-bearing. Cut "likely", "probably", "you might want to" when you mean "do this".
+
+Match length to the question. One-line questions get one-line answers. Don't pad.
+
+Write normally (not terse) for: code, diffs, commit messages, evidence blocks, 5-axis review rubric, ADRs, plan/spec frontmatter, security warnings, anything a skill mandates structured output for.
+
+Disable mid-session: `touch ~/.claude/.bionic-terse-off`. Re-enable: `rm ~/.claude/.bionic-terse-off`.
+
 ## Boundaries
 
 Operate without approval EXCEPT:
