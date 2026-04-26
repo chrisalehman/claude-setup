@@ -473,6 +473,31 @@ _check_addy_marketplace() {
 read_config "marketplace" _check_addy_marketplace
 expect_eq "addyosmani/agent-skills marketplace entry is active in config" "1" "$_addy_marketplace_found"
 
+# 3r: chrome-devtools MCP server entry is active (not commented out) in config
+# Required by agent-skills:browser-testing-with-devtools, which assumes a
+# `chrome-devtools` MCP server is configured.
+_cdt_found=0
+_cdt_pkg=""
+_cdt_env=""
+_check_cdt() {
+  if [ "$1" = "chrome-devtools" ]; then
+    _cdt_found=1
+    _cdt_pkg="$2"
+    _cdt_env="$3"
+  fi
+}
+read_config "mcp-server" _check_cdt
+expect_eq "chrome-devtools MCP server entry is active in config" "1" "$_cdt_found"
+
+# 3s: chrome-devtools uses the official upstream package (chrome-devtools-mcp).
+# The addy-agent-skills SKILL.md references @anthropic/chrome-devtools-mcp,
+# which is wrong — the real package on npm is chrome-devtools-mcp. This test
+# guards against accidentally adopting the bad name.
+expect_eq "chrome-devtools package is chrome-devtools-mcp@latest" "chrome-devtools-mcp@latest" "$_cdt_pkg"
+
+# 3t: chrome-devtools requires no env vars (no auth — runs against local Chrome)
+expect_eq "chrome-devtools entry has no required env vars" "" "$_cdt_env"
+
 # ============================================================
 # SECTION 4: Hook file consistency
 # ============================================================

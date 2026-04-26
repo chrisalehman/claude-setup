@@ -72,6 +72,7 @@ env-var      | CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS | 1
 statusline   | npx ccstatusline@latest
 
 mcp-server   | context7      | @upstash/context7-mcp@latest
+mcp-server   | chrome-devtools | chrome-devtools-mcp@latest
 
 # ─── Optional: Cloud & Infrastructure ──────────────────────────────────────
 # Uncomment what you need, re-run ./claude-bootstrap.sh

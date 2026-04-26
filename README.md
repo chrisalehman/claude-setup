@@ -52,7 +52,7 @@ Everything lives in [`claude-config.txt`](claude-config.txt) — edit it and re-
 | **CLI tools** | git, node, pnpm, gh, jq, ripgrep, uv, @playwright/cli, @sentry/cli, notebooklm *(via uv)* + cloud (docker, gcloud, aws), deployment (stripe, vercel, supabase, fastlane, eas-cli), API (httpie, yq, grpcurl, protoc) |
 | **Plugins** | superpowers, agent-skills, document-skills, example-skills |
 | **Subagents** | voltagent-core-dev, voltagent-lang, voltagent-infra, voltagent-qa-sec, voltagent-data-ai, voltagent-dev-exp, voltagent-meta |
-| **MCP servers** | context7, sentry *(requires env vars)*, trello *(requires env vars)* |
+| **MCP servers** | context7, chrome-devtools, sentry *(requires env vars)*, trello *(requires env vars)* |
 | **Skills** | excalidraw-diagram, humanizer, notebooklm, impeccable (20+ design skills), bionic:rigorous-refactor, bionic:ralph-loop, bionic:map-instrument-narrow, bionic:skill-factory |
 | **Hooks** | protect-main.sh, protect-database.sh, memory-update.sh, memory-commit-save.sh, memory-cleanup.sh, canonical-sdlc-evidence-gate.sh |
 | **Philosophy** | 10 principles for agentic development → [`~/.claude/CLAUDE.md`](claude-global.md) |
@@ -118,9 +118,11 @@ System-level dependencies that Claude Code and the bootstrap itself depend on. M
 | **@sentry/cli** | `npm-global \| @sentry/cli` | Release management, source map uploads, and deploy notifications for Sentry. Complements the Sentry MCP server (which is read-heavy — querying issues) with write-heavy CI/CD operations. See below. |
 | **notebooklm** | `uv-tool \| notebooklm-py \| notebooklm` | Unofficial Python CLI and agentic skill for Google NotebookLM. Provides notebook management, source handling, audio/video generation, and research capabilities. Installed via `uv tool install` into an isolated venv with the `notebooklm` binary on PATH. Requires `notebooklm login` for Google OAuth authentication. |
 
-**Playwright CLI** — Token-efficient browser automation. Where the Playwright MCP server injects full page snapshots and screenshots into Claude's context window (~114K tokens per task), the CLI keeps browser state on disk and gives Claude compact YAML snapshots and file paths (~27K tokens per task) — roughly a 4x token reduction. Claude runs `playwright-cli snapshot` to get element references, `playwright-cli click` to interact, and `playwright-cli screenshot` to capture images to disk. At no point does the full DOM or image binary enter the context window unless Claude explicitly reads those files.
+**Playwright CLI** — Token-efficient browser *driving*. Where the Playwright MCP server injects full page snapshots and screenshots into Claude's context window (~114K tokens per task), the CLI keeps browser state on disk and gives Claude compact YAML snapshots and file paths (~27K tokens per task) — roughly a 4x token reduction. Claude runs `playwright-cli snapshot` to get element references, `playwright-cli click` to interact, and `playwright-cli screenshot` to capture images to disk. At no point does the full DOM or image binary enter the context window unless Claude explicitly reads those files.
 
-Why CLI over MCP: The MCP server works well for short, interactive sessions where Claude needs to reason about page state in real time. But for the "Autonomous Debug Cycles" pattern — where Claude iterates through test → fix → validate loops — the CLI's token efficiency means longer sessions before context compression kicks in, and lower cost per cycle. The CLI is best for well-defined browser tasks; MCP is better when the agent needs rich page reasoning for ambiguous situations.
+Why CLI over MCP for driving: The MCP server works well for short, interactive sessions where Claude needs to reason about page state in real time. But for the "Autonomous Debug Cycles" pattern — where Claude iterates through test → fix → validate loops — the CLI's token efficiency means longer sessions before context compression kicks in, and lower cost per cycle.
+
+Bionic also installs the **Chrome DevTools MCP** server (see [MCP Servers](#mcp-servers)) for the *inspection* side: perf traces, Lighthouse, network throttling, console/memory introspection. Driving and inspection are separate lanes — Playwright CLI navigates and clicks across many turns; Chrome DevTools MCP is invoked occasionally to capture deep runtime data. The token-cost concern is asymmetric: Playwright runs every turn of an autonomous loop (CLI wins), while DevTools fires once per investigation (MCP's richer interface wins).
 
 The bootstrap also runs `npx playwright install chromium` to ensure the browser binary is available.
 
@@ -135,6 +137,18 @@ MCP (Model Context Protocol) servers give Claude runtime capabilities beyond its
 Documentation lookup. Gives Claude tools to query up-to-date library documentation and code examples at runtime, rather than relying on training data. When Claude needs to use a library API it's unsure about, it can look it up live.
 
 Why Context7 over other doc servers: Context7 indexes the actual source documentation of libraries and returns relevant code examples. It's purpose-built for LLM consumption — returns concise, structured results rather than raw HTML pages.
+
+**Chrome DevTools** — `mcp-server | chrome-devtools | chrome-devtools-mcp@latest`
+
+Live browser introspection via the Chrome DevTools Protocol. Gives Claude ~33 tools across performance traces, Lighthouse audits, network inspection (with throttling), CPU/memory profiling, console capture, accessibility tree, screenshots, and JavaScript execution. Headed by default; headless supported. Maintained by the official `ChromeDevTools` GitHub org.
+
+Why both Chrome DevTools MCP *and* Playwright CLI: different jobs. Playwright CLI is for **driving** the browser across an autonomous loop (high-frequency, token-sensitive — see the [CLI tools](#cli-tools) section above). Chrome DevTools MCP is for **inspection** — perf traces, network throttling, Lighthouse scores, CDP-level introspection that the Playwright CLI doesn't expose. It fires once per investigation, not once per turn, so the per-call token cost is the right tradeoff.
+
+This MCP also satisfies the dependency declared by the `agent-skills:browser-testing-with-devtools` skill (from `addy-agent-skills`), which assumes a `chrome-devtools` MCP server is configured. Without this entry, that skill's prescribed tool calls have no backend.
+
+> Upstream note: the `addy-agent-skills` SKILL.md references `@anthropic/chrome-devtools-mcp` — that package does not exist. The real package on npm is `chrome-devtools-mcp` (no `@anthropic/` scope). Bionic uses the correct name.
+
+No environment variables required — runs against your local Chrome install. Requires Node 20.19+ and a current stable Chrome.
 
 **Trello** — `mcp-server | trello | @delorenj/mcp-server-trello | TRELLO_API_KEY,TRELLO_TOKEN`
 
