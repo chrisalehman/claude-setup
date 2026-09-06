@@ -1831,55 +1831,16 @@ adopt_abs() {  # <path> <repo root>
 # walk derives can ever address one. A future non-session file is safe on arrival for the
 # same reason.
 SWEEP_SCHEMA="poker-sweep/v1"
-SWEEP_CLASSES="roster preflight engaged sweeper patrol"
 
-# EVERY SESSION ID THAT HAS STATE HERE, each once, in class-then-name order. Symlinks are
-# ENUMERATED (a `-L` test beside `-e`, so a dangling one counts too) rather than skipped:
-# a link planted at a target path is a thing this verb has to refuse out loud, and a walk
-# that never saw it would report a session as swept while its aimed path stayed behind.
-sweep_session_ids() {  # <tmp dir> -> one session id per line
-  local d="$1" c f base sid seen=""
-  for c in $SWEEP_CLASSES; do
-    for f in "$d/$c"-*.state "$d/$c"-*.state"$PATROL_ARMED_SUFFIX"; do
-      [ -e "$f" ] || [ -L "$f" ] || continue
-      base="${f##*/}"
-      sid="${base#"$c"-}"
-      sid="${sid%"$PATROL_ARMED_SUFFIX"}"
-      sid="${sid%.state}"
-      [ -n "$sid" ] || continue
-      case "$sid" in *"/"*|.|..) continue ;; esac
-      case " $seen " in *" $sid "*) continue ;; esac
-      seen="$seen $sid"
-      printf '%s\n' "$sid"
-    done
-  done
-}
-
-# ONE SESSION'S FILES, BY EXACT PATH AND NEVER BY GLOB. The ids come off the filenames
-# above, so building each candidate path back by concatenation means a strange id can only
-# ever address the file it was read from — there is no pattern here for it to widen.
-sweep_session_files() {  # <tmp dir> <session id> -> one path per line
-  local d="$1" sid="$2" c f
-  for c in $SWEEP_CLASSES; do
-    for f in "$d/$c-$sid.state" "$d/$c-$sid.state$PATROL_ARMED_SUFFIX"; do
-      [ -e "$f" ] || [ -L "$f" ] || continue
-      printf '%s\n' "$f"
-    done
-  done
-}
-
-# The live set, as bare ids. `patrol_live_sessions` answers `session=<sid>|pid=…|cwd=…`,
-# and CWD IS DELIBERATELY NOT CONSULTED: a session live in another project still owns its
-# files here (it may have been started in this root and `cd`-ed away, and the pid is the
-# only fact that decides whether anyone can still act on the row).
-sweep_live_ids() {  # -> one live session id per line
-  local l
-  patrol_live_sessions 2>/dev/null | while IFS= read -r l; do
-    case "$l" in
-      session=*) l="${l#session=}"; printf '%s\n' "${l%%|*}" ;;
-    esac
-  done
-}
+# THE ENUMERATION IS THE LIBRARY'S, NOT A COPY (T5 phase 2). Which files belong
+# to a session, and which sessions are dead, are read through
+# `patrol_state_session_ids`, `patrol_session_state_files` and
+# `patrol_dead_sessions` in scripts/lib/patrol.sh — the same three functions
+# scripts/lib/checks.sh's dead-session detector calls. They have to agree: a
+# class this verb did not delete but the detector counted would put a row on
+# doctor's page whose named cure clears nothing, and a second copy of the class
+# list here is exactly how that drift arrives. The library's own header carries
+# the class table and the reason the unkeyed files are unreachable.
 
 # A SYMLINK IS NOT A FILE THIS SCRIPT WROTE, so it is refused rather than followed and left
 # in place rather than unlinked — the identical posture `remove_patrol_stamp` takes, and for
@@ -2442,9 +2403,11 @@ EOF
       exit 0
     fi
 
-    SWEEP_LIVE="$(sweep_live_ids)"
-    [ -n "$SESSION_ID" ] && SWEEP_LIVE="${SWEEP_LIVE}${SWEEP_LIVE:+
-}${SESSION_ID}"
+    # THE JUDGMENT IS TAKEN ONCE, BY THE LIBRARY, and this loop only renders it.
+    # `patrol_dead_sessions` is handed this session's own key as an additional
+    # live id: it is live by construction, and naming it by hand is what stops an
+    # unreadable claude-home from letting a session sweep its own state.
+    SWEEP_DEAD_IDS="$(patrol_dead_sessions "$REPO_REAL" "$SESSION_ID")"
 
     SWEEP_SCANNED=0
     SWEEP_DEAD=0
@@ -2457,14 +2420,16 @@ EOF
       [ -n "$SWEEP_SID" ] || continue
       SWEEP_SCANNED=$((SWEEP_SCANNED + 1))
 
-      # Newline-delimited containment: an id is in the live set only as a WHOLE line, so a
-      # dead session whose id is a prefix of a live one is not mistaken for it.
+      # Newline-delimited containment against the DEAD set: an id counts as dead
+      # only as a whole line, so a live session whose id is a prefix of a dead
+      # one is not mistaken for it.
       case "
-$SWEEP_LIVE
+$SWEEP_DEAD_IDS
 " in
         *"
 $SWEEP_SID
-"*)
+"*) ;;
+        *)
           SWEEP_KEPT=$((SWEEP_KEPT + 1))
           say "$SWEEP_SID — live, kept"
           continue
@@ -2502,7 +2467,7 @@ $SWEEP_SID
 "
         fi
       done <<EOF
-$(sweep_session_files "$SWEEP_DIR" "$SWEEP_SID")
+$(patrol_session_state_files "$REPO_REAL" "$SWEEP_SID")
 EOF
 
       say "$SWEEP_SID — dead, $SWEEP_N file(s)"
@@ -2510,7 +2475,7 @@ EOF
         [ -n "$SWEEP_L" ] && say "$SWEEP_L"
       done
     done <<EOF
-$(sweep_session_ids "$SWEEP_DIR")
+$(patrol_state_session_ids "$REPO_REAL")
 EOF
 
     printf '%s|at=%s|session=%s|mode=%s|scanned=%s|dead=%s|live=%s|files=%s|removed=%s|refused=%s\n' \
