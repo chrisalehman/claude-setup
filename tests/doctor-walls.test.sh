@@ -240,4 +240,57 @@ _over="$(too_wide "$OUT_NOCLI")"
 if [ -z "$_over" ]; then ok "13.4: the CLI-absent page still fits 100 columns"
 else no "13.4: a line of the CLI-absent page exceeds 100 columns" "$_over"; fi
 
+
+section "Section 6: the page and the table's row read ONE wall verdict (Step-6 review B-2)"
+
+# TWO IMPLEMENTATIONS OF ONE FACT, until the 1.5.1 fix-up batch. doctor's wall
+# loop asked `is the file readable` and `does the loader answer` in its own
+# render loop, while `bionic_check_wall_missing` and `bionic_check_wall_unloadable`
+# in lib/checks.sh asked the same two questions for the row — and nothing ever
+# invoked those two, so the copy this page ran and the copy the row named were
+# free to drift with nothing going red. `bionic_check_wall_state` is the one
+# implementation now, and this section is where it is asked on the very fixture
+# the sections above rendered: both libraries are deleted at this point, so every
+# wall is unloadable and none is missing.
+wall_ask() {  # <expression> -> what checks.sh answers on THIS fixture's payload root
+  ( cd "$REPO" && HOME="$TMP" PATH="$BIN" BIONIC_SHELL_RC="$FIXTURE_RC" \
+      BIONIC_CLAUDE_HOME="$TMP/claude-home" BIONIC_PLUGIN_ROOT="$PLUG" \
+      BIONIC_PLUGINS_DIR="$EMPTY_PLUGINS" \
+      bash -c '. "$1" >/dev/null 2>&1 || exit 9; eval "$2"' _ \
+      "$PLUG/scripts/lib/checks.sh" "$1" 2>/dev/null )
+}
+
+expect_eq "14.1: the row's per-wall verdict names the same library the page named" \
+  "unloadable=git-argv.sh" "$(wall_ask 'bionic_check_wall_state protect-main')"
+expect_match "14.2: …and the page it was taken from said exactly that" \
+  "*protect-main*cannot load*git-argv.sh*" "$ROWS3"
+expect_match "14.3: the wanted basenames come from the hook itself, not from a list here" \
+  "*git-argv.sh*" "$(wall_ask "bionic_check_wall_want '$PLUG/hooks/protect-main.sh'")"
+expect_match "14.4: the loader probe answers with an empty library and names the one it wanted" \
+  "lib=|missing=git-argv.sh*" "$(wall_ask "bionic_check_wall_probe '$PLUG/hooks/protect-main.sh' git-argv.sh")"
+# THE TWO ROW DETECTORS, over the same root: no wall FILE is gone, so the
+# payload row is quiet, while every wall fails to load, so the library row fires.
+expect_eq "14.5: the wall-payload row is quiet — no wall hook is missing here" \
+  "no" "$(wall_ask 'bionic_check_fires wall-payload && echo yes || echo no')"
+expect_eq "14.6: …while the wall-library row fires, which is what the page reported" \
+  "yes" "$(wall_ask 'bionic_check_fires wall-library && echo yes || echo no')"
+# PAIRED POSITIVE: put the library back and the same answers move with it, so
+# none of the rows above is a constant.
+cp "${PAYLOAD}/scripts/lib/git-argv.sh" "$PLUG/scripts/lib/git-argv.sh"
+expect_eq "14.7: restoring the library flips that wall's verdict to ok" \
+  "ok" "$(wall_ask 'bionic_check_wall_state protect-main')"
+expect_match "14.8: …and doctor's page stops naming that wall on the same tree" \
+  "*background-suite-guard*" "$(walls_rows "$(run_doctor)")"
+expect_no_match "14.9: …while protect-main is no longer named at all" \
+  "*protect-main*" "$(walls_rows "$(run_doctor)")"
+# AND THE MISSING ARM, which the sections above never reach: take the hook file
+# itself away and the payload row is the one that fires.
+rm -f "$PLUG/hooks/protect-main.sh"
+expect_eq "14.10: with the hook file itself gone the verdict is missing, not unloadable" \
+  "missing" "$(wall_ask 'bionic_check_wall_state protect-main')"
+expect_eq "14.11: …and the wall-payload row is what fires for it" \
+  "yes" "$(wall_ask 'bionic_check_fires wall-payload && echo yes || echo no')"
+expect_match "14.12: …which is the line doctor prints for that state" \
+  "*protect-main*not in this payload*" "$(run_doctor)"
+
 finish

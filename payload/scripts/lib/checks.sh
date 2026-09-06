@@ -303,23 +303,51 @@ bionic_check_statusline_npx() {  # <row id>
   [ "${line##*present=}" = "yes" ]
 }
 
-bionic_check_wall_missing() {  # <row id>
-  local w root
+# ONE VERDICT PER WALL, AND EVERYONE READS IT (Step-6 review B-2). Doctor's page
+# used to ask these two questions again in its own render loop — is the file
+# readable, does the loader probe answer with a library — while the two detectors
+# below asked them here and were never invoked by anything. Two implementations
+# of one fact, free to drift in either direction with nothing going red. Now this
+# function is the implementation: doctor's loop reads it per wall for the row it
+# prints, and the two row detectors read it across the roster for the fix line.
+#
+# THE ANSWER IS A WORD PLUS THE ONE THING THE RENDERER NEEDS: `missing`, `ok`, or
+# `unloadable=<library>` — the first basename the hook asked for and did not get,
+# falling back to what the hook declared when the probe itself could not run, so
+# a row names a library either way rather than an empty string.
+bionic_check_wall_state() {  # <wall hook name> -> missing | ok | unloadable=<lib>
+  local w="${1:-}" root f want probe lib miss
   root="$(bionic_check_payload_root)"
+  f="${root}/hooks/${w}.sh"
+  [ -r "$f" ] || { printf 'missing'; return 0; }
+  want="$(bionic_check_wall_want "$f")"
+  probe="$(bionic_check_wall_probe "$f" "$want")"
+  lib=""; miss=""
+  while IFS= read -r _bcw_f; do
+    case "$_bcw_f" in
+      lib=*)     lib="${_bcw_f#lib=}" ;;
+      missing=*) miss="${_bcw_f#missing=}" ;;
+    esac
+  done <<<"$(printf '%s' "$probe" | tr '|' '\n')"
+  [ -n "$lib" ] && { printf 'ok'; return 0; }
+  [ -n "$miss" ] || miss="${want%% *}"
+  [ -n "$miss" ] || miss="the bionic library"
+  printf 'unloadable=%s' "$miss"
+  return 0
+}
+
+bionic_check_wall_missing() {  # <row id>
+  local w
   for w in $BIONIC_WALL_HOOKS; do
-    [ -r "${root}/hooks/${w}.sh" ] || return 0
+    [ "$(bionic_check_wall_state "$w")" = "missing" ] && return 0
   done
   return 1
 }
 
 bionic_check_wall_unloadable() {  # <row id>
-  local w root f probe
-  root="$(bionic_check_payload_root)"
+  local w
   for w in $BIONIC_WALL_HOOKS; do
-    f="${root}/hooks/${w}.sh"
-    [ -r "$f" ] || continue
-    probe="$(bionic_check_wall_probe "$f" "$(bionic_check_wall_want "$f")")"
-    case "$probe" in lib=?*) ;; *) return 0 ;; esac
+    case "$(bionic_check_wall_state "$w")" in (unloadable=*) return 0 ;; esac
   done
   return 1
 }
@@ -363,7 +391,19 @@ bionic_check_dead_session_state() {  # <row id>
 #   label     the label doctor's row carries, empty when doctor renders no row
 #             for this check (`plugin`, the duplicates and the core-enable rows
 #             reach a reader through a FIX line instead, which is a different
-#             surface and not a row)
+#             surface and not a row).
+#             THE TWO RENDERERS ARE NOT SYMMETRIC, and this is where a reader
+#             adding a row finds that out (Step-6 review C-1). Setup's roster is
+#             DERIVED: give a row an `item` and it appears on `--list` with no
+#             other edit. Doctor's rows are not — doctor owns presentation, so
+#             each labelled row is rendered by a call site written by hand in the
+#             section that row belongs in (the environment loop, the dependency
+#             walk, the leftover block at doctor.sh's ENVIRONMENT table), and a
+#             labelled row with no call site renders nowhere at all. What keeps
+#             that from being silent is the agreement test, not this comment:
+#             §DS of tests/cross-gate-agreement.test.sh walks every labelled row
+#             that fires on the fixture and fails if doctor's page does not carry
+#             it, with its hint, wherever its section puts it.
 #   detector  read-only, returns 0 when the check fires
 #   party     setup | cli | user
 #   item      the setup item that clears it; empty unless party is setup
@@ -505,27 +545,17 @@ _bionic_check_field() {  # <id> <field index 2..6>
   return 1
 }
 
+# ONE ACCESSOR PER FIELD A CALLER ASKS FOR BY ID, AND NO MORE (Step-6 review
+# B-3). `bionic_check_party` (field 4 by id) and `bionic_check_dep_row` (a
+# dependency name to its row id) were written for callers that were never
+# written: doctor asks `bionic_check_dep_hint` for the dependency question, and
+# nothing asks a row's party by id — §DS reads party off a row it already holds.
+# An accessor with no caller is a claim the code makes about itself that nothing
+# checks, so the two are gone rather than kept for a future that has not arrived.
 bionic_check_label()    { _bionic_check_field "${1:-}" 2; }
 bionic_check_detector() { _bionic_check_field "${1:-}" 3; }
-bionic_check_party()    { _bionic_check_field "${1:-}" 4; }
 bionic_check_item()     { _bionic_check_field "${1:-}" 5; }
 bionic_check_hint()     { _bionic_check_field "${1:-}" 6; }
-
-# THE ROW FOR A DEPENDENCY BY NAME. doctor walks the dependency catalog, not the
-# check table, when it builds the THIRD PARTY section — one pass produces three
-# renderings — so it needs to get from a name to that name's row. A `when-needed`
-# dependency has no row and this returns non-zero for it, which is the honest
-# answer: nothing repairs a tool that is absent by design.
-bionic_check_dep_row() {  # <dependency name> -> the row id
-  local n="${1:-}" f1
-  _bionic_checks_ensure
-  while IFS='|' read -r f1 _; do
-    case "$f1" in
-      "tool:${n}"|"dep:${n}") printf '%s' "$f1"; return 0 ;;
-    esac
-  done <<<"$_BIONIC_CHECKS_TABLE"
-  return 1
-}
 
 # The hint a dependency row carries, empty for a dependency no row covers. One
 # pass, not two: the row is found and its hint read in the same walk.

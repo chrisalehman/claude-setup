@@ -6743,6 +6743,21 @@ expect_eq "…but the grep catches it" "yes" \
 
 # ------------------------------------------------ §DS OWNERSHIP: the fix hint and the roster
 #
+# ONE TABLE, TWO RENDERERS, FOUR WAYS OF ASKING WHETHER THEY AGREE (fixit 1.5.1).
+# `payload/scripts/lib/checks.sh` holds the table: one row per fact bionic needs true on a
+# machine, carrying that fact's detector, the party who repairs it, the setup item when that
+# party is setup, and the hint a report must print. doctor.sh and setup.sh render from it and
+# neither owns a check of its own, so this section stopped comparing the two SCRIPTS against
+# each other and started comparing each of them against the table. The four legs, each with
+# its own sub-banner below:
+#
+#   DS.2a  every labelled row that FIRES renders somewhere on doctor's page, with its hint
+#   DS.2   everything doctor renders resolves to a row of the table, party and item included
+#   DS.2b  setup's `--list` IS the table's item column, set against set, both directions
+#   DS.2c  the same machine, both sides: an item setup would offer is flagged by doctor
+#
+# and the mutation arms DS.5–DS.10 plant, on copies, each drift those legs exist to catch.
+#
 # THE TWO PARTIES ARE doctor.sh AND setup.sh, and the question they have to answer the same
 # way is "what can /bionic:setup repair on this machine". Doctor ends a row with
 # `→ /bionic:setup` to say the command below will clear it; setup's `--list` is the roster of
@@ -6810,11 +6825,22 @@ mkdir -p "$DS_DIR"
 ds_plant() {  # <home> <hooks:yes|no> <agents:yes|no>
   local h="$1" want_hooks="$2" want_agents="$3" f n=0
   rm -rf "$h"; mkdir -p "$h/.claude"
+  # AND ONE ENVIRONMENT NAME WRITTEN TO THE WRONG VALUE (Step-6 review B-1). The
+  # environment row has two firing states — the name is absent from the `env`
+  # object, or it is there carrying something other than the value bionic sets —
+  # and this fixture used to reach only the first, because it wrote no `env`
+  # object at all. The second is the state where doctor and setup disagreed in
+  # the field's own shape: a tick from the page over a repair setup was still
+  # offering. One key is planted wrong and the other two are left absent, so the
+  # scans below see both states of the same row on one machine.
   cat > "$h/.claude/settings.json" <<'DSJSON'
 {
   "statusLine": {
     "type": "command",
     "command": "npx ccstatusline@latest"
+  },
+  "env": {
+    "BASH_MAX_TIMEOUT_MS": "600000"
   }
 }
 DSJSON
@@ -6951,6 +6977,68 @@ $(ds_section "$1" "THIRD PARTY")"
   return 0
 }
 
+# EVERY LABELLED ROW THAT FIRES ON THIS MACHINE, asked in ONE process (Step-6
+# review A-2/A-4, C-1). `ds_hinted_lines` starts from doctor's page and keeps the
+# lines that already carry a route, which can only ever prove "the route you
+# printed is the one your row names" — a row that lost its route, or a row doctor
+# never renders at all, is filtered out before any leg reads it. This starts from
+# the TABLE instead: every row with a label whose detector fires, whatever its
+# party, so the walk below can require a rendering rather than notice one.
+ds_fired_rows() {  # <home> -> id|label|hint for every labelled row that fires
+  HOME="$1" BIONIC_CLAUDE_HOME="$1/.claude" BIONIC_PLUGIN_ROOT="$DS_PAYLOAD" \
+    bash -c '. "$1" >/dev/null 2>&1 || exit 1
+             bionic_check_rows | while IFS="|" read -r ds_i ds_l ds_d ds_p ds_it ds_h; do
+               [ -n "$ds_l" ] || continue
+               [ -n "$ds_d" ] || continue
+               "$ds_d" "$ds_i" || continue
+               printf "%s|%s|%s\n" "$ds_i" "$ds_l" "$ds_h"
+             done' _ "$DS_CHECKS_LIB" 2>/dev/null
+}
+
+# THE WHOLE PAGE, NOT TWO SECTIONS (plan A-T5-5). A row renders where its section
+# puts it — the environment loop, the dependency walk, the leftover block — and a
+# leg that reads ENVIRONMENT and THIRD PARTY alone cannot see a row rendered in
+# PATROL or RESOURCES, or one rendered nowhere. Every rendered row has the same
+# shape: two spaces, one state glyph, a space, then the label. The column-header
+# line starts with four spaces and is skipped by the glyph test.
+ds_page_line_for() {  # <doctor report> <label> -> the rendered line carrying it
+  local line rest
+  while IFS= read -r line; do
+    case "$line" in ("  "*) ;; (*) continue ;; esac
+    rest="${line#  }"
+    case "$rest" in (" "*) continue ;; esac
+    rest="${rest#* }"
+    case "$rest" in
+      ("$2") printf '%s' "$line"; return 0 ;;
+      ("$2 "*) printf '%s' "$line"; return 0 ;;
+    esac
+  done <<<"$1"
+  return 1
+}
+
+# The walk itself, factored out because the two mutation arms at the end of this
+# section run the very same code over a doctored library and have to come out
+# non-empty. Answers with one line per row that is missing, unrendered or hintless.
+ds_unrendered() {  # <doctor report> <fired rows> -> the rows the page does not carry
+  local row id label hint line out=""
+  while IFS='|' read -r id label hint; do
+    [ -n "$id" ] || continue
+    if [ -z "$hint" ]; then
+      out="${out}${out:+, }${id} carries no hint at all"
+      continue
+    fi
+    if ! line="$(ds_page_line_for "$1" "$label")"; then
+      out="${out}${out:+, }${id} (${label}) renders nowhere on the page"
+      continue
+    fi
+    case "$line" in
+      (*"$hint"*) ;;
+      (*) out="${out}${out:+, }${id} (${label}) renders without its hint" ;;
+    esac
+  done <<<"$2"
+  printf '%s' "$out"
+}
+
 # The label a rendered row carries: two spaces, the state glyph, a space, then the
 # label padded out with spaces, so cutting at the first DOUBLE space ends it.
 ds_label_of() {  # <rendered row>
@@ -7056,7 +7144,45 @@ expect_contains "DS.1 …and it counts the sixteen payload-named files, not the 
 expect_contains "DS.1 …and all six role files as drifted" \
   "6/6 differ" "$DS_REPORT"
 
-# ── DS.2 THE FIRST WAY: everything doctor renders is in the table ────────────
+# ── DS.2a THE FIRST WAY: every row that fires renders, with its hint ─────────
+#
+# THE DIRECTION THE OTHER LEGS CANNOT SEE. DS.2 below starts from doctor's page
+# and asks whether what it found is in the table; that is `render ⊆ table`, and
+# it says nothing about a row the page never printed. This is the other
+# containment — every labelled row whose detector fires on this machine has to
+# appear SOMEWHERE on doctor's page, carrying the hint its row names — and it is
+# the leg the design's first way asks for (plan AC-1).
+#
+# TWO DEFECTS IT CATCHES THAT NOTHING ELSE DID. A row whose hint went missing
+# (a mistyped id resolves to nothing, and `bionic_check_hint`'s non-zero is
+# discarded by every call site) used to vanish from the route-keyed scan and
+# leave a ✗ row with no cure — the reader-facing half of the field defect. And a
+# labelled row added to the table with no call site in doctor.sh renders nowhere
+# at all: setup's roster derives from the rows, doctor's page does not, and until
+# this leg nothing said so. Both are planted and watched red at DS.9 and DS.10.
+DS_FIRED="$(ds_fired_rows "$DS_HOME")"
+DS_UNRENDERED="$(ds_unrendered "$DS_REPORT" "$DS_FIRED")"
+expect_true "DS.2a the table names labelled rows that fire on this fixture (the rows under it are not vacuous)" \
+  test "$(printf '%s\n' "$DS_FIRED" | grep -c '|')" -ge 6
+expect_eq "DS.2a every labelled row that fires renders on doctor's page, with its hint" \
+  "" "$DS_UNRENDERED"
+# The empty-route half said on its own, so a table that lost a hint fails here
+# even if the row still renders: an empty hint matches every line ever printed,
+# which is how a vacuous scan looks from the inside (review A-2, A-5).
+expect_eq "DS.2a …and no row in the whole table carries an empty hint" "" \
+  "$(while IFS='|' read -r ds_r; do
+       [ -n "$ds_r" ] || continue
+       [ -n "$(ds_field "$ds_r" 6)" ] || printf '%s ' "$(ds_field "$ds_r" 1)"
+     done <<<"$DS_TABLE")"
+# THE ENVIRONMENT ROW'S SECOND FIRING STATE, named (review B-1). The fixture
+# writes one key wrong and leaves two absent, so this row is asserted in the
+# state that used to render ✓ with no cure.
+expect_contains "DS.2a the fixture really does carry an environment name written to the wrong value" \
+  "env:BASH_MAX_TIMEOUT_MS" "$DS_FIRED"
+expect_contains "DS.2a …and doctor's page says so rather than ticking it" \
+  "not the value bionic sets" "$(ds_page_line_for "$DS_REPORT" "BASH_MAX_TIMEOUT_MS")"
+
+# ── DS.2 THE SECOND WAY: everything doctor renders is in the table ───────────
 #
 # Every hinted row in either machine-state table must resolve to a row of the
 # check table, and — where that row is setup's — the item it names must be on the
@@ -7102,7 +7228,7 @@ expect_eq "DS.2 …and every setup-party row's item is on setup's --list" "" "$D
 expect_eq "DS.2 …and every one of those items fires on the machine doctor read" "" "$DS_UNPENDING"
 expect_eq "DS.2 …and every row states the party its table row names" "" "$DS_MISPARTY"
 
-# ── DS.2b THE SECOND WAY: setup's roster IS the table's item column ──────────
+# ── DS.2b THE THIRD WAY: setup's roster IS the table's item column ───────────
 #
 # Set against set, not count against count. A roster that gained an item the table
 # has never heard of is a repair nothing diagnoses; a table item missing from the
@@ -7116,7 +7242,7 @@ expect_eq "DS.2b every item on setup's --list is an item the check table names" 
 expect_eq "DS.2b …and every item the check table names is on setup's --list" \
   "" "$(comm -13 <(printf '%s\n' "$DS_LIST_ITEMS") <(printf '%s\n' "$DS_TABLE_ITEMS") | tr '\n' ' ' | sed 's/ *$//')"
 
-# ── DS.2c THE THIRD WAY: the same state, both sides ──────────────────────────
+# ── DS.2c THE FOURTH WAY: the same state, both sides ─────────────────────────
 #
 # The two parties agree about the ROSTER above; this is whether they agree about
 # THIS MACHINE. Every item setup would offer, whose rows doctor renders a label
@@ -7262,6 +7388,39 @@ expect_contains "DS.4b …and routes it to the party its table row names" \
   "$(ds_field "$(printf '%s\n' "$DS_TABLE" | grep '^wall-payload|')" 6)" "$DS_WALL_REPORT"
 expect_absent "DS.4b …and never to setup's phantom repair verb" \
   "/bionic:setup — repair" "$DS_WALL_REPORT"
+
+# ── DS.4c the wall row's DETECTOR answers what doctor's page just said ───────
+#
+# ONE VERDICT PER WALL (Step-6 review B-2). Until this fixit's fix-up batch,
+# doctor's wall loop re-implemented "is the file readable" and "does the loader
+# answer" beside the two detectors in checks.sh that ask the same two questions —
+# and nothing ever invoked those detectors, so the copy the page ran and the copy
+# the row named were free to drift with nothing going red. They share one
+# implementation now (`bionic_check_wall_state`), and this is the arm that binds
+# the sharing to an observation: the same sparse root doctor just reported on,
+# asked of the row.
+ds_wall_fires() {  # <payload root> <row id> -> yes | no
+  HOME="$DS_HOME" BIONIC_CLAUDE_HOME="$DS_HOME/.claude" BIONIC_PLUGIN_ROOT="$1" \
+    bash -c '. "$1" >/dev/null 2>&1 || exit 9
+             bionic_check_fires "$2" && echo yes || echo no' _ "$DS_CHECKS_LIB" "$2" 2>/dev/null
+}
+ds_wall_state() {  # <payload root> <wall name> -> the row's own per-wall verdict
+  HOME="$DS_HOME" BIONIC_CLAUDE_HOME="$DS_HOME/.claude" BIONIC_PLUGIN_ROOT="$1" \
+    bash -c '. "$1" >/dev/null 2>&1 || exit 9
+             bionic_check_wall_state "$2"' _ "$DS_CHECKS_LIB" "$2" 2>/dev/null
+}
+expect_eq "DS.4c the row's detector fires on the very root whose page raised the wall" \
+  "yes" "$(ds_wall_fires "$DS_WALL_ROOT" wall-payload)"
+expect_eq "DS.4c …and names that wall as the missing one" \
+  "missing" "$(ds_wall_state "$DS_WALL_ROOT" protect-main)"
+# PAIRED: the shipped payload root, where doctor's page reports 4/4 and the row
+# is quiet — so the two rows above are a measurement and not a constant.
+expect_eq "DS.4c …while on the shipped payload root the same detector is quiet" \
+  "no" "$(ds_wall_fires "$DS_PAYLOAD" wall-payload)"
+expect_eq "DS.4c …and that wall resolves its library there" \
+  "ok" "$(ds_wall_state "$DS_PAYLOAD" protect-main)"
+expect_contains "DS.4c …which is what doctor's page says about it too" \
+  "walls" "$(ds_page_line_for "$DS_REPORT" "walls")"
 
 # ── DS.5 mutation: a NEW hinted row with no table row goes red ───────────────
 #
@@ -7416,6 +7575,116 @@ expect_eq "DS.8 …and the set-against-set scan goes RED on exactly that name" \
   "$(comm -23 <(printf '%s\n' "$DS_MUT_ITEMS8") <(printf '%s\n' "$DS_TABLE_ITEMS") | tr '\n' ' ' | sed 's/ *$//')"
 expect_eq "DS.8 …while the shipped roster leaves that scan empty" \
   "" "$(comm -23 <(printf '%s\n' "$DS_LIST_ITEMS") <(printf '%s\n' "$DS_TABLE_ITEMS") | tr '\n' ' ' | sed 's/ *$//')"
+
+# ── DS.9 mutation: a row that loses its hint goes red rather than quiet ─────
+#
+# THE FALSE GREEN THIS LEG WAS BUILT FOR (Step-6 review A-2). Every route doctor
+# prints is `$(bionic_check_hint <id>)`, and an id that does not resolve returns
+# non-zero having printed nothing — a return value all twenty-odd call sites
+# discard. The row still renders, as a ✗ with no cure, which is the reader-facing
+# half of the field defect this whole fixit exists to end. The route-keyed scan
+# could not see it: a line with no route is filtered out before any leg reads it,
+# so removing a hint made the evidence quieter instead of redder. DS.2a starts
+# from the table, so it fails on exactly this.
+DS_MUT9="$DS_DIR/mutant-hint"
+rm -rf "$DS_MUT9"; mkdir -p "$DS_MUT9"
+cp -R "$DS_PAYLOAD/scripts" "$DS_MUT9/scripts"
+DS_MUT_CHECKS9="$DS_MUT9/scripts/lib/checks.sh"
+LC_ALL=C sed 's|^\(  _bionic_checks_emit "legacy-hook-files" .*\) "\$r_setup"$|\1 ""|' \
+  "$DS_CHECKS_LIB" > "$DS_MUT_CHECKS9"
+expect_eq "DS.9 the doctored library differs from the shipped one by exactly the one hint" \
+  "1" "$(diff "$DS_CHECKS_LIB" "$DS_MUT_CHECKS9" | grep -c '^< ')"
+DS_MUT_TABLE9="$( DS_CHECKS_LIB="$DS_MUT_CHECKS9"; ds_rows "$DS_HOME" )"
+expect_eq "DS.9 …and the table it builds carries an empty hint for that row" "" \
+  "$(ds_field "$(ds_row_for 'legacy hook files' "$DS_MUT_TABLE9")" 6)"
+expect_true "DS.9 …while the shipped table's same row carries one (the row above is a measurement)" \
+  test -n "$(ds_field "$(ds_row_for 'legacy hook files' "$DS_TABLE")" 6)"
+# The doctored library is what doctor reads, so the row renders with no cure —
+# and the fired-row walk goes red on it, naming the row.
+DS_MUT_DOC9="$DS_MUT9/scripts/doctor.sh"
+DS_MUT_REPORT9="$( PARTY_DOCTOR="$DS_MUT_DOC9"; ds_doctor "$DS_HOME" )"
+DS_MUT_FIRED9="$( DS_CHECKS_LIB="$DS_MUT_CHECKS9"; ds_fired_rows "$DS_HOME" )"
+expect_true "DS.9 the doctored doctor still renders that row (the rows below are not vacuous)" \
+  test -n "$(ds_page_line_for "$DS_MUT_REPORT9" 'legacy hook files')"
+expect_absent "DS.9 …with no cure on it at all" \
+  "/bionic:setup" "$(ds_page_line_for "$DS_MUT_REPORT9" 'legacy hook files')"
+expect_contains "DS.9 …and the fired-row walk goes RED on it" \
+  "legacy-hook-files" "$(ds_unrendered "$DS_MUT_REPORT9" "$DS_MUT_FIRED9")"
+expect_eq "DS.9 …while the same walk over the shipped pair is empty" \
+  "" "$(ds_unrendered "$DS_REPORT" "$DS_FIRED")"
+
+# ── DS.10 mutation: a labelled row with no doctor call site goes red ────────
+#
+# THE ASYMMETRY A NEWCOMER WOULD GET WRONG (Step-6 review C-1), planted. Setup's
+# roster is DERIVED from the rows — add a row with an item and `--list` carries
+# it — while doctor's rows each have a call site written by hand, so a labelled
+# row added to the table renders in setup and nowhere in doctor. This plants
+# exactly that: one more row, labelled, party `user` (so it can never reach the
+# item-keyed legs at all), sharing a detector that fires on this fixture, and
+# with no call site anywhere in doctor.sh.
+DS_MUT10="$DS_DIR/mutant-row"
+rm -rf "$DS_MUT10"; mkdir -p "$DS_MUT10"
+cp -R "$DS_PAYLOAD/scripts" "$DS_MUT10/scripts"
+DS_MUT_CHECKS10="$DS_MUT10/scripts/lib/checks.sh"
+LC_ALL=C awk '
+  /^  _bionic_checks_emit "statusline-npx" / {
+    print "  _bionic_checks_emit \"probe-unrendered\" \"planted probe row\" \"bionic_check_legacy_hook_files\" \"user\" \"\" \"clear it by hand\""
+  }
+  { print }' "$DS_CHECKS_LIB" > "$DS_MUT_CHECKS10"
+expect_eq "DS.10 the doctored library differs from the shipped one by exactly the planted row" \
+  "1" "$(diff "$DS_CHECKS_LIB" "$DS_MUT_CHECKS10" | grep -c '^> ')"
+expect_eq "DS.10 …and by nothing removed" \
+  "0" "$(diff "$DS_CHECKS_LIB" "$DS_MUT_CHECKS10" | grep -c '^< ')"
+DS_MUT_FIRED10="$( DS_CHECKS_LIB="$DS_MUT_CHECKS10"; ds_fired_rows "$DS_HOME" )"
+expect_contains "DS.10 the planted row fires on this fixture (the rows below are not vacuous)" \
+  "probe-unrendered" "$DS_MUT_FIRED10"
+DS_MUT_DOC10="$DS_MUT10/scripts/doctor.sh"
+DS_MUT_REPORT10="$( PARTY_DOCTOR="$DS_MUT_DOC10"; ds_doctor "$DS_HOME" )"
+expect_absent "DS.10 …and doctor renders it nowhere, because no call site names it" \
+  "planted probe row" "$DS_MUT_REPORT10"
+expect_contains "DS.10 …so the page-wide walk goes RED on it, by name" \
+  "probe-unrendered" "$(ds_unrendered "$DS_MUT_REPORT10" "$DS_MUT_FIRED10")"
+# PAIRED: the same doctored library's SETUP side is untouched, which is the
+# asymmetry itself — a party `user` row adds no item, and a labelled row lands on
+# doctor's page only if someone wrote the call site.
+expect_absent "DS.10 …while the roster gains nothing from it" \
+  "probe-unrendered" "$( PARTY_SETUP="$DS_MUT10/scripts/setup.sh"; ds_setup "$DS_HOME" --list )"
+
+# ── DS.11 mutation: a renderer that keeps its OWN firing rule goes red ──────
+#
+# THE SECOND OWNER OF "DOES THIS CHECK FIRE", planted (Step-6 review B-1). Until
+# the fix-up batch doctor's environment loop asked its own question — does
+# `env_get` fail, i.e. is the name absent from settings.json — while the row's
+# detector asks whether the configured value IS the value bionic sets. The two
+# answers differ on exactly one machine, the one this fixture now plants: a name
+# written to something else. There doctor printed ✓ with no cure while setup went
+# on offering to rewrite it, which is the 2026-09-05 field defect inverted. This
+# copy of doctor.sh puts that rule back, in one line, and the fired-row walk must
+# go red on the name the fixture wrote wrong.
+DS_MUT11="$DS_DIR/mutant-env"
+rm -rf "$DS_MUT11"; mkdir -p "$DS_MUT11"
+cp -R "$DS_PAYLOAD/scripts" "$DS_MUT11/scripts"
+DS_MUT_DOC11="$DS_MUT11/scripts/doctor-own-env-rule.sh"
+LC_ALL=C awk '
+  /if bionic_check_fires "env:\$\{_env_key\}"; then _env_fires=yes; else _env_fires=no; fi/ {
+    print "  if [ -z \"$_env_configured\" ]; then _env_fires=yes; else _env_fires=no; fi"; next }
+  { print }' "$PARTY_DOCTOR" > "$DS_MUT_DOC11"
+expect_eq "DS.11 the doctored doctor differs from the shipped one by exactly the one read" \
+  "1" "$(diff "$PARTY_DOCTOR" "$DS_MUT_DOC11" | grep -c '^< ')"
+expect_eq "DS.11 …and by exactly the one rule that replaced it" \
+  "1" "$(diff "$PARTY_DOCTOR" "$DS_MUT_DOC11" | grep -c '^> ')"
+DS_MUT_REPORT11="$( PARTY_DOCTOR="$DS_MUT_DOC11"; ds_doctor "$DS_HOME" )"
+DS_MUT_ENV_ROW11="$(ds_page_line_for "$DS_MUT_REPORT11" "BASH_MAX_TIMEOUT_MS")"
+expect_true "DS.11 the doctored doctor still renders the environment row (the rows below are not vacuous)" \
+  test -n "$DS_MUT_ENV_ROW11"
+expect_absent "DS.11 …and it is back to a tick with no cure on it" \
+  "/bionic:setup" "$DS_MUT_ENV_ROW11"
+expect_contains "DS.11 …while setup, reading the same machine, still offers the item" \
+  "environment" "$DS_PENDING_ITEMS"
+expect_contains "DS.11 …so the fired-row walk goes RED on that name" \
+  "env:BASH_MAX_TIMEOUT_MS" "$(ds_unrendered "$DS_MUT_REPORT11" "$DS_FIRED")"
+expect_eq "DS.11 …while the shipped doctor leaves the same walk empty" \
+  "" "$(ds_unrendered "$DS_REPORT" "$DS_FIRED")"
 
 
 # ============================================================

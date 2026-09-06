@@ -722,29 +722,31 @@ done
 WALLS_TOTAL=0; WALLS_OK=0; WALL_ROWS=""
 for _wall in $BIONIC_WALL_HOOKS; do
   WALLS_TOTAL=$((WALLS_TOTAL + 1))
-  _wall_file="${_doctor_payload_root}/hooks/${_wall}.sh"
-  if [ ! -r "$_wall_file" ]; then
-    WALL_ROWS="${WALL_ROWS}$(_doctor_native_row "$DOCTOR_BAD" "wall" "—" \
-      "${_wall} is not in this payload — reinstall the plugin")"$'\n'
-    fix "the ${_wall} wall is missing from the payload → $(bionic_check_hint wall-payload)"
-    continue
-  fi
-  _wall_want="$(bionic_check_wall_want "$_wall_file")"
-  _wall_probe="$(bionic_check_wall_probe "$_wall_file" "$_wall_want")"
-  _wall_lib="$(_doctor_pfield "$_wall_probe" lib)"
-  if [ -n "$_wall_lib" ]; then
-    WALLS_OK=$((WALLS_OK + 1))
-    continue
-  fi
-  # `missing` is the first basename the hook asked for and did not get; with an
-  # empty probe (no bash, no pin) fall back to what the hook declared, so the row
-  # names a library either way rather than an empty string.
-  _wall_missing="$(_doctor_pfield "$_wall_probe" missing)"
-  [ -n "$_wall_missing" ] || _wall_missing="${_wall_want%% *}"
-  [ -n "$_wall_missing" ] || _wall_missing="the bionic library"
-  WALL_ROWS="${WALL_ROWS}$(_doctor_native_row "$DOCTOR_BAD" "wall" "—" \
-    "${_wall} cannot load ${_wall_missing}")"$'\n'
-  fix "the ${_wall} wall cannot load ${_wall_missing} → $(bionic_check_hint wall-library)"
+  # ONE VERDICT, ASKED OF THE TABLE (Step-6 review B-2). This loop used to
+  # re-implement `is the file readable` and `does the loader answer` beside the
+  # detectors in lib/checks.sh that ask the same two questions — and those
+  # detectors were never invoked, so the copy doctor ran and the copy the rows
+  # named could drift apart with nothing going red. `bionic_check_wall_state` is
+  # the one implementation; this page renders its answer.
+  # Asked ONCE per wall: the state carries a loader probe, and asking twice would
+  # be a second `bash -c` per row for an answer already in hand.
+  _wall_state="$(bionic_check_wall_state "$_wall")"
+  case "$_wall_state" in
+    (ok)
+      WALLS_OK=$((WALLS_OK + 1))
+      ;;
+    (missing)
+      WALL_ROWS="${WALL_ROWS}$(_doctor_native_row "$DOCTOR_BAD" "wall" "—" \
+        "${_wall} is not in this payload — reinstall the plugin")"$'\n'
+      fix "the ${_wall} wall is missing from the payload → $(bionic_check_hint wall-payload)"
+      ;;
+    (unloadable=*)
+      _wall_missing="${_wall_state#unloadable=}"
+      WALL_ROWS="${WALL_ROWS}$(_doctor_native_row "$DOCTOR_BAD" "wall" "—" \
+        "${_wall} cannot load ${_wall_missing}")"$'\n'
+      fix "the ${_wall} wall cannot load ${_wall_missing} → $(bionic_check_hint wall-library)"
+      ;;
+  esac
 done
 
 INST_AGENT_FACT="$(detect_installed_agent_copies)"
@@ -1773,17 +1775,26 @@ if [ -n "$ABSENT_CORE_NAMES" ]; then
   fix "${_doctor_core_head}${_doctor_absent_core}) → ${_doctor_core_route}"
 fi
 
-# THE FILE IS WHAT SETUP CAN REPAIR. A name live in this process but absent from
-# settings.json still earns this line: the value dies with the session, and the
-# next one starts without it. A name configured and merely not live earns
-# NOTHING here — that is a restart, which the ENVIRONMENT section names, and
-# setup would find nothing to do.
+# THE TABLE DECIDES WHETHER AN ENVIRONMENT NAME FIRES, and this line counts its
+# answers (Step-6 review B-1). This loop used to ask its own question — "does
+# `env_get` fail", i.e. is the name absent from settings.json — while
+# `bionic_check_env_unwritten` (the predicate setup's environment step runs) asks
+# whether the file's value IS the value bionic sets. The two disagree on exactly
+# one machine: a name written with some other value. There doctor said ✓ with no
+# line while setup offered to rewrite it, which is the 2026-09-05 field defect
+# inverted, and it is why the answer is asked once, of the row.
+#
+# A name live in this process but absent from settings.json still earns this
+# line: the value dies with the session, and the next one starts without it. A
+# name configured with bionic's own value and merely not live earns NOTHING here
+# — that is a restart, which the ENVIRONMENT section names, and setup would find
+# nothing to do.
 ENV_MISSING=0
 for _env_key in $ENV_KEYS; do
-  env_get "$_env_key" >/dev/null 2>&1 || ENV_MISSING=$((ENV_MISSING + 1))
+  bionic_check_fires "env:${_env_key}" && ENV_MISSING=$((ENV_MISSING + 1))
 done
 if [ "$ENV_MISSING" -gt 0 ]; then
-  fix "${ENV_MISSING} of bionic's environment settings $(_doctor_plural "$ENV_MISSING" is are) not written → run $(bionic_check_route setup)"
+  fix "${ENV_MISSING} of bionic's environment settings $(_doctor_plural "$ENV_MISSING" is are) not what bionic sets → run $(bionic_check_route setup)"
 fi
 
 # A STALE PROXY BLOCK IS THE ONE STATE OF THIS ITEM THAT EARNS A FIX LINE.
@@ -1880,6 +1891,17 @@ N_DEP_COLLAPSE=0
 case "$FIX_NAMES_SETUP" in *"dependenc"*) N_DEP_COLLAPSE=$((N_DEP_COLLAPSE + 1)) ;; esac
 [ -n "$ABSENT_CORE_NAMES" ] && N_DEP_COLLAPSE=$((N_DEP_COLLAPSE + 1))
 [ "$N_DEP_COLLAPSE" -gt 0 ] && N_FIX=$((N_FIX - N_DEP_COLLAPSE + N_BAD_DEPS))
+
+# AND THE DEAD-SESSION LINE IS THE THIRD COLLAPSE (1.5.1 fix-up batch). The row
+# per dead session is one ✗ per session in PATROL; the cure is one line naming
+# the one verb that clears all of them. That is the same shape as the two above,
+# so it takes the same swap — without it a machine with two dead sessions printed
+# two ✗ rows under a headline counting one, which is the count-versus-rows
+# inequality broken in the direction the rule forbids (the headline can never be
+# the smaller number). Found by tests/doctor-reads.test.sh 12f18 going red on a
+# machine that had accumulated a second dead session, three weeks after the
+# assertion was written against a machine that had one.
+[ "$_doctor_dead_n" -gt 0 ] && N_FIX=$((N_FIX - 1 + _doctor_dead_n))
 
 # ─── The report ──────────────────────────────────────────────────────────────
 #
@@ -2127,16 +2149,31 @@ printf '    %-36s %-13s %s\n' "setting" "value" "state"
 # one place the names are spelled and lib/checks.sh generates its environment rows
 # from that same list, so the two cannot come to hold different names; what this
 # loop reads from the table is who repairs an unwritten one.
+#
+# AND WHETHER IT IS UNWRITTEN IS THE ROW'S ANSWER TOO (Step-6 review B-1). This
+# loop asked `env_get` and called any configured value ✓; the row's detector asks
+# whether the configured value is the one bionic sets. A name written with some
+# other value is the machine where those two answers differ, and it is the one
+# machine where doctor used to print a tick over a repair setup was still
+# offering. `bionic_check_fires` is asked once per name, here, and the three
+# branches below are the three shapes a firing name comes in.
 for _env_key in $ENV_KEYS; do
   _env_hint="$(bionic_check_hint "env:${_env_key}" 2>/dev/null)" || _env_hint=""
   _env_configured="$(env_get "$_env_key" 2>/dev/null)" || _env_configured=""
+  if bionic_check_fires "env:${_env_key}"; then _env_fires=yes; else _env_fires=no; fi
   if _env_live_value="$(env_live "$_env_key" 2>/dev/null)"; then _env_is_live=yes; else _env_is_live=no; fi
-  if [ -n "$_env_configured" ]; then
+  if [ "$_env_fires" = "no" ]; then
+    # The row does not fire, which is to say settings.json holds bionic's own
+    # value for this name. The only question left is whether THIS session has it.
     if [ "$_env_is_live" = "yes" ]; then
-      _doctor_env3 "$DOCTOR_OK" "$_env_key" "$_env_configured" "live in session"
+      _doctor_env3 "$DOCTOR_OK" "$_env_key" "${_env_configured:-—}" "live in session"
     else
-      _doctor_env3 "$DOCTOR_NIL" "$_env_key" "$_env_configured" "written, restart to pick it up"
+      _doctor_env3 "$DOCTOR_NIL" "$_env_key" "${_env_configured:-—}" "written, restart to pick it up"
     fi
+  elif [ -n "$_env_configured" ]; then
+    # Written, and written to something else. Setup's environment step rewrites
+    # it wholesale, so the row carries the same route every other firing name does.
+    _doctor_env3 "$DOCTOR_BAD" "$_env_key" "$_env_configured" "not the value bionic sets${_env_hint:+ → ${_env_hint}}"
   elif [ "$_env_is_live" = "yes" ]; then
     # Live and not configured: the state the retired shell export leaves behind.
     # It works right now and dies with this session, which is why setup is still
