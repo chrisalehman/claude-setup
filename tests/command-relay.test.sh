@@ -33,9 +33,11 @@
 #
 # HERMETIC. PATH excludes every directory this machine's real `claude`/`brew`/
 # `npm`/`uv`/`pnpm`/`gh`/`node` binaries live in (`/usr/bin:/bin` only, which
-# still carries `jq` and `git` on macOS) — `_setup_cli_plugin` and `check_dep`
+# still carries `jq` and `git` on macOS) — `bionic_cli_plugin_state` and `check_dep`
 # both degrade to `unknown`/`no` without a network call or a hang when their
-# mechanism's binary is absent (verified at setup.sh's own `_setup_cli_plugin`:
+# mechanism's binary is absent (verified at lib/checks.sh's own `bionic_cli_plugin_state`,
+# which was setup.sh's `_setup_cli_plugin` until 1.5.1 moved it beside the rows
+# that read it:
 # `command -v claude >/dev/null 2>&1 || { echo "unknown|"; return 0; }`). HOME
 # is a fresh mktemp tree; nothing here reads or writes the real machine.
 #
@@ -144,7 +146,7 @@ expect_eq "B0g: the budget setup and doctor share is 100 columns" \
 
 # A curated PATH: real jq/git/bash/coreutils, no claude/brew/npm/uv/pnpm/gh/node
 # (all of which live under /opt/homebrew/bin on the authoring machine) — see
-# the file header for why this keeps _setup_cli_plugin/check_dep fast and
+# the file header for why this keeps bionic_cli_plugin_state/check_dep fast and
 # network-free rather than needing a shim binary for each.
 BIN_PATH="/usr/bin:/bin"
 
