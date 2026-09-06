@@ -370,7 +370,24 @@ jq -nc --arg sid "$OTHER_SID" --arg cwd "$OTHER" --argjson pid "$LIVE_PID" \
 OUT6B="$(run_doctor)"
 RES6B="$(doctor_section "$OUT6B" "RESOURCES")"
 
+# RE-POINTED AT 1.5.1 T5, GUARDING THE SAME THING THROUGH THE NEW RENDERING.
+# What this case has always defended is that a record of THIS project is not
+# dropped the instant its writer exits — the page must not go silent about a file
+# that is sitting in the directory. It defended that by pinning the dead writer's
+# BUDGET row in RESOURCES, and 1.5.1 moved where the fact lands: a session whose
+# owner is gone is now one line in PATROL naming its leftover files, and the fix
+# line there names the verb that clears them, so the same file is reported once
+# instead of once per section (defect fixit-1.5.2-dead-session-sweep.md; plan
+# T5). The budget itself is deliberately no longer rendered as a current one —
+# "a budget taken two days ago by a session that no longer exists" reading as
+# this machine's live capacity is the second half of that defect.
+#
+# So: still on the page, no longer as a live budget. Both halves asserted, since
+# either alone is satisfied by a bug — the first by a page that prints everything
+# twice, the second by a page that dropped the file silently.
 expect_match "18b: an attestation whose writer has exited is still this project's record" \
+  "*predecessor ${GONE_ATT_SID%%-*}*" "$OUT6B"
+expect_no_match "18b2: …and its stale budget no longer renders as a live one" \
   "*${GONE_ATT_SID%%-*}*writers=22*" "$RES6B"
 expect_no_match "18c: another project's attestation never reaches this page" \
   "*${OTHER_SID%%-*}*" "$RES6B"
@@ -388,6 +405,37 @@ OUT6C="$( cd "$BARE" && HOME="$TMP" PATH="$BIN" BIONIC_SHELL_RC="$FIXTURE_RC" \
 RES6C="$(doctor_section "$OUT6C" "RESOURCES")"
 expect_match "18f: a project with no attestation still says so" \
   "*none has taken an attestation in this project*" "$RES6C"
+
+# AND THE THIRD STATE, WHICH 1.5.1 CREATED: a project holding attestations whose
+# sessions are ALL gone. Before the collapse those rendered a row each, so the
+# fallback could not fire; after it, this is the page that would have said "none
+# has taken an attestation in this project" over a directory holding two of them
+# — the exact sentence T3 finding 2 was filed on. The line has to say what is
+# actually there instead.
+DEADONLY="${TMP}/deadonly-proj"
+mkdir -p "${DEADONLY}/.bionic/tmp"
+for _dsid in "aaaa1111-9999-4444-5555-666677778888" "bbbb2222-9999-4444-5555-666677778888"; do
+  {
+    printf '# bionic environment attestation — machine-local, safe to delete\n'
+    printf 'version=2\nkind=preflight-attestation\n'
+    printf 'session_id=%s\n' "$_dsid"
+    printf 'written_at=1788000000\nrepo=%s\n' "$DEADONLY"
+    printf 'cores=18\nmem_gb=128\ndisk_free_gb=1663\nload_1m=2.28\nos=darwin\n'
+    printf 'budget=writers=77 suites=77 worktrees=77 test_jobs=77 source=probe\n'
+  } > "${DEADONLY}/.bionic/tmp/preflight-${_dsid}.state"
+done
+OUT6D="$( cd "$DEADONLY" && HOME="$TMP" PATH="$BIN" BIONIC_SHELL_RC="$FIXTURE_RC" \
+  BIONIC_CLAUDE_HOME="$CHOME" BIONIC_PLUGIN_ROOT="$PAYLOAD" \
+  BIONIC_DOCTOR_PROBE_SECONDS=3 bash "$DOCTOR_SH" < /dev/null 2>&1 )"
+RES6D="$(doctor_section "$OUT6D" "RESOURCES")"
+expect_no_match "18g: a project whose every attestation is dead never claims it has none" \
+  "*none has taken an attestation in this project*" "$RES6D"
+expect_match "18h: …it counts them and sends the reader to the section that names the repair" \
+  "*2 attestations here, every one from a session that is gone*" "$RES6D"
+expect_no_match "18i: …and still does not render their budgets as live capacity" \
+  "*writers=77*" "$RES6D"
+expect_contains "18j: …while the page names the verb that clears them" \
+  "session-poker.sh sweep" "$OUT6D"
 
 section "Section 7: the column budget"
 

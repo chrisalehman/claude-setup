@@ -59,11 +59,27 @@ if ! declare -F detect_legacy_hook_files >/dev/null 2>&1; then
   . "$(cd "$(_bionic_checks_self_dir)" && pwd -P)/detect.sh"
 fi
 
+# THE SAME SOFT SOURCE FOR patrol.sh, which the dead-session detector reads its
+# whole answer out of. doctor already has it loaded and the guard skips; setup
+# does not, and a detector that only works for one of its two callers is not a
+# detector. Sourcing it defines functions and nothing else — no probe, no read.
+if ! declare -F patrol_dead_sessions >/dev/null 2>&1; then
+  # shellcheck source=/dev/null
+  . "$(cd "$(_bionic_checks_self_dir)" && pwd -P)/patrol.sh"
+fi
+
 # ─── The two repair routes ───────────────────────────────────────────────────
 #
-# ONE STRING PER PARTY, and every hint in the table is one of them. An aggregate
-# line — "3 dependencies absent" over three rows — has no single row to read, so
-# it reads the PARTY's route here rather than growing a literal of its own.
+# ONE STRING PER PARTY FOR THE TWO PARTIES THAT HAVE ONE. An aggregate line —
+# "3 dependencies absent" over three rows — has no single row to read, so it
+# reads the PARTY's route here rather than growing a literal of its own.
+#
+# `user` RETURNS NOTHING, AND THAT IS THE ANSWER, not a gap. A repair the reader
+# takes by hand has no route shared across rows: the instruction IS the row's,
+# one verb per fact, so a `user` row carries its verb in its own hint column and
+# there is nothing for this function to say about the party in general. Callers
+# that print a party's route therefore print nothing for `user`, which is right —
+# the row has already said what to type.
 bionic_check_route() {  # <setup|cli|user>
   case "${1:-}" in
     setup) printf '/bionic:setup' ;;
@@ -308,6 +324,28 @@ bionic_check_wall_unloadable() {  # <row id>
   return 1
 }
 
+# DEAD-SESSION STATE UNDER .bionic/tmp — the one PROJECT-scoped row in this
+# table, and the one whose party is `user` (fixit 1.5.2 defect; plan D-4/D-5).
+# Every other row is a fact about the machine; this one is a fact about the tree
+# doctor was run in, which is why it renders in doctor's project sections rather
+# than in either machine-state table.
+#
+# THE ENUMERATION IS THE LIBRARY'S. `patrol_dead_sessions` is the same function
+# hooks/session-poker.sh's `sweep` walks, so what this detector counts and what
+# that verb deletes cannot come apart — the property that makes naming the verb
+# as the repair honest. Read-only, like every detector here: it stats filenames
+# and asks the kernel about pids.
+#
+# THE CURRENT SESSION IS NAMED LIVE BY HAND for the reason the library documents:
+# a session running doctor is live by construction, and a claude-home doctor
+# cannot read must not turn its own state into a row telling it to sweep itself.
+bionic_check_dead_session_state() {  # <row id>
+  local root
+  root="$(_patrol_repo_root "$PWD" 2>/dev/null)" || root=""
+  [ -n "$root" ] || root="$PWD"
+  [ -n "$(patrol_dead_sessions "$root" "${CLAUDE_CODE_SESSION_ID:-}")" ]
+}
+
 # ─── The table ───────────────────────────────────────────────────────────────
 #
 # ONE FUNCTION EMITS EVERY ROW — the static ones and the ones generated from the
@@ -396,6 +434,15 @@ _bionic_checks_build() {
   _bionic_checks_emit "permission-mode" "default permission mode" "bionic_check_permission_mode" "setup" "permission-mode" "$r_setup"
 
   _bionic_checks_emit "statusline-npx" "statusLine command" "bionic_check_statusline_npx" "setup" "tool:ccstatusline" "$r_setup"
+
+  # THE PROJECT-STATE ROW, and the only one whose party is the reader. No item:
+  # setup is machine-scoped and has no project concept, so there is nothing for
+  # it to offer — which is exactly what the defect found when `--all` reported
+  # "nothing left to do" over a directory holding five dead sessions. No label
+  # either: like `plugin` and the two wall rows, this check reaches a reader
+  # through a FIX line rather than through a row of its own name, and doctor's
+  # per-session lines carry the session ids instead.
+  _bionic_checks_emit "dead-session-state" "" "bionic_check_dead_session_state" "user" "" "session-poker.sh sweep"
 
   # THE WALLS ARE THE CLI'S TO REPAIR, not setup's. A wall missing from the
   # payload, or one that cannot reach its library, is a broken install — the same

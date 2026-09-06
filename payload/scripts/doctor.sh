@@ -1426,24 +1426,56 @@ fi
 # Patrol section above already trusts — and doctor stays a rendering surface that
 # runs nothing which could write. A roster whose session is LIVE is the Patrol
 # section's subject, not this one's; only the ones whose owner is gone are listed.
-_doctor_live_sids=""
-while IFS= read -r _live_line; do
-  [ -n "$_live_line" ] || continue
-  _doctor_live_sids="${_doctor_live_sids} $(_doctor_pfield "$_live_line" session) "
+# ONE LINE PER DEAD SESSION, AND IT COUNTS FILES (1.5.1 T5, defect
+# fixit-1.5.2-dead-session-sweep.md). Two things changed here. The set is now
+# every session with ANY session-keyed state whose owner is gone, taken from
+# `patrol_dead_sessions` — the same walk `session-poker.sh sweep` deletes with,
+# so the row and the cure it names cannot disagree. And the row fires on FILES,
+# not on open rows: the session this defect was filed on had every row landed
+# and six files on disk, so an open-row test rendered nothing while the
+# directory kept growing. The open count still rides on the line when there is
+# one, because a row nobody will close is worth more to a reader than a count of
+# files.
+#
+# THE RESOURCES SECTION READS `_doctor_dead_sids` BELOW and drops the same
+# sessions' attestations, so a dead session costs this page ONE line rather than
+# one per section — the standing owner note (2026-08-23) that the per-session
+# dump is noise, answered by collapsing rather than by hiding.
+_doctor_dead_sids=""
+_doctor_dead_n=0
+while IFS= read -r _dead_sid; do
+  [ -n "$_dead_sid" ] || continue
+  _doctor_dead_sids="${_doctor_dead_sids} ${_dead_sid} "
+  _doctor_dead_n=$((_doctor_dead_n + 1))
+  _dead_files=0
+  while IFS= read -r _dead_f; do
+    [ -n "$_dead_f" ] && _dead_files=$((_dead_files + 1))
+  done <<EOF2
+$(patrol_session_state_files "$DOCTOR_ROOT" "$_dead_sid")
+EOF2
+  _dead_state="$(patrol_roster_state "$DOCTOR_ROOT" "$_dead_sid" 2>/dev/null)"
+  _dead_open="$(_doctor_pfield "$_dead_state" open)"
+  case "$_dead_open" in ''|*[!0-9]*) _dead_open=0 ;; esac
+  if [ "$_dead_open" -gt 0 ]; then
+    _run_add "$(_doctor_item "$DOCTOR_BAD" "predecessor ${_dead_sid%%-*}" \
+      "${_dead_files} leftover $(_doctor_plural "$_dead_files" file files) · ${_dead_open} open $(_doctor_plural "$_dead_open" row rows) — a /clear left them unclosed")"
+  else
+    _run_add "$(_doctor_item "$DOCTOR_BAD" "predecessor ${_dead_sid%%-*}" \
+      "${_dead_files} leftover $(_doctor_plural "$_dead_files" file files) — nothing open; the session is gone")"
+  fi
 done <<EOF
-$(patrol_live_sessions 2>/dev/null)
+$(patrol_dead_sessions "$DOCTOR_ROOT" "${CLAUDE_CODE_SESSION_ID:-}")
 EOF
-for _roster in "${DOCTOR_ROOT}/.bionic/tmp/"roster-*.state; do
-  [ -f "$_roster" ] || continue
-  _r_sid="${_roster##*/roster-}"; _r_sid="${_r_sid%.state}"
-  case "$_doctor_live_sids" in *" ${_r_sid} "*) continue ;; esac
-  _r_state="$(patrol_roster_state "$DOCTOR_ROOT" "$_r_sid" 2>/dev/null)"
-  _r_open="$(_doctor_pfield "$_r_state" open)"
-  case "$_r_open" in ''|*[!0-9]*) _r_open=0 ;; esac
-  [ "$_r_open" -gt 0 ] || continue
-  _run_add "$(_doctor_item "$DOCTOR_NIL" "predecessor ${_r_sid%%-*}" \
-    "${_r_open} open $(_doctor_plural "$_r_open" row rows) — a /clear left them unclosed")"
-done
+
+# THE LINE THAT NAMES THE CURE, from the row rather than from a literal here —
+# the same shape the legacy-symlink row below uses. Until 1.5.1 this state was
+# detected and then left un-named: every row above was a session doctor had
+# already PROVEN dead, printed as an informational dash under a header reading
+# "Nothing to do". A fix line is also what raises N_FIX, so that header stops
+# contradicting the body without anything here special-casing it.
+if [ "$_doctor_dead_n" -gt 0 ]; then
+  fix "${_doctor_dead_n} dead $(_doctor_plural "$_doctor_dead_n" session sessions) left state under .bionic/tmp → $(bionic_check_hint dead-session-state)"
+fi
 
 # LEGACY `.bionic` SYMLINKS (AC-11). spawn-worktree.sh used to plant
 # `<wt>/.bionic -> <main>/.bionic`. lib/root.sh now steps OVER such a link and
@@ -1584,10 +1616,25 @@ fi
 # not need coreutils to run on the broken machine it exists for.
 _doctor_probe_sh="${_doctor_payload_root}/hooks/preflight-probe.sh"
 _doctor_budgets=0
+# The attestations this loop SKIPPED because their session is gone. Counted, not
+# discarded: the fallback line below is a claim about the directory, and a claim
+# that nothing is here is false while these files are.
+_doctor_att_dead=0
 for _l_att in "${DOCTOR_ROOT}/.bionic/tmp/"preflight-*.state; do
   [ -f "$_l_att" ] || continue
   _l_sid="${_l_att##*/preflight-}"; _l_sid="${_l_sid%.state}"
   [ -n "$_l_sid" ] || continue
+  # A DEAD SESSION'S ATTESTATION IS RESIDUE, NOT A RECORD ANYONE READS (1.5.1
+  # T5). It is already one line in the run section above, where the fix line
+  # names the verb that removes it; a second line here would report the same
+  # session twice and would keep the fallback below from ever saying what it is
+  # for. FIX-DOCTOR/3's rule — that an attestation survives its writer exiting —
+  # is untouched: that is about a session that is gone from the PROCESS TABLE
+  # mid-run, and this drops only the ones whose whole state is being offered for
+  # deletion on the same page.
+  case "$_doctor_dead_sids" in
+    *" ${_l_sid} "*) _doctor_att_dead=$((_doctor_att_dead + 1)); continue ;;
+  esac
   _doctor_budgets=$((_doctor_budgets + 1))
   if ! _l_rec="$(bash "$_doctor_probe_sh" --read "$_l_att" 2>/dev/null)"; then
     _res_add "$(_doctor_item "$DOCTOR_NIL" "session ${_l_sid%%-*}" \
@@ -1601,8 +1648,19 @@ for _l_att in "${DOCTOR_ROOT}/.bionic/tmp/"preflight-*.state; do
     _res_add "$(_doctor_item "$DOCTOR_NIL" "session ${_l_sid%%-*}" "no budget recorded")"
   fi
 done
-[ "$_doctor_budgets" -gt 0 ] || \
+# THE FALLBACK IS A CLAIM ABOUT THIS DIRECTORY, so it has to survive the collapse
+# above (FIX-DOCTOR/3, T3 finding 2: doctor once said "none has taken an
+# attestation in this project" with an attestation file sitting in the directory
+# it was naming). Dropping a dead session's row would have re-created exactly
+# that sentence on a project whose every attestation belongs to a session that
+# has since exited — so when that is why this section is empty, the line says so
+# and sends the reader to the section that names the repair.
+if [ "$_doctor_budgets" -eq 0 ] && [ "$_doctor_att_dead" -gt 0 ]; then
+  _res_add "$(_doctor_item "$DOCTOR_NIL" "no live session" \
+    "${_doctor_att_dead} $(_doctor_plural "$_doctor_att_dead" attestation attestations) here, every one from a session that is gone — see PATROL")"
+elif [ "$_doctor_budgets" -eq 0 ]; then
   _res_add "$(_doctor_item "$DOCTOR_NIL" "no session" "none has taken an attestation in this project")"
+fi
 
 # ─── What is left to fix ─────────────────────────────────────────────────────
 #
