@@ -154,7 +154,14 @@ _setup_self_dir() {
 
 SETUP_LIB_DIR="${BIONIC_LIB_DIR:-$(_setup_self_dir)/lib}"
 
-for _setup_lib in deps.sh detect.sh hooks.sh jit.sh env.sh width.sh; do
+# CHECKS.SH IS ON THIS LIST BECAUSE IT CARRIES THE WHOLE ROSTER (Step-6 review
+# A-1). Every name this script can be asked for comes from `bionic_check_items`,
+# so a payload missing that one file answered `--list` with an empty roster and
+# exit 0 — the shape a caller reads as "this machine has nothing to set up" —
+# instead of the reinstall route this guard exists to print. patrol.sh is here
+# for the same reason one level down: checks.sh soft-sources it for the
+# dead-session detector, so it is part of what a complete payload means.
+for _setup_lib in deps.sh detect.sh hooks.sh jit.sh env.sh width.sh checks.sh patrol.sh; do
   if [ ! -f "${SETUP_LIB_DIR}/${_setup_lib}" ]; then
     echo "setup.sh: cannot find ${SETUP_LIB_DIR}/${_setup_lib} — the payload looks incomplete." >&2
     echo "          reinstall with: claude plugin install bionic@bionic" >&2

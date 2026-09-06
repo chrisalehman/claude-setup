@@ -37,9 +37,9 @@
 #
 # The derived roster below is the roster in BOTH modes — the directory is the
 # only place a suite is named, and neither mode has a list of its own. In
-# --serial each entry
-# runs where it stands; by default each entry enqueues, the queue drains through
-# xargs -P, and the results print afterwards in roster order. Same labels, same
+# --serial each entry runs where it stands; by default each entry enqueues, the
+# queue drains through xargs -P, and the results print afterwards in roster
+# order. Same labels, same
 # captured-output blocks, same `Gating:` line, same exit status: a mode is a
 # scheduling choice and nothing else.
 #
@@ -59,8 +59,8 @@
 # shared lock, no fixed port and no fixed /tmp name: every suite that touches disk
 # does so under its own `mktemp -d`, and the one place many of them read concurrently
 # (this checkout, via tests/lib/resolve-roots.sh) has no writer in the roster at all.
-# THE AUDIT IS TWO FILES, and a maintainer needs both: S8 read the 44 suites that
-# existed when it ran (`.bionic/docs/record/epic-17-w7/s8-isolation-audit.md`), and
+# THE AUDIT IS TWO FILES, and a maintainer needs both: S8 read the roster as it
+# stood when it ran (`.bionic/docs/record/epic-17-w7/s8-isolation-audit.md`), and
 # S8b read the one the same wave added, env.test.sh, which appears nowhere in the
 # first file (`.bionic/docs/record/epic-17-w7/s8b-isolation-delta.md`). Neither file
 # covers the roster as it stands now: epic-18 wave-03 deleted nineteen of those
@@ -70,10 +70,9 @@
 # (F4), bionic 1.3.2 added git-argv, cmd-class and patrol-marker, and wave-01
 # verification-cannot-lie added four more. A maintainer re-derives the roster
 # rather than trusting a number in a comment — `ls tests/*.test.sh` IS the
-# roster now, so the count is never anywhere else to go stale. Neither audit file
-# re-covers what changed since
-# it ran; a suite added or restored after S8b carries no isolation proof
-# beyond its own file. A suite that writes outside its own mktemp root breaks this
+# roster now, so the count is never anywhere else to go stale, and a suite
+# added or restored after S8b carries no isolation proof beyond its own file.
+# A suite that writes outside its own mktemp root breaks this
 # premise, and a derived roster picks that suite up the moment the file lands, so
 # WRITING the suite is the moment to check its isolation — and to extend the
 # audit, since neither existing file can cover a suite written after it.
@@ -84,7 +83,7 @@
 # the width with headroom on that measurement; the default was raised to eight on
 # 2026-08-22 (ef23f75, user's call) and `BIONIC_TEST_JOBS_CEILING` is there for a machine
 # with less or more. NOT `BIONIC_TEST_JOBS`, which is retired as an input — line 51 above
-# says so and line 249 prints it at runtime.
+# says so and the width block below prints it at runtime.
 #
 # EVERY SUITE IS A CLIENT OF ONE FRAMEWORK (wave-01 S10, spec AC-12). Before a
 # roster line is launched its source is read, and a suite that defines a name
@@ -337,9 +336,9 @@ export BIONIC_TEST_QUEUE="$QUEUE" BIONIC_TEST_WORK="$TMP"
 #   calls `finish`. Refusing a shadow is only half of "one framework, adopted by
 #   every suite": a suite spelling its helpers `t_ok`/`t_no` and its counters
 #   `P`/`F`, printing its own tally and exiting 0, shadows nothing and used to
-#   pass untouched. That all 55 suites adopt was a MEASUREMENT taken by the
-#   migration slices, not a mechanism, and `0 refused` read as proof of a wall
-#   that was not there.
+#   pass untouched. That every suite on the roster adopts was a MEASUREMENT taken
+#   by the migration slices, not a mechanism, and `0 refused` read as proof of a
+#   wall that was not there.
 #
 # A refusal is a FAILED suite: it is named in the tally, it is named under
 # `Failed:`, and the run exits 1.
