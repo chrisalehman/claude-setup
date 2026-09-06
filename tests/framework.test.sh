@@ -520,8 +520,14 @@ for c1_f in "$REPO"/tests/*.test.sh; do
   C1_SUITES=$((C1_SUITES + 1))
   [ -n "$(_tf_adoption_refusal "$c1_f")" ] && C1_REFUSED=$((C1_REFUSED + 1))
 done
-expect_eq "6b: the count the docblock claims is the roster the tree has" \
-  "55" "$C1_SUITES"
+# THE COUNT PIN IS RETIRED (fixit 1.5.1, D-1). The roster is tests/*.test.sh read
+# at run time, so a suite count is stale the moment anyone adds a file, and a row
+# pinning one tests the calendar. What is still worth holding is that the scan
+# below read a real tree. The docblock's own "All 55" sentence is stale prose for
+# the same reason and is T4's to correct — together with the needle two rows down,
+# which quotes it.
+expect_eq "6b: the docblock scan read the whole tree (not vacuous)" "yes" \
+  "$([ "$C1_SUITES" -ge 40 ] && echo yes || echo no)"
 expect_eq "6b: …and none of them carries a private definition" "0" "$C1_REFUSED"
 expect_eq "6b: the docblock says all 55 are clients of this file" "yes" \
   "$(contains "$C1_DOC" "All 55 suites on the roster are clients of it")"
@@ -567,29 +573,20 @@ expect_eq "7: …and the pin fails on a copy with the rule removed" "no" \
   "$(contains "$DOC_STRIPPED" "assertion about a render that truncates needs a second, unlossy source")"
 
 # ============================================================
-section "8: tests/run.sh registers this suite"
+section "8: the runner's header points at the live width knob"
 # ============================================================
 #
-# tests/*.test.sh is NOT auto-globbed — an unregistered suite never runs.
+# WHAT USED TO BE HERE. A registration pin — "tests/run.sh names this suite" —
+# and a count pin comparing the roster's `run` lines against the glob. Both died
+# with the hand list (fixit 1.5.1, D-1/D-3): the roster IS `tests/*.test.sh`, so
+# membership is not a property a suite can lack, and a count of the roster
+# against the directory now compares the directory with itself.
+# tests/runner-roster.test.sh proves the derivation once, for the whole set.
+#
+# WHAT IS LEFT is the header's own prose about the width knob, which lives here
+# because no other suite reads it.
 
 RUNSH="$(cat "${REPO}/tests/run.sh")"
-expect_eq "8: tests/run.sh names framework.test.sh" "yes" \
-  "$(contains "$RUNSH" 'run "framework.test.sh" bash tests/framework.test.sh')"
-RUNSH_STRIPPED="$(printf '%s\n' "$RUNSH" | grep -v 'run "framework.test.sh"')"
-expect_eq "8: …and the check discriminates (a copy without the line fails it)" "no" \
-  "$(contains "$RUNSH_STRIPPED" 'run "framework.test.sh" bash tests/framework.test.sh')"
-
-# --- THE HEADER'S OWN NUMBERS (review-c C-3/C-4) ----------------------------
-# The runner's header tells a maintainer to re-derive the roster count rather
-# than trust the number in it — and then carried 31 against a roster of 55, in
-# the paragraph whose subject is how much of the roster the isolation audits
-# cover. This row does the re-derivation the sentence asks for.
-R8_LINES="$(grep -c '^run "' "${REPO}/tests/run.sh" | tr -d ' ')"
-R8_FILES="$(ls "${REPO}"/tests/*.test.sh | grep -c . | tr -d ' ')"
-expect_eq "8: every suite file has a run line, and no run line has no file" \
-  "$R8_FILES" "$R8_LINES"
-expect_eq "8: …and the header's stated count is that number" "yes" \
-  "$(contains "$RUNSH" "$R8_LINES \`run\` lines as of this writing")"
 # C-4: the header named a retired input as the knob to reach for. Two other
 # places in the same file say it is retired, one of them at runtime.
 expect_eq "8: the header points at the live width knob" "yes" \
@@ -875,18 +872,11 @@ cp "$REPO/tests/lib/resolve-roots.sh"  "$W_TREE/tests/lib/resolve-roots.sh"
 cp "$FRAMEWORK"                        "$W_TREE/tests/lib/assert.sh"
 cp "$REPO"/payload/scripts/lib/*.sh    "$W_TREE/payload/scripts/lib/" 2>/dev/null
 
-# the shipped roster out, these six in — the same rewrite tests/interpreter-pin
-# does, and for the same reason: a scratch runner must not reach the real tree.
-W_SUITES="w-ok.test.sh w-owned.test.sh w-counter.test.sh w-unadopted.test.sh w-empty.test.sh w-heredoc.test.sh w-indented.test.sh w-local.test.sh"
-awk -v labels="$W_SUITES" '
-  /^run "/ { next }
-  { print }
-  /^echo "Gating suites:"$/ {
-    n = split(labels, a, " ")
-    for (i = 1; i <= n; i++) printf "run \"%s\" bash tests/%s\n", a[i], a[i]
-  }
-' "$W_TREE/tests/run.sh" > "$W_TREE/tests/run.sh.rewritten"
-mv "$W_TREE/tests/run.sh.rewritten" "$W_TREE/tests/run.sh"
+# THE ROSTER NEEDS NO REWRITING ANY MORE (fixit 1.5.1). The runner derives it
+# from the tests/ directory it is run in, so this scratch tree's roster is
+# exactly the eight suites planted below and the shipped file is copied here
+# byte for byte — one fewer difference between the runner under drive and the
+# runner that ships.
 
 # --- REFUSED (1/3): ok() at column 0 -----------------------------------------
 cat > "$W_TREE/tests/w-ok.test.sh" <<'W_PLANT_OK'
@@ -932,12 +922,20 @@ W_PLANT_COUNTER
 
 # --- REFUSED (4/4): a suite that adopts nothing at all (K-7) -----------------
 # It shadows no owned name and resets no counter, so the shadowing half of the
-# wall has nothing to say about it. It sources nothing and calls no finish: it
-# reports its own verdict on its own terms, which is the state AC-12 exists to
-# make impossible.
+# wall has nothing to say about it. It never calls finish: it reports its own
+# verdict on its own terms, which is the state AC-12 exists to make impossible.
+#
+# WHY IT SOURCES THE FRAMEWORK ANYWAY (fixit 1.5.1). The wall has two adoption
+# triggers — sourcing nothing, and never calling `finish` — and the first is now
+# caught EARLIER, by the runner's roster wall, which refuses the whole run over a
+# file in tests/ that sources the framework nowhere (proved in
+# tests/runner-roster.test.sh). So the trigger reachable THROUGH the runner is
+# the second one, and this plant drives that; `_tf_adoption_refusal` is asked
+# about the first directly in §16.
 cat > "$W_TREE/tests/w-unadopted.test.sh" <<'W_PLANT_UNADOPTED'
 #!/bin/bash
 set -uo pipefail
+. "$(dirname "$0")/lib/assert.sh"
 : > "$S10_MARKS/w-unadopted.ran"
 
 P=0; F=0
@@ -1038,8 +1036,10 @@ section "12: the adoption wall refuses a shadowing suite, by name (AC-12, S10)"
 # ============================================================
 
 # NOT VACUOUS: the runner and the framework under drive are the shipped files.
-expect_eq "12: the scratch runner is the shipped one apart from its roster" "yes" \
-  "$([ "$(grep -c '^run "' "$W_TREE/tests/run.sh")" = "8" ] && echo yes || echo no)"
+expect_eq "12: the scratch runner is the shipped one, byte for byte" "yes" \
+  "$(cmp -s "$REPO/tests/run.sh" "$W_TREE/tests/run.sh" && echo yes || echo no)"
+expect_eq "12: …and it ran over exactly the eight suites planted in its tests/" "8" \
+  "$(printf '%s\n' "$W_OUT" | sed -n 's/^  \(w-[a-z]*\.test\.sh\) .*/\1/p' | sort -u | grep -c .)"
 expect_eq "12: the framework under drive is the shipped one, byte for byte" "yes" \
   "$(cmp -s "$FRAMEWORK" "$W_TREE/tests/lib/assert.sh" && echo yes || echo no)"
 
@@ -1432,12 +1432,12 @@ expect_eq "16: every suite on the roster adopts the framework" "0" "$F16_REFUSED
 
 # --- THROUGH THE RUNNER -----------------------------------------------------
 expect_contains "16: the runner refuses the unadopted suite, by name" \
-  "adoption wall: tests/w-unadopted.test.sh does not source the framework" "$W_OUT"
+  "adoption wall: tests/w-unadopted.test.sh never calls finish" "$W_OUT"
 expect_eq "16: …and it never ran (no marker)" "no" \
   "$([ -f "$W_MARKS/w-unadopted.ran" ] && echo yes || echo no)"
 expect_eq "16: …and the verdict reads REFUSED" "yes" \
   "$(contains "$W_OUT" "- w-unadopted.test.sh (refused by the adoption wall, never run)")"
 expect_contains "16: --serial refuses it in the same words" \
-  "adoption wall: tests/w-unadopted.test.sh does not source the framework" "$W_SERIAL_OUT"
+  "adoption wall: tests/w-unadopted.test.sh never calls finish" "$W_SERIAL_OUT"
 
 finish

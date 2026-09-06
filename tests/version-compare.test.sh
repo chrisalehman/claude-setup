@@ -115,12 +115,4 @@ case "$FACT_LAG" in
   *) no "9: installed behind the marketplace -> lag, unchanged" "$FACT_LAG" ;;
 esac
 
-section "Section 3: registration"
-
-if grep -q 'run "version-compare.test.sh" bash tests/version-compare.test.sh' "${BIONIC_SCRIPTS_DIR}/tests/run.sh"; then
-  ok "10: tests/run.sh names version-compare.test.sh"
-else
-  no "10: tests/run.sh names version-compare.test.sh"
-fi
-
 finish

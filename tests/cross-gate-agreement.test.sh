@@ -6495,6 +6495,12 @@ mkdir -p "$RG_MUT/hooks" "$RG_MUT/scripts/lib" "$RG_MUT/tests" "$RG_MUT/payload/
 cp "$LIB_DIR_SRC"/*.sh "$RG_MUT/scripts/lib/" 2>/dev/null
 cp "$BIONIC_HOOKS_DIR"/*.sh "$RG_MUT/hooks/" 2>/dev/null
 cp "$REPO_ROOT/tests/run.sh" "$RG_MUT/tests/run.sh"
+# ONE STUB SUITE, because the roster is the directory (fixit 1.5.1) and a runner
+# asked to gate on an empty tests/ refuses rather than reporting green over
+# nothing. This tree is only ever driven with --dry-run, which reads the same
+# derived roster; the stub carries the pinned shebang the roster wall asks for,
+# and the tree has no framework, so that half of the wall is inert here.
+printf '#!/bin/bash\nexit 0\n' > "$RG_MUT/tests/stub.test.sh"
 anchor -E "$RG_LIB_RES" '^BAND_FREE_CRITICAL_PCT=12' 1
 sed 's/^BAND_FREE_CRITICAL_PCT=12/BAND_FREE_CRITICAL_PCT=1/' \
   "$RG_LIB_RES" > "$RG_MUT/scripts/lib/resources.sh"
@@ -6531,15 +6537,18 @@ expect_eq "…so one threshold change moved BOTH consumers" "$RG_RUN_BAND" "$RG_
 # read the same seeded band and this probe would go vacuous for the runner's half. AC-15
 # still binds the runner's ORDINARY (non-dry) path — the one that actually launches
 # suites — so that half of this probe now drives THAT path directly and checks the RING'S
-# OWN LINE COUNT, not a band read back through --dry-run. Both trees below carry no real
-# *.test.sh files, so every queued `bash tests/<label>.test.sh` line fails instantly (no
-# such file) and the run completes in well under a second — nothing here launches the real
-# suite roster, which would recurse into this very file.
+# OWN LINE COUNT, not a band read back through --dry-run. Both trees below carry ONE
+# two-line stub suite and nothing else, so each run completes in well under a second —
+# nothing here launches the real suite roster, which would recurse into this very file.
+# (The stub is what an empty tests/ became at fixit 1.5.1: the roster is the directory,
+# and a runner asked to gate on an empty one refuses instead of sampling and reporting
+# green.)
 RG_NOSAMP="$SANDBOX/rg-nosample"
 mkdir -p "$RG_NOSAMP/hooks" "$RG_NOSAMP/scripts/lib" "$RG_NOSAMP/tests/lib" "$RG_NOSAMP/payload/scripts/lib"
 cp "$LIB_DIR_SRC"/*.sh "$RG_NOSAMP/scripts/lib/" "$RG_NOSAMP/payload/scripts/lib/" 2>/dev/null
 cp "$BIONIC_HOOKS_DIR"/*.sh "$RG_NOSAMP/hooks/" 2>/dev/null
 cp "$REPO_ROOT/tests/lib/resolve-roots.sh" "$RG_NOSAMP/tests/lib/resolve-roots.sh"
+printf '#!/bin/bash\nexit 0\n' > "$RG_NOSAMP/tests/stub.test.sh"
 # the runner with its `pressure_sample` line removed, and nothing else changed.
 #
 # ANCHORED ON THE CALL'S STABLE TOKENS, NOT ON ITS INDENTATION (critic K-1 — the same
@@ -6571,6 +6580,7 @@ mkdir -p "$RG_SHIPPED/tests/lib" "$RG_SHIPPED/payload/scripts/lib"
 cp "$LIB_DIR_SRC"/*.sh "$RG_SHIPPED/payload/scripts/lib/" 2>/dev/null
 cp "$REPO_ROOT/tests/lib/resolve-roots.sh" "$RG_SHIPPED/tests/lib/resolve-roots.sh"
 cp "$REPO_ROOT/tests/run.sh" "$RG_SHIPPED/tests/run.sh"
+printf '#!/bin/bash\nexit 0\n' > "$RG_SHIPPED/tests/stub.test.sh"
 expect_eq "the shipped control tree carries the runner byte for byte (not vacuous)" "yes" \
   "$(cmp -s "$REPO_ROOT/tests/run.sh" "$RG_SHIPPED/tests/run.sh" && echo yes || echo no)"
 

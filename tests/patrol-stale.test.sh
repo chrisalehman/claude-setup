@@ -74,14 +74,6 @@ expect_eq "4: limit = interval * PATROL_STALE_MULTIPLIER" \
 expect_eq "5: with the real last-resort default and the real multiplier, limit is 2400" \
   "2400" "$LIMIT"
 
-section "Section 3: registration"
-
-if grep -q 'run "patrol-stale.test.sh" bash tests/patrol-stale.test.sh' "${BIONIC_SCRIPTS_DIR}/tests/run.sh"; then
-  ok "6: tests/run.sh names patrol-stale.test.sh"
-else
-  no "6: tests/run.sh names patrol-stale.test.sh"
-fi
-
 section "Section 4: the constant's three readers agree (spec AC-22)"
 #
 # THREE READERS BY DESIGN (ownership table, spec §3): patrol.sh's own

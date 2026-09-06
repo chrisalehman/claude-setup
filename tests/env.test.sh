@@ -384,9 +384,4 @@ expect_true "doctor.sh reads through env_get and env_live" \
 expect_eq "setup.sh appends no CLAUDE_CODE_ENABLE_TODO_TOOLS export to a shell rc" "" \
   "$(/usr/bin/grep -n 'export CLAUDE_CODE_ENABLE_TODO_TOOLS' "$SETUP_SH" || true)"
 
-section "Group 9: the suite is registered in tests/run.sh by name"
-
-expect_true "tests/run.sh runs env.test.sh by name" \
-  /usr/bin/grep -qF 'run "env.test.sh" bash tests/env.test.sh' "${REPO}/tests/run.sh"
-
 finish

@@ -73,9 +73,4 @@ expect_eq "both-absent: one stderr line" \
   "session-id: no session id in env or payload" "$SC_STDERR"
 expect_eq "both-absent: exit 1" "1" "$SC_STATUS"
 
-section "Group 5: the suite is registered in tests/run.sh by name"
-
-expect_eq "tests/run.sh runs session.test.sh by name" "1" \
-  "$(/usr/bin/grep -c 'run "session.test.sh" bash tests/session.test.sh' "${BIONIC_SCRIPTS_DIR}/tests/run.sh")"
-
 finish

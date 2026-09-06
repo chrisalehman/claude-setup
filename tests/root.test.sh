@@ -96,15 +96,6 @@ expect_eq "sourcing the library prints nothing (stdout+stderr are exactly the ca
 fn_kinds="$(cd "$SANDBOX" && HOME="$SANDBOX/home" bash -c '. "$1"; printf "%s,%s" "$(type -t project_root)" "$(type -t project_root_candidates)"' _ "$LIB" 2>&1)"
 expect_eq "both functions are defined by sourcing" "function,function" "$fn_kinds"
 
-# THE SUITE IS ON THE ROSTER. Nothing auto-discovers tests/*.test.sh
-# (.claude/rules/test-harness.md: "a new suite is invisible until its run line
-# is added by name"), so the suite asserts its own registration.
-if grep -q '^run "root.test.sh" bash tests/root.test.sh$' "$RUNNER"; then
-  ok "tests/run.sh carries this suite's own run line"
-else
-  no "tests/run.sh carries this suite's own run line" "no matching 'run \"root.test.sh\"' line in $RUNNER"
-fi
-
 # ---------- drivers ----------
 
 # HERMETIC ENV for every library call: the fake HOME under test, no global or

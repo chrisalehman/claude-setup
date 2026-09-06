@@ -280,11 +280,6 @@ expect_match "jit_offer reaches the function literally named install_plugin_nati
 # not a way in through it. If this ever passed, the kludge D1 rejected would be
 # back and the refusal would be decoration.
 
-section "Group 10: the suite is registered in tests/run.sh by name"
-
-expect_true "tests/run.sh names jit.test.sh" \
-  grep -q 'run "jit.test.sh" bash tests/jit.test.sh' "${REPO}/tests/run.sh"
-
 section "Group 11: excalidraw-diagram route fixes (epic-17 w4 S10, AC-10)"
 #
 # AC-10 pinned the skill as a default-off opt-in living outside the payload, with a

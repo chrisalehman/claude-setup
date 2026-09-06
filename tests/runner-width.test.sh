@@ -131,15 +131,22 @@ expect_eq "2a …a dry run leaves the ring byte-identical (bytes+sha unchanged)"
 # §2b THE PAIRED POSITIVE. Driving the real (non-dry, non-serial) path directly would
 # launch this repo's whole roster — including this very suite, and cross-gate-agreement
 # and fresh-home, which also drive --dry-run — so instead this copies the REAL
-# tests/run.sh, byte for byte, into a scratch tree carrying no *.test.sh files at all.
-# Every queued `bash tests/<label>.test.sh` line then fails instantly (no such file):
-# the width computation runs — and samples — long before the queue is even built, so the
-# copy proves the same thing a real run would without paying for one.
+# tests/run.sh, byte for byte, into a scratch tree whose tests/ holds ONE two-line stub
+# suite and nothing else. The run costs that one trivial suite, while the width
+# computation this case exists to observe runs — and samples — long before the queue is
+# even built, so the copy proves the same thing a real run would without paying for one.
+#
+# WHY A STUB AND NOT AN EMPTY tests/ (fixit 1.5.1). The roster is the directory now, and a
+# runner asked to gate on an empty one REFUSES rather than reporting green over nothing —
+# which would stop this drive before it ever sampled. The stub carries the pinned shebang
+# the roster wall asks for; this tree has no framework, so that half of the wall is inert
+# here and the stub needs nothing else.
 ORD_TREE="$TMPROOT/ordinary"
 mkdir -p "$ORD_TREE/tests/lib" "$ORD_TREE/payload/scripts/lib"
 cp "${BIONIC_SCRIPTS_DIR}/tests/run.sh" "$ORD_TREE/tests/run.sh"
 cp "${BIONIC_SCRIPTS_DIR}/tests/lib/resolve-roots.sh" "$ORD_TREE/tests/lib/resolve-roots.sh"
 cp "${BIONIC_SCRIPTS_DIR}/payload/scripts/lib/"*.sh "$ORD_TREE/payload/scripts/lib/" 2>/dev/null
+printf '#!/bin/bash\nexit 0\n' > "$ORD_TREE/tests/stub.test.sh"
 expect_eq "2b the scratch runner is the shipped one, byte for byte (not vacuous)" "yes" \
   "$(cmp -s "${BIONIC_SCRIPTS_DIR}/tests/run.sh" "$ORD_TREE/tests/run.sh" && echo yes || echo no)"
 
@@ -198,17 +205,5 @@ done
 ring_of "$RING_G" "$NOW" "$S_CLEAR" "$S_CLEAR"
 dry_run "$RING_G" "$S_CLEAR" 3
 expect_contains "5 a valid ceiling of 3 is still honoured (not replaced by 8)" "JOBS=3" "$DRY_OUT"
-
-echo
-section "Section 4: registration (hook-authoring convention)"
-
-# THE SUITE IS REGISTERED. tests/*.test.sh is NOT globbed by the runner — an unregistered
-# suite is a silent false green (pattern: tests/patrol-duties-gate.test.sh Group 24).
-if grep -q 'run "runner-width.test.sh" bash tests/runner-width.test.sh' \
-     "${BIONIC_SCRIPTS_DIR}/tests/run.sh"; then
-  ok "4 tests/run.sh names runner-width.test.sh"
-else
-  no "4 tests/run.sh does not name this suite — it would never run"
-fi
 
 finish

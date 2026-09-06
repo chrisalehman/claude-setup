@@ -351,15 +351,6 @@ expect_match    "24: the section falls back to none running" "*none running*" "$
 expect_no_match "25: and a deliberate stop earns no fix line" \
   "*session ${SHORT5}: the Patrol*" "$OUT5"
 
-section "Section 6: registration"
-
-# THE SUITE IS REGISTERED. tests/*.test.sh is NOT globbed by the runner — see
-# tests/patrol-duties-gate.test.sh's own case 24 for the prior instance of this
-# lesson (doctor.test.sh, deleted at 8582861, was never re-registered because
-# nothing needed to be — this is that suite's live successor).
-expect_true "26: tests/run.sh names doctor-patrol.test.sh" \
-  grep -q 'run "doctor-patrol.test.sh" bash tests/doctor-patrol.test.sh' "${BIONIC_SCRIPTS_DIR}/tests/run.sh"
-
 section "Section 7: a firing Patrol with NO roster file and launches in the transcript"
 
 # THE DEFECT THIS SECTION OWNS (Chris, 2026-08-29, on the 1.3.0 plugin):

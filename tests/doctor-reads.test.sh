@@ -590,10 +590,7 @@ PY
   else no "13: a fact is computed and never read" "$UNREAD"; fi
 fi
 
-section "Section 8: registration, and the column budget"
-
-expect_true "14: tests/run.sh names doctor-reads.test.sh" \
-  grep -q 'run "doctor-reads.test.sh" bash tests/doctor-reads.test.sh' "${REPO}/tests/run.sh"
+section "Section 8: the column budget"
 
 _over="$(too_wide "$OUT6")"
 if [ -z "$_over" ]; then ok "15: every line of the fullest run fits 100 columns"
