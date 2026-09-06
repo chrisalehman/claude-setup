@@ -16,6 +16,7 @@
 #     bash <plugin-root>/hooks/session-poker.sh disarm     remove that stamp — this Patrol was ended on purpose
 #     bash <plugin-root>/hooks/session-poker.sh interval   the configured Patrol interval, seconds
 #     bash <plugin-root>/hooks/session-poker.sh adopt      what OTHER sessions launched here (read-only)
+#     bash <plugin-root>/hooks/session-poker.sh sweep      delete what DEAD sessions left here (writes, deletes)
 #
 # `<plugin-root>` IS A PLACEHOLDER, NOT A SPELLING TO PASTE (epic-17 W5, spec AC-5). These
 # are commands a MODEL types into its own shell, where `${CLAUDE_PLUGIN_ROOT}` is unset —
@@ -375,6 +376,8 @@ usage() {  # [message]
   die "  bash ${HOOK_DIR}/session-poker.sh interval-default   this script's built-in default interval, in seconds (ignores config)"
   die "  bash ${HOOK_DIR}/session-poker.sh adopt      every open row a PREDECESSOR session left on this project's rosters"
   die "  bash ${HOOK_DIR}/session-poker.sh adopt --report-only   the same rows, with the adoption itself not taken (writes nothing)"
+  die "  bash ${HOOK_DIR}/session-poker.sh sweep      delete every DEAD session's leftover state under this project's .bionic/tmp"
+  die "  bash ${HOOK_DIR}/session-poker.sh sweep --report-only   the same files, listed, with nothing deleted"
   die "  bash ${HOOK_DIR}/session-poker.sh bind <plan>   name the open run this session is working (rewrites its binding)"
   exit 2
 }
@@ -382,11 +385,15 @@ usage() {  # [message]
 [ $# -ge 1 ] || usage "a verb is required."
 VERB="$1"; shift
 
-# `adopt` is the ONE verb that takes a flag, and `--report-only` is the ONE flag. `bind` is
-# the ONE verb that takes an operand, and it is required. Everything else keeps the old
-# surface exactly — one word, nothing after it — so a stray argument is still the usage error
-# it always was rather than something silently ignored.
+# `--report-only` IS THE ONE FLAG IN THIS FILE, and `adopt` and `sweep` are the two verbs
+# that take it — the same word for the same promise on both, so an operator who has learned
+# it once has learned it. `bind` is the ONE verb that takes an operand, and it is required;
+# `sweep` deliberately takes NONE (it answers "clear what nobody can act on here", a
+# question about the directory rather than about a session anyone would have to name).
+# Everything else keeps the old surface exactly — one word, nothing after it — so a stray
+# argument is still the usage error it always was rather than something silently ignored.
 ADOPT_REPORT_ONLY=no
+SWEEP_REPORT_ONLY=no
 BIND_ARG=""
 case "$VERB" in
   adopt)
@@ -395,6 +402,14 @@ case "$VERB" in
       ADOPT_REPORT_ONLY=yes
     elif [ $# -gt 1 ]; then
       usage "adopt takes at most one flag."
+    fi
+    ;;
+  sweep)
+    if [ $# -eq 1 ]; then
+      [ "$1" = "--report-only" ] || usage "unknown flag for sweep: $1"
+      SWEEP_REPORT_ONLY=yes
+    elif [ $# -gt 1 ]; then
+      usage "sweep takes at most one flag."
     fi
     ;;
   bind)
@@ -1784,6 +1799,103 @@ adopt_abs() {  # <path> <repo root>
   esac
 }
 
+# ---------------------------------------------------------------- the sweep
+#
+# THE OTHER HALF OF `adopt` (fixit 1.5.1 T5; ideas/fixit-1.5.2-dead-session-sweep.md).
+# `adopt` reads a predecessor's residue back so a resumed session can act on it. Nothing has
+# ever removed that residue once NO session can act on it — so a project's `.bionic/tmp`
+# grows one set of files per `/clear`, forever, while every one of those files declares
+# itself machine-local and safe to delete in its own first line, and doctor proves the
+# sessions dead and then names no way to clear them.
+#
+# THE HARNESS COMPUTES DEADNESS, A HUMAN RUNS THE VERB (D-5). Deadness is
+# `patrol_live_sessions` and nothing else: `kill -0` against the pid the CLI itself wrote
+# into its own session file — never `ps`, never an mtime heuristic, and never a judgment of
+# the rows inside the file. A dead session's agents are dead by construction, so MET, UNMET,
+# acked and open are all the same fact once nobody can act on any of them. Auto-sweeping was
+# rejected on the record (D-5): the residue is exactly what `adopt` reads, so a hook that
+# cleared it at engagement would delete the evidence of the thing it was helping with.
+#
+# THE FIVE SESSION-KEYED CLASSES, and no sixth. Each is `<class>-<session id>.state` under
+# `<root>/.bionic/tmp`, plus the Patrol stamp's `.armed` sibling:
+#
+#   roster-<sid>.state         hooks/dispatch-preflight.sh   the dispatch ledger
+#   preflight-<sid>.state      hooks/preflight-probe.sh      the budget attestation
+#   engaged-<sid>.state        scripts/lib/binding.sh        the engagement marker
+#   sweeper-<sid>.state        hooks/session-sweeper.sh      the ack ledger
+#   patrol-<sid>.state[.armed] this file                     the Patrol stamp and its marker
+#
+# THE THREE FILES THAT ARE NOT SESSION-KEYED ARE THEREFORE UNREACHABLE FROM HERE, and that
+# is a property of the enumeration rather than a list to maintain: `context-spend.state`,
+# `farm-out.state` and `stop-check.state` carry no session id in their names, so no id this
+# walk derives can ever address one. A future non-session file is safe on arrival for the
+# same reason.
+SWEEP_SCHEMA="poker-sweep/v1"
+SWEEP_CLASSES="roster preflight engaged sweeper patrol"
+
+# EVERY SESSION ID THAT HAS STATE HERE, each once, in class-then-name order. Symlinks are
+# ENUMERATED (a `-L` test beside `-e`, so a dangling one counts too) rather than skipped:
+# a link planted at a target path is a thing this verb has to refuse out loud, and a walk
+# that never saw it would report a session as swept while its aimed path stayed behind.
+sweep_session_ids() {  # <tmp dir> -> one session id per line
+  local d="$1" c f base sid seen=""
+  for c in $SWEEP_CLASSES; do
+    for f in "$d/$c"-*.state "$d/$c"-*.state"$PATROL_ARMED_SUFFIX"; do
+      [ -e "$f" ] || [ -L "$f" ] || continue
+      base="${f##*/}"
+      sid="${base#"$c"-}"
+      sid="${sid%"$PATROL_ARMED_SUFFIX"}"
+      sid="${sid%.state}"
+      [ -n "$sid" ] || continue
+      case "$sid" in *"/"*|.|..) continue ;; esac
+      case " $seen " in *" $sid "*) continue ;; esac
+      seen="$seen $sid"
+      printf '%s\n' "$sid"
+    done
+  done
+}
+
+# ONE SESSION'S FILES, BY EXACT PATH AND NEVER BY GLOB. The ids come off the filenames
+# above, so building each candidate path back by concatenation means a strange id can only
+# ever address the file it was read from — there is no pattern here for it to widen.
+sweep_session_files() {  # <tmp dir> <session id> -> one path per line
+  local d="$1" sid="$2" c f
+  for c in $SWEEP_CLASSES; do
+    for f in "$d/$c-$sid.state" "$d/$c-$sid.state$PATROL_ARMED_SUFFIX"; do
+      [ -e "$f" ] || [ -L "$f" ] || continue
+      printf '%s\n' "$f"
+    done
+  done
+}
+
+# The live set, as bare ids. `patrol_live_sessions` answers `session=<sid>|pid=…|cwd=…`,
+# and CWD IS DELIBERATELY NOT CONSULTED: a session live in another project still owns its
+# files here (it may have been started in this root and `cd`-ed away, and the pid is the
+# only fact that decides whether anyone can still act on the row).
+sweep_live_ids() {  # -> one live session id per line
+  local l
+  patrol_live_sessions 2>/dev/null | while IFS= read -r l; do
+    case "$l" in
+      session=*) l="${l#session=}"; printf '%s\n' "${l%%|*}" ;;
+    esac
+  done
+}
+
+# A SYMLINK IS NOT A FILE THIS SCRIPT WROTE, so it is refused rather than followed and left
+# in place rather than unlinked — the identical posture `remove_patrol_stamp` takes, and for
+# the identical reason: every reader in the fleet already treats a symlinked state file as
+# absent, so there is nothing to clear, and a hostile repo must not gain a delete through a
+# path it aimed. A directory at one of these names is refused too: this verb removes files.
+sweep_unlink() {  # <path> -> 0 removed, 1 left alone
+  local f="$1"
+  [ -L "$f" ] && return 1
+  [ -f "$f" ] || return 1
+  rm -f "$f" 2>/dev/null
+  [ -e "$f" ] && return 1
+  return 0
+}
+
+
 # ---------------------------------------------------------------- verbs
 
 case "$VERB" in
@@ -2275,6 +2387,158 @@ EOF
     [ "$ADOPT_REPORT_ONLY" = yes ] \
       && say "report-only: nothing was written — run 'adopt' to take these rows onto this session's roster."
     exit 1
+    ;;
+
+  # ---------------------------------------------------------------- sweep
+  #
+  # NOT ENGAGEMENT-GATED, AND DELIBERATELY (D-4). The engagement marker is itself one of the
+  # files this verb removes: a session that never invoked the skill still leaves preflight
+  # and roster state behind when it dies, and a cleanup that refused to run without
+  # engagement would refuse hardest on the machines carrying the most residue. The guard the
+  # other verbs take exists so bionic decides nothing about a session that never asked it to;
+  # this verb decides nothing about any session at all — it removes files whose owners the
+  # kernel says are gone.
+  #
+  # IT TAKES NO SESSION ID, and that is the surface staying closed rather than an omission.
+  # The question is "what here can nobody act on any more", which is a question about the
+  # directory; an id operand would be a second way to ask it, and the one thing a caller
+  # could do with it that the walk does not already do is name a session the walk skipped —
+  # which is exactly the live one this verb refuses.
+  #
+  # THE EXIT CODE SAYS WHETHER ANYTHING IS LEFT THAT THIS VERB MAY NOT TOUCH:
+  #   0  the sweep completed — dead state removed (or listed), or there was none to begin with
+  #   1  nothing swept: every session with state here is LIVE, so there was nothing to remove
+  #   2  usage, or a `.bionic/tmp` this verb will not delete inside
+  # A live session's state is not a fault and the 1 is not a scolding — it is the one answer
+  # a caller cannot read off "0 files removed", which is also what a live-only run and an
+  # empty directory would otherwise share.
+  sweep)
+    # The current session's own key, when it has one. It is not required — this verb answers
+    # for the DIRECTORY, not for a session — but when it is present the session is live by
+    # construction, and adding it by hand means a claude-home this process cannot read (an
+    # unreadable `~/.claude/sessions`, a missing `jq`) can never let a session sweep its own
+    # state out from under itself.
+    SESSION_ID="$(session_id)" || SESSION_ID=""
+
+    REPO="$(project_root "$PWD")"
+    REPO_REAL="$(cd "$REPO" 2>/dev/null && pwd -P)"
+    if [ -z "$REPO_REAL" ]; then
+      die "REFUSED — cannot resolve the working directory."
+      exit 2
+    fi
+    SWEEP_DIR="$REPO_REAL/.bionic/tmp"
+
+    # THE SAME GUARD THE WRITERS TAKE, because a delete is a write. `tmp_dir_ok` is this
+    # file's one copy of the rule (a `.bionic` symlinked outside the repo, a `tmp` that is
+    # itself a link), and taking it here means the walk below cannot enumerate a single path
+    # inside a directory the stamp writer would have refused.
+    if ! tmp_dir_ok "$SWEEP_DIR"; then
+      die "REFUSED — $SWEEP_DIR is not a directory this verb will delete inside."
+      die "A .bionic or a tmp that is a symlink out of this repo is refused, never followed."
+      exit 2
+    fi
+    if [ ! -d "$SWEEP_DIR" ]; then
+      say "nothing to sweep — this project has no .bionic/tmp."
+      exit 0
+    fi
+
+    SWEEP_LIVE="$(sweep_live_ids)"
+    [ -n "$SESSION_ID" ] && SWEEP_LIVE="${SWEEP_LIVE}${SWEEP_LIVE:+
+}${SESSION_ID}"
+
+    SWEEP_SCANNED=0
+    SWEEP_DEAD=0
+    SWEEP_KEPT=0
+    SWEEP_FILES=0
+    SWEEP_REMOVED=0
+    SWEEP_REFUSED=0
+
+    while IFS= read -r SWEEP_SID; do
+      [ -n "$SWEEP_SID" ] || continue
+      SWEEP_SCANNED=$((SWEEP_SCANNED + 1))
+
+      # Newline-delimited containment: an id is in the live set only as a WHOLE line, so a
+      # dead session whose id is a prefix of a live one is not mistaken for it.
+      case "
+$SWEEP_LIVE
+" in
+        *"
+$SWEEP_SID
+"*)
+          SWEEP_KEPT=$((SWEEP_KEPT + 1))
+          say "$SWEEP_SID — live, kept"
+          continue
+          ;;
+      esac
+
+      SWEEP_DEAD=$((SWEEP_DEAD + 1))
+      SWEEP_N=0
+      SWEEP_LINES=""
+      while IFS= read -r SWEEP_F; do
+        [ -n "$SWEEP_F" ] || continue
+        SWEEP_FILES=$((SWEEP_FILES + 1))
+        SWEEP_N=$((SWEEP_N + 1))
+        if [ "$SWEEP_REPORT_ONLY" = yes ]; then
+          # A LINK IS NAMED AS A LINK EVEN HERE, so the report of what would happen matches
+          # what happens: a run that listed a symlink as a file to delete and then left it
+          # would have lied about its own next invocation.
+          if [ -L "$SWEEP_F" ]; then
+            SWEEP_REFUSED=$((SWEEP_REFUSED + 1))
+            SWEEP_LINES="${SWEEP_LINES}  refused (symlink, left alone): $SWEEP_F
+"
+          else
+            SWEEP_LINES="${SWEEP_LINES}  $SWEEP_F
+"
+          fi
+          continue
+        fi
+        if sweep_unlink "$SWEEP_F"; then
+          SWEEP_REMOVED=$((SWEEP_REMOVED + 1))
+          SWEEP_LINES="${SWEEP_LINES}  $SWEEP_F
+"
+        else
+          SWEEP_REFUSED=$((SWEEP_REFUSED + 1))
+          SWEEP_LINES="${SWEEP_LINES}  refused (symlink or not a file, left alone): $SWEEP_F
+"
+        fi
+      done <<EOF
+$(sweep_session_files "$SWEEP_DIR" "$SWEEP_SID")
+EOF
+
+      say "$SWEEP_SID — dead, $SWEEP_N file(s)"
+      printf '%s' "$SWEEP_LINES" | while IFS= read -r SWEEP_L; do
+        [ -n "$SWEEP_L" ] && say "$SWEEP_L"
+      done
+    done <<EOF
+$(sweep_session_ids "$SWEEP_DIR")
+EOF
+
+    printf '%s|at=%s|session=%s|mode=%s|scanned=%s|dead=%s|live=%s|files=%s|removed=%s|refused=%s\n' \
+      "$SWEEP_SCHEMA" "$(iso_now)" "${SESSION_ID:-none}" \
+      "$([ "$SWEEP_REPORT_ONLY" = yes ] && printf 'report-only' || printf 'sweep')" \
+      "$SWEEP_SCANNED" "$SWEEP_DEAD" "$SWEEP_KEPT" "$SWEEP_FILES" "$SWEEP_REMOVED" "$SWEEP_REFUSED"
+
+    if [ "$SWEEP_SCANNED" -eq 0 ]; then
+      say "nothing to sweep — no session-keyed state under $SWEEP_DIR."
+      exit 0
+    fi
+
+    if [ "$SWEEP_DEAD" -eq 0 ]; then
+      die "REFUSED — nothing swept: all $SWEEP_KEPT session(s) with state under $SWEEP_DIR are LIVE."
+      die "A live session's state is its own to keep; this verb removes only what nobody can act on."
+      exit 1
+    fi
+
+    if [ "$SWEEP_REPORT_ONLY" = yes ]; then
+      say "report-only: $SWEEP_FILES file(s) across $SWEEP_DEAD dead session(s) would be deleted — nothing was written."
+      say "run 'sweep' to delete them."
+      exit 0
+    fi
+
+    say "swept $SWEEP_REMOVED file(s) across $SWEEP_DEAD dead session(s); $SWEEP_KEPT live session(s) kept."
+    [ "$SWEEP_REFUSED" -gt 0 ] \
+      && say "$SWEEP_REFUSED path(s) refused and left alone — a symlink under .bionic/tmp is never followed."
+    exit 0
     ;;
 
   # ---------------------------------------------------------------- bind
