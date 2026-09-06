@@ -46,10 +46,13 @@
 # eleven absent dependencies and a broken hook channel has been diagnosed
 # *successfully*; reporting that as a non-zero exit would make every caller treat
 # a working doctor as a broken one. The report's content is the signal, never the
-# status. The one exception is an option this script does not know, which has
-# diagnosed nothing: answering a misspelled flag with a clean report and status 0
-# would tell a caller that asked for something, and did not get it, that all was
-# well. That exits 2, before any fact is gathered.
+# status. TWO THINGS ARE NOT DIAGNOSES and both exit 2 before any fact is
+# gathered: an option this script does not know, because answering a misspelled
+# flag with a clean report and status 0 would tell a caller that asked for
+# something, and did not get it, that all was well; and a payload missing a
+# library this script sources, because there is no report to print and the
+# alternative is the interpreter's own error trace. Neither has diagnosed
+# anything, and 2 is this file's word for that.
 #
 # WHY READ-ONLY IS STRUCTURAL AND NOT MERELY INTENDED. Doctor calls only the
 # read-only half of each library — detect.sh's fact functions, env.sh's
@@ -111,6 +114,39 @@ _doctor_self_dir() {
   case "$self" in */*) echo "${self%/*}" ;; *) echo "." ;; esac
 }
 DOCTOR_LIB="$(cd "$(_doctor_self_dir)" && pwd -P)/lib"
+
+# THE PAYLOAD-INTEGRITY GUARD, WHICH SETUP HAS CARRIED SINCE 1.5.1 AND THIS FILE
+# DID NOT (Step-5 walk, Walk-D3). A payload copy missing lib/checks.sh answered
+# `doctor` with three raw bash diagnostics — `No such file or directory`,
+# `bionic_check_route: command not found`, `BIONIC_WALL_HOOKS: unbound variable`
+# — no report at all, and status 1 under a header stating that a diagnosis always
+# exits 0. Every one of those lines is the SHELL talking about doctor, in a file
+# whose whole job is to talk about the machine; the reader is left holding an
+# interpreter trace instead of the one sentence that would fix it. Setup was
+# already answering the identical damage with a named file and a reinstall
+# route, so the two surfaces disagreed about what a broken payload looks like.
+#
+# THE LIST IS WHAT THIS SCRIPT NEEDS, NOT WHAT SETUP NEEDS, which is why it is
+# spelled here rather than shared. The two scripts source different libraries —
+# setup wants deps/hooks/jit, doctor wants loader/root/run/resources — so there
+# is no one list to own; and a shared CHECKER would have to live in a library
+# that must itself exist before it can be sourced, which is the bootstrap this
+# guard exists to survive. What is shared is the sentence and the route, and
+# those are two echo lines.
+#
+# THE LAST TWO ARE ONE LEVEL DOWN, the way patrol.sh is on setup's list.
+# detect.sh soft-sources deps.sh and shell.sh from its own directory, so a
+# payload without them fails inside a library rather than at a line here — the
+# same trace, one frame deeper — and they are part of what a complete payload
+# means for this script too.
+for _doctor_lib in detect.sh env.sh patrol.sh width.sh loader.sh root.sh run.sh \
+                   resources.sh checks.sh deps.sh shell.sh; do
+  if [ ! -f "${DOCTOR_LIB}/${_doctor_lib}" ]; then
+    echo "doctor.sh: cannot find ${DOCTOR_LIB}/${_doctor_lib} — the payload looks incomplete." >&2
+    echo "           reinstall with: claude plugin install bionic@bionic" >&2
+    exit 2
+  fi
+done
 
 # shellcheck source=/dev/null
 . "${DOCTOR_LIB}/detect.sh"
@@ -269,7 +305,12 @@ _doctor_item() {  # <symbol> <label> <value>
 # top — which is why it is collected rather than echoed where it is found. One
 # line per problem, and the line ENDS with what to type: a problem stated without
 # its command is the half of the job this report used to leave undone.
-FIX_LINES=""
+#
+# THERE USED TO BE A THIRD ACCUMULATOR HERE, `FIX_LINES`, holding every line with
+# its ✗ glyph on the front. Nothing printed it: the verdict renders from the two
+# below, and the count that read it is now summed by `fix` itself. It is gone
+# rather than kept, because a string built on every run and read by nobody is the
+# shape tests/doctor-reads.test.sh §7 exists to refuse.
 # THE VERDICT LINE NAMES THE PROBLEMS, so the problems have to be nameable. Each
 # fix sentence is `<what is wrong> → <what to type>`, and the half before the
 # arrow is already the name — accumulated here rather than re-derived later,
@@ -285,9 +326,31 @@ FIX_LINES_OTHER=""
 # lib/checks.sh, where every row that carries it reads it from. Read into a
 # constant because the sort runs once per fix line.
 DOCTOR_SETUP_ROUTE="$(bionic_check_route setup)"
-fix() {  # <problem> → <command>
+# HOW MANY ✗ ROWS THIS LINE STANDS FOR, SAID WHERE THE LINE IS WRITTEN (1.5.1,
+# Walk-D1). The headline is a count of the machine's problems and the tables
+# below render one ✗ row per problem, so the two numbers are the same number and
+# a reader who counts the rows must land on the headline. Most fix lines are
+# worth exactly one row, which is the default. A COLLAPSED line — eleven absences
+# under one `/bionic:setup`, three unwritten environment names under one, four
+# dead sessions under one verb — is worth the rows it collapsed, and only the
+# call site knows how many that is.
+#
+# WHICH IS WHY IT IS DECLARED AND NOT RECONSTRUCTED. This was arithmetic at the
+# bottom of the file until now: count the ✗ lines, then subtract each collapsed
+# line and add the ✗ rows of the table it collapsed. That shape has to be
+# extended by hand for every new collapse and every new line, and it was wrong
+# twice at once by the time the Step-5 walk measured it. The dependency line was
+# swapped for EVERY ✗ dependency row, including the rows of `presence is unknown`
+# and `violates constraint` lines that were already counted as themselves, so
+# each of those was worth two problems; and the environment line was swapped for
+# nothing at all, so three unwritten names were worth one. On the walk's fixture
+# the first error was +2 and the second -2 and the page's total came out right
+# over two broken halves. A number declared beside the sentence it belongs to
+# cannot drift from it that way.
+N_FIX=0
+fix() {  # <problem> → <command> [<✗ rows this line stands for; default 1>]
   local line="${1}" name="${1%% → *}"
-  FIX_LINES="${FIX_LINES}  ${DOCTOR_BAD} ${line}"$'\n'
+  N_FIX=$(( N_FIX + ${2:-1} ))
   case "$line" in
     *"$DOCTOR_SETUP_ROUTE") FIX_NAMES_SETUP="${FIX_NAMES_SETUP}${FIX_NAMES_SETUP:+; }${name}" ;;
     *)                FIX_LINES_OTHER="${FIX_LINES_OTHER}${line}"$'\n' ;;
@@ -1476,7 +1539,8 @@ EOF
 # "Nothing to do". A fix line is also what raises N_FIX, so that header stops
 # contradicting the body without anything here special-casing it.
 if [ "$_doctor_dead_n" -gt 0 ]; then
-  fix "${_doctor_dead_n} dead $(_doctor_plural "$_doctor_dead_n" session sessions) left state under .bionic/tmp → $(bionic_check_hint dead-session-state)"
+  fix "${_doctor_dead_n} dead $(_doctor_plural "$_doctor_dead_n" session sessions) left state under .bionic/tmp → $(bionic_check_hint dead-session-state)" \
+      "$_doctor_dead_n"
 fi
 
 # LEGACY `.bionic` SYMLINKS (AC-11). spawn-worktree.sh used to plant
@@ -1698,15 +1762,15 @@ esac
 # is given whole underneath it.
 if [ "$HALF_STATE" = "yes" ]; then
   fix "this machine is half-uninstalled — the CLI no longer knows bionic. Finish with:"
-  # The `set -o pipefail` wrapper is not decoration. `curl … | bash` reports
-  # BASH's status, and bash handed an empty stream exits 0 — so a fetch that
-  # 404s (a moved script, no network, a private repo) leaves the user with a
-  # command that looked like it worked and removed nothing. The wrapper is a
-  # subshell, so it fixes the status without touching the options of the shell
-  # the user pasted it into. `-S` inside `-fsSL` is what puts curl's own error
-  # on the terminal; the wrapper is what stops the pipe from swallowing it.
-  FIX_LINES="${FIX_LINES}      bash -c 'set -o pipefail; curl -fsSL ${BIONIC_REMOVE_RAW_URL} | bash'"$'\n'
 fi
+# The command itself is printed by the verdict's render loop, on its own line
+# under this one — see the `HALF_STATE` echo there. It was appended to a third
+# accumulator here until 1.5.1, which nothing printed, so the copy that reached
+# the reader was always that one. The `set -o pipefail` wrapper it carries is not
+# decoration: `curl … | bash` reports BASH's status, and bash handed an empty
+# stream exits 0, so a fetch that 404s (a moved script, no network, a private
+# repo) would leave the user with a command that looked like it worked and
+# removed nothing.
 
 # THE RETIRED INSTALLER'S LEFTOVERS, raised HERE rather than beside the rows they
 # explain — this whole section runs before anything is printed, and a fix raised
@@ -1744,7 +1808,8 @@ if [ -n "$ABSENT_NAMES" ]; then
   # once, so there is no single row to ask; `bionic_check_route` is where the
   # party's own command is spelled, and it is the same string every one of those
   # rows carries.
-  fix "${N_ABSENT_ACTIONABLE} $(_doctor_plural "$N_ABSENT_ACTIONABLE" dependency dependencies) absent (${_doctor_absent_list}) → run $(bionic_check_route setup)"
+  fix "${N_ABSENT_ACTIONABLE} $(_doctor_plural "$N_ABSENT_ACTIONABLE" dependency dependencies) absent (${_doctor_absent_list}) → run $(bionic_check_route setup)" \
+      "$N_ABSENT_ACTIONABLE"
 fi
 
 # THE CORE ABSENCES, ON THEIR OWN LINE AND WITH THEIR OWN COMMAND. Same shape as
@@ -1772,7 +1837,7 @@ if [ -n "$ABSENT_CORE_NAMES" ]; then
   # multi-byte dependency name cannot be cut mid-glyph here.
   _doctor_absent_core="$(bionic_trunc "$ABSENT_CORE_NAMES" \
     "$(( BIONIC_LINE_WIDTH - $(bionic_cols "→ ${_doctor_core_head}) → ${_doctor_core_route}") ))")"
-  fix "${_doctor_core_head}${_doctor_absent_core}) → ${_doctor_core_route}"
+  fix "${_doctor_core_head}${_doctor_absent_core}) → ${_doctor_core_route}" "$N_ABSENT_CORE"
 fi
 
 # THE TABLE DECIDES WHETHER AN ENVIRONMENT NAME FIRES, and this line counts its
@@ -1794,7 +1859,8 @@ for _env_key in $ENV_KEYS; do
   bionic_check_fires "env:${_env_key}" && ENV_MISSING=$((ENV_MISSING + 1))
 done
 if [ "$ENV_MISSING" -gt 0 ]; then
-  fix "${ENV_MISSING} of bionic's environment settings $(_doctor_plural "$ENV_MISSING" is are) not what bionic sets → run $(bionic_check_route setup)"
+  fix "${ENV_MISSING} of bionic's environment settings $(_doctor_plural "$ENV_MISSING" is are) not what bionic sets → run $(bionic_check_route setup)" \
+      "$ENV_MISSING"
 fi
 
 # A STALE PROXY BLOCK IS THE ONE STATE OF THIS ITEM THAT EARNS A FIX LINE.
@@ -1856,52 +1922,20 @@ if [ "$FEED_KIND" = "git" ] && [ "$LATEST_STATE" = "lag" ]; then
   fix "bionic ${LATEST_INSTALLED} installed, ${LATEST_LATEST} available → claude plugin update bionic@bionic"
 fi
 
-# How many problems, for the summary line. Counted from the printed lines rather
-# than from a tally kept alongside them, so the number and the list cannot come
-# to disagree: the continuation line under the half-uninstalled fix is indented
-# and does not carry the symbol, which is exactly why the count keys on it.
-N_FIX=0
-if [ -n "$FIX_LINES" ]; then
-  while IFS= read -r _fix_line; do
-    case "$_fix_line" in "  ${DOCTOR_BAD} "*) N_FIX=$((N_FIX + 1)) ;; esac
-  done <<< "$FIX_LINES"
-fi
 # THE COUNT IS ROWS, NOT CATEGORIES (Chris 2026-08-22: "2 problems" above seven ✗
-# rows). The absent dependencies collapse into ONE fix line below, so that line
-# is swapped for the number of ✗ dependency rows it stands for.
-N_BAD_DEPS=0
-if [ -n "$THIRD_ROWS" ]; then
-  while IFS= read -r _third_line; do
-    case "$_third_line" in "  ${DOCTOR_BAD} "*) N_BAD_DEPS=$((N_BAD_DEPS + 1)) ;; esac
-  done <<< "$THIRD_ROWS"
-fi
+# rows), and it is finished by the time this line is reached. `N_FIX` is summed
+# by `fix` itself, one call at a time, from the row count each call declares —
+# see that function's header for why the number lives beside the sentence rather
+# than being reconstructed here from the page.
 #
-# BOTH COLLAPSED DEPENDENCY LINES ARE SWAPPED, TOGETHER, FOR THE ROWS THEY STAND
-# FOR (bionic 1.4.4 fixit, phase 3). There are two of them since the core
-# absences got a line of their own — `N dependencies absent … → run
-# /bionic:setup` and `N core dependencies absent … → <route>` — and
-# `N_BAD_DEPS` above counts the ✗ rows of BOTH, because it counts rendered rows
-# and a rendered row does not carry its class. Swapping only the first line left
-# the second one counted as a problem in its own right ON TOP of the rows it
-# stands for, so a machine missing two core dependencies reported one problem
-# more than it had: the walk rendered `12 problems` where the same machine had
-# always read 11. Counting the collapse lines and subtracting all of them keeps
-# the original sentence — the count is rows — true for one line or two.
-N_DEP_COLLAPSE=0
-case "$FIX_NAMES_SETUP" in *"dependenc"*) N_DEP_COLLAPSE=$((N_DEP_COLLAPSE + 1)) ;; esac
-[ -n "$ABSENT_CORE_NAMES" ] && N_DEP_COLLAPSE=$((N_DEP_COLLAPSE + 1))
-[ "$N_DEP_COLLAPSE" -gt 0 ] && N_FIX=$((N_FIX - N_DEP_COLLAPSE + N_BAD_DEPS))
-
-# AND THE DEAD-SESSION LINE IS THE THIRD COLLAPSE (1.5.1 fix-up batch). The row
-# per dead session is one ✗ per session in PATROL; the cure is one line naming
-# the one verb that clears all of them. That is the same shape as the two above,
-# so it takes the same swap — without it a machine with two dead sessions printed
-# two ✗ rows under a headline counting one, which is the count-versus-rows
-# inequality broken in the direction the rule forbids (the headline can never be
-# the smaller number). Found by tests/doctor-reads.test.sh 12f18 going red on a
-# machine that had accumulated a second dead session, three weeks after the
-# assertion was written against a machine that had one.
-[ "$_doctor_dead_n" -gt 0 ] && N_FIX=$((N_FIX - 1 + _doctor_dead_n))
+# WHAT USED TO BE HERE. Three swaps in a row, each one written the day a
+# collapse was found to be miscounted: the two dependency lines exchanged for
+# every ✗ dependency row (bionic 1.4.4 fixit phase 3), then the dead-session line
+# for the sessions it names (1.5.1 fix-up batch). The environment line never got
+# its swap, and the exchange counted `presence is unknown` and `violates
+# constraint` rows twice — both measured by the Step-5 walk on one page whose
+# total was nevertheless correct, because the two errors were equal and opposite.
+# There is nothing to swap now: a line is worth what it says it is worth.
 
 # ─── The report ──────────────────────────────────────────────────────────────
 #
