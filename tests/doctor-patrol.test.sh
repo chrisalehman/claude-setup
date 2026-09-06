@@ -874,13 +874,23 @@ expect_absent "68: the header does not say there is nothing to do" \
 # CAUSATION, NOT COINCIDENCE. The fixture machine has unrelated problems of its
 # own, so "no Nothing-to-do header" proves little on its own. Removing ONLY the
 # dead sessions' files from the same tree must drop the fix line and lower the
-# problem count by exactly one — which is what says this row, and not the
-# machine's other trouble, is what put that line on the page.
+# problem count by the number of sessions that line stood for — which is what
+# says this row, and not the machine's other trouble, is what put it there.
+#
+# ONE PROBLEM PER DEAD SESSION, NOT ONE PER LINE (1.5.1 fix-up batch). This pin
+# read "exactly one problem fewer" while the collapsed dead-session line was
+# counted as a single problem — and that is the count-versus-rows inequality
+# broken in the direction doctor's own rule forbids: three ✗ predecessor rows
+# under a headline saying one. tests/doctor-reads.test.sh 12f18 is the assertion
+# that caught it (headline == the ✗ rows it stands for), so the line now takes
+# the same swap the two dependency collapses take, and the drop this fixture
+# measures is three. The count is read from the fix line itself rather than
+# spelled here, so the pin follows the fixture rather than pinning it.
 # THE HEADER'S OWN COUNT, not a count of glyphs on the page. `N_FIX` is what
-# decides between "Nothing to do" and "N problems", and it counts FIX LINES —
-# the three collapsed rows are facts and are not among them. Counting `✗` would
-# have counted the rows too, which is a different number and not the one the
-# header is a function of.
+# decides between "Nothing to do" and "N problems", and it counts FIX LINES with
+# each collapsed line swapped for the rows it stands for. Counting `✗` directly
+# would have counted rows that carry no fix line at all, which is a different
+# number and not the one the header is a function of.
 n16_problems() {  # <doctor output> -> the header's problem count, or empty
   printf '%s\n' "$1" | sed -n 's/^→ \([0-9][0-9]*\) problems*\..*$/\1/p' | head -1
 }
@@ -898,8 +908,11 @@ expect_absent "69: with the dead state gone, the fix line goes with it" \
   "dead sessions left state under .bionic/tmp" "$OUT16B"
 expect_no_match "70: …and no predecessor line remains" "*predecessor *" "$(patrol_block "$OUT16B")"
 expect_nonempty "71: the header states a problem count both times (72 is not vacuous)" "$N16_BEFORE"
-expect_eq "72: …and it counts exactly one problem fewer without the dead state" \
-  "$N16_BEFORE" "$((N16_AFTER + 1))"
+N16_DEAD="$(printf '%s\n' "$OUT16" | sed -n 's/^→ \([0-9][0-9]*\) dead sessions* left state.*$/\1/p' | head -1)"
+expect_eq "71b: …and the fix line named the sessions it stood for (72 reads that number)" \
+  "3" "$N16_DEAD"
+expect_eq "72: …and it counts one problem fewer per dead session it stopped naming" \
+  "$N16_BEFORE" "$((N16_AFTER + N16_DEAD))"
 expect_match "73: …while the live session's attestation is still there (69-72 are not an empty page)" \
   "*session e96260d1*" "$(printf '%s\n' "$OUT16B" | awk '/^RESOURCES$/{f=1;next} f && /^[A-Z][A-Z]/{exit} f')"
 expect_true "74: …and the unkeyed context-spend.state was never the subject" \
