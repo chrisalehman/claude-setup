@@ -37,9 +37,9 @@
 #
 # The derived roster below is the roster in BOTH modes — the directory is the
 # only place a suite is named, and neither mode has a list of its own. In
-# --serial each entry
-# runs where it stands; by default each entry enqueues, the queue drains through
-# xargs -P, and the results print afterwards in roster order. Same labels, same
+# --serial each entry runs where it stands; by default each entry enqueues, the
+# queue drains through xargs -P, and the results print afterwards in roster
+# order. Same labels, same
 # captured-output blocks, same `Gating:` line, same exit status: a mode is a
 # scheduling choice and nothing else.
 #
@@ -59,8 +59,8 @@
 # shared lock, no fixed port and no fixed /tmp name: every suite that touches disk
 # does so under its own `mktemp -d`, and the one place many of them read concurrently
 # (this checkout, via tests/lib/resolve-roots.sh) has no writer in the roster at all.
-# THE AUDIT IS TWO FILES, and a maintainer needs both: S8 read the 44 suites that
-# existed when it ran (`.bionic/docs/record/epic-17-w7/s8-isolation-audit.md`), and
+# THE AUDIT IS TWO FILES, and a maintainer needs both: S8 read the roster as it
+# stood when it ran (`.bionic/docs/record/epic-17-w7/s8-isolation-audit.md`), and
 # S8b read the one the same wave added, env.test.sh, which appears nowhere in the
 # first file (`.bionic/docs/record/epic-17-w7/s8b-isolation-delta.md`). Neither file
 # covers the roster as it stands now: epic-18 wave-03 deleted nineteen of those
@@ -70,10 +70,9 @@
 # (F4), bionic 1.3.2 added git-argv, cmd-class and patrol-marker, and wave-01
 # verification-cannot-lie added four more. A maintainer re-derives the roster
 # rather than trusting a number in a comment — `ls tests/*.test.sh` IS the
-# roster now, so the count is never anywhere else to go stale. Neither audit file
-# re-covers what changed since
-# it ran; a suite added or restored after S8b carries no isolation proof
-# beyond its own file. A suite that writes outside its own mktemp root breaks this
+# roster now, so the count is never anywhere else to go stale, and a suite
+# added or restored after S8b carries no isolation proof beyond its own file.
+# A suite that writes outside its own mktemp root breaks this
 # premise, and a derived roster picks that suite up the moment the file lands, so
 # WRITING the suite is the moment to check its isolation — and to extend the
 # audit, since neither existing file can cover a suite written after it.
@@ -84,7 +83,7 @@
 # the width with headroom on that measurement; the default was raised to eight on
 # 2026-08-22 (ef23f75, user's call) and `BIONIC_TEST_JOBS_CEILING` is there for a machine
 # with less or more. NOT `BIONIC_TEST_JOBS`, which is retired as an input — line 51 above
-# says so and line 249 prints it at runtime.
+# says so and the width block below prints it at runtime.
 #
 # EVERY SUITE IS A CLIENT OF ONE FRAMEWORK (wave-01 S10, spec AC-12). Before a
 # roster line is launched its source is read, and a suite that defines a name
@@ -174,9 +173,13 @@ done
 # WHY THE GLOB CANNOT BE TRUSTED BLIND — THE ROSTER WALL. `tests/*.test.sh` is a
 # filename pattern, not a promise: a helper, a scratch copy or a half-written
 # file dropped in tests/ would be launched as a suite and reported as a failure
-# that is really a misplaced file. So every match is read for the shape all the
-# suites share (measured 2026-09-06, 55/55 on both halves):
+# that is really a misplaced file. So every match is asked four questions — the
+# first two about the match itself, the last two the shape every suite on the
+# roster shares (measured 2026-09-06, 55/55 on both halves):
 #
+#   - its name is spelled in [A-Za-z0-9._-], which is what the queue and the
+#     parallel launcher can carry without re-splitting it;
+#   - it is a regular file: not a symlink, not a directory;
 #   - its first line is `#!/bin/bash` — the interpreter ADR-001 pins;
 #   - it sources the framework at tests/lib/assert.sh.
 #
@@ -212,21 +215,51 @@ fi
 
 _roster_refusals=""
 for _roster_file in "$@"; do
+  _roster_base="${_roster_file##*/}"
+  # THE NAME IS ASKED FIRST, BEFORE ANYTHING READS THE FILE (Step-6 review A-3).
+  # The queue is `label<TAB>bash tests/<name>`, `--one` re-splits that line, and
+  # the parallel launch file is line-delimited and handed to `xargs`, which
+  # splits on whitespace and honours quotes. A name carrying a space or a quote
+  # therefore passes both shape halves and then breaks the QUEUE — the default
+  # mode reported every suite KILLED with an empty capture while `--serial`
+  # reported the same tree green, which is two verdicts from one filename and
+  # exactly what the header's "same exit status" promise forbids. Refused here,
+  # by name, the launcher never sees it and the two modes cannot disagree.
+  # (The pattern opens with `(` because bash 3.2 mis-parses a `)` that closes a
+  # case pattern when this file is read inside a command substitution.)
+  case "$_roster_base" in
+    (*[!A-Za-z0-9._-]*)
+      _roster_refusals="${_roster_refusals}  tests/${_roster_base}: the file name is outside [A-Za-z0-9._-] — the queue and the parallel launcher both re-split it"$'\n'
+      continue ;;
+  esac
+  # AND THEN WHETHER IT IS A FILE AT ALL (review A-7 / walk F-10, F-12). The glob
+  # matches directories and symlinks too, and both halves below read straight
+  # through the difference: `read` and `grep` follow a link, so the TARGET's
+  # shebang and framework line are what pass the wall while the body that runs
+  # lives outside the tree the reviewer read — measured executing and counted a
+  # green gating suite. A directory got the verdict right but only after the
+  # shell's own `read error: Is a directory`, because the wall read a thing it
+  # had not asked whether it could read. One question, asked before the read,
+  # answers both.
+  if [ ! -f "$_roster_file" ] || [ -L "$_roster_file" ]; then
+    _roster_refusals="${_roster_refusals}  tests/${_roster_base}: not a regular file — a suite is a file in this tree, not a link to one or a directory named like one"$'\n'
+    continue
+  fi
   _roster_first=""
   IFS= read -r _roster_first <"$_roster_file" || :
   if [ "$_roster_first" != '#!/bin/bash' ]; then
-    _roster_refusals="${_roster_refusals}  tests/${_roster_file##*/}: first line is not #!/bin/bash"$'\n'
+    _roster_refusals="${_roster_refusals}  tests/${_roster_base}: first line is not #!/bin/bash"$'\n'
     continue
   fi
   [ "$ROSTER_FRAMEWORK" = yes ] || continue
   if ! grep -qE '^[[:space:]]*(\.|source)[[:space:]].*assert\.sh' "$_roster_file"; then
-    _roster_refusals="${_roster_refusals}  tests/${_roster_file##*/} does not source the framework at tests/lib/assert.sh"$'\n'
+    _roster_refusals="${_roster_refusals}  tests/${_roster_base} does not source the framework at tests/lib/assert.sh"$'\n'
   fi
 done
 if [ -n "$_roster_refusals" ]; then
   echo "tests/run.sh: the roster wall refuses — tests/*.test.sh matched a file that is not a suite:" >&2
   printf '%s' "$_roster_refusals" >&2
-  echo "tests/run.sh: nothing was run. Every gating suite starts with #!/bin/bash and sources tests/lib/assert.sh; a protocol meant to be run by hand belongs in .bionic/tests/." >&2
+  echo "tests/run.sh: nothing was run. Every gating suite is a regular file named in [A-Za-z0-9._-], starts with #!/bin/bash and sources tests/lib/assert.sh; a protocol meant to be run by hand belongs in .bionic/tests/." >&2
   exit 2
 fi
 
@@ -250,6 +283,17 @@ if [ -n "${BIONIC_TEST_JOBS:-}" ]; then
 fi
 # shellcheck source=/dev/null
 . "$REPO/payload/scripts/lib/resources.sh"
+# THE HARNESS PROVES ITS OWN PRECONDITIONS (design D-3; walk finding F-9). A tree
+# where that source failed used to carry on: `pressure_level: command not found`
+# on the runner's OWN stderr, `JOBS` empty, the fallback below turning it into 8,
+# and a finish line reading `All gating suites green ✓`. Nothing reads the
+# runner's stderr — the lost-command reader further down reads a SUITE's captured
+# output — so a run whose width oracle never answered still called itself green.
+# A width nothing answered for is a run nothing can vouch for, so it stops here.
+if ! declare -F pressure_level >/dev/null 2>&1; then
+  echo "tests/run.sh: no width oracle — payload/scripts/lib/resources.sh did not load, so pressure_level is not defined. Nothing was run." >&2
+  exit 2
+fi
 if [ "$DRY_RUN" -eq 0 ]; then
   pressure_sample >/dev/null 2>&1 || :
 fi
@@ -337,9 +381,9 @@ export BIONIC_TEST_QUEUE="$QUEUE" BIONIC_TEST_WORK="$TMP"
 #   calls `finish`. Refusing a shadow is only half of "one framework, adopted by
 #   every suite": a suite spelling its helpers `t_ok`/`t_no` and its counters
 #   `P`/`F`, printing its own tally and exiting 0, shadows nothing and used to
-#   pass untouched. That all 55 suites adopt was a MEASUREMENT taken by the
-#   migration slices, not a mechanism, and `0 refused` read as proof of a wall
-#   that was not there.
+#   pass untouched. That every suite on the roster adopts was a MEASUREMENT taken
+#   by the migration slices, not a mechanism, and `0 refused` read as proof of a
+#   wall that was not there.
 #
 # A refusal is a FAILED suite: it is named in the tally, it is named under
 # `Failed:`, and the run exits 1.

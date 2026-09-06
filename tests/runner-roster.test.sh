@@ -305,5 +305,163 @@ expect_eq "5.2 …and every file in tests/ satisfies the shape it demands" "0" \
 # PAIRED POSITIVE: the loop above really read the tree.
 expect_eq "5.3 …over a directory with suites in it (not vacuous)" "yes" \
   "$([ "$(ls "$REPO"/tests/*.test.sh | grep -c .)" -ge 40 ] && echo yes || echo no)"
+# The two arms §6 adds, asked of the shipped tree: every match is a REGULAR file
+# (no symlink, no directory) and every name is spelled in the characters the
+# queue and the parallel launcher can carry.
+expect_eq "5.4 …every glob match in the shipped tree is a regular file, not a link" "0" \
+  "$(RR_BAD=0
+     for RR_F in "$REPO"/tests/*.test.sh; do
+       { [ -f "$RR_F" ] && [ ! -L "$RR_F" ]; } || RR_BAD=$((RR_BAD + 1))
+     done
+     echo "$RR_BAD")"
+# A `)` closing a case pattern inside `$( )` is what bash 3.2 mis-parses as the
+# end of the substitution, so the pattern opens with `(` — the same spelling the
+# runner's own wall uses for the same reason.
+expect_eq "5.5 …and every name is inside [A-Za-z0-9._-]" "0" \
+  "$(RR_BAD=0
+     for RR_F in "$REPO"/tests/*.test.sh; do
+       case "${RR_F##*/}" in (*[!A-Za-z0-9._-]*) RR_BAD=$((RR_BAD + 1)) ;; esac
+     done
+     echo "$RR_BAD")"
+
+# ============================================================
+section "§6 a glob match that is not a plain, plainly-named file is REFUSED"
+# ============================================================
+#
+# THE GLOB MATCHES MORE THAN FILES, and the wall's two shape halves read right
+# through the difference. A symlink is followed by both `read` and `grep`, so the
+# TARGET's shebang and framework line are what pass the wall while the body that
+# runs lives somewhere else entirely (Step-6 review A-7 / walk F-10: a link to a
+# suite outside the tree was executed and counted a green gating suite). A
+# directory matching the glob is read too, which is where `read error: Is a
+# directory` came from before the refusal (walk F-12). And a name carrying a
+# space or a quote survives the wall and then breaks the QUEUE: the launch file
+# is line-delimited and xargs re-splits on whitespace and honours quotes, so the
+# default mode reported every suite KILLED while --serial reported them all green
+# (review A-3) — two modes, two verdicts, from one filename.
+#
+# So the wall asks three questions before it asks about shape, and the name is
+# the first of them: a refusal that names the file cannot itself be a file the
+# refusal machinery mis-splits.
+
+T6="$TMPROOT/t6"
+rr_tree "$T6"
+rr_stub "$T6" "keeper"
+rm -f "$RR_MARKS"/*.ran
+rr_drive "$T6"
+expect_eq "6.1 the unplanted tree is green (the control)" "0" "$RR_RC"
+expect_eq "6.2 …and its one suite ran" "yes" \
+  "$([ -f "$RR_MARKS/keeper.ran" ] && echo yes || echo no)"
+
+# --- (i) a symlink, whose body lives outside the tree the reviewer read -------
+{ printf '#!/bin/bash\n'
+  printf 'set -uo pipefail\n'
+  printf '. "$(dirname "$0")/lib/assert.sh"\n'
+  printf ': > "$RR_MARKS/outside.ran"\n'
+  printf 'section "outside"\n'
+  printf 'expect_eq "outside ran" "x" "x"\n'
+  printf 'finish\n'
+} > "$TMPROOT/outside-the-tree.sh"
+ln -sf "$TMPROOT/outside-the-tree.sh" "$T6/tests/linked.test.sh"
+rm -f "$RR_MARKS"/*.ran
+rr_drive "$T6"
+expect_eq "6.3 a symlink matching the glob makes the run refuse" "2" "$RR_RC"
+expect_contains "6.4 …naming the file" "tests/linked.test.sh" "$RR_OUT"
+expect_contains "6.5 …and saying it is not a regular file" "not a regular file" "$RR_OUT"
+expect_eq "6.6 …with the body it points at never executed" "no" \
+  "$([ -f "$RR_MARKS/outside.ran" ] && echo yes || echo no)"
+expect_eq "6.7 …and nothing else run either" "0" \
+  "$(ls "$RR_MARKS" 2>/dev/null | grep -c '\.ran$')"
+expect_absent "6.8 …and no green verdict is printed" "All gating suites green" "$RR_OUT"
+rm -f "$T6/tests/linked.test.sh"
+
+# --- (ii) a DIRECTORY matching the glob --------------------------------------
+# The verdict was already right; what was wrong is that the first line a reader
+# saw was the shell's own `read error: Is a directory`, from the wall reading a
+# thing it had not asked whether it could read.
+mkdir -p "$T6/tests/adir.test.sh"
+rm -f "$RR_MARKS"/*.ran
+rr_drive "$T6"
+expect_eq "6.9 a directory matching the glob makes the run refuse" "2" "$RR_RC"
+expect_contains "6.10 …naming it" "tests/adir.test.sh" "$RR_OUT"
+expect_absent "6.11 …without a read error in front of the refusal" "read error" "$RR_OUT"
+expect_absent "6.12 …and without the interpreter's own words for it" "Is a directory" "$RR_OUT"
+rmdir "$T6/tests/adir.test.sh"
+
+# --- (iii) a name carrying a space, and one carrying a quote ------------------
+# Both are refused BY NAME before either mode runs, which is what keeps the two
+# modes from disagreeing: the parallel launcher never sees the name at all.
+{ printf '#!/bin/bash\n'
+  printf 'set -uo pipefail\n'
+  printf '. "$(dirname "$0")/lib/assert.sh"\n'
+  printf ': > "$RR_MARKS/spaced.ran"\n'
+  printf 'section "spaced"\n'
+  printf 'expect_eq "spaced ran" "x" "x"\n'
+  printf 'finish\n'
+} > "$T6/tests/bad name.test.sh"
+rm -f "$RR_MARKS"/*.ran
+rr_drive "$T6"
+expect_eq "6.13 a name with a space in it makes the run refuse" "2" "$RR_RC"
+expect_contains "6.14 …naming it" "bad name.test.sh" "$RR_OUT"
+expect_contains "6.15 …and saying the name is what is wrong" "the file name" "$RR_OUT"
+expect_eq "6.16 …before anything ran" "0" \
+  "$(ls "$RR_MARKS" 2>/dev/null | grep -c '\.ran$')"
+# THE TWO MODES AGREE, which is the point of refusing at the name: --serial ran
+# such a file happily while the default mode killed every suite in the queue.
+rr_drive "$T6" "--serial"
+expect_eq "6.17 …and --serial refuses it the same way" "2" "$RR_RC"
+expect_contains "6.18 …in the same words" "the file name" "$RR_OUT"
+rm -f "$T6/tests/bad name.test.sh"
+
+printf '#!/bin/bash\n. "$(dirname "$0")/lib/assert.sh"\nfinish\n' > "$T6/tests/'quoted.test.sh"
+rm -f "$RR_MARKS"/*.ran
+rr_drive "$T6"
+expect_eq "6.19 a name carrying a quote makes the run refuse" "2" "$RR_RC"
+expect_contains "6.20 …naming it" "quoted.test.sh" "$RR_OUT"
+expect_absent "6.21 …and the launcher never sees it (no unterminated quote)" \
+  "unterminated quote" "$RR_OUT"
+rm -f "$T6/tests/'quoted.test.sh"
+
+# --- the tree recovers: every refusal above was the plant's doing -------------
+rm -f "$RR_MARKS"/*.ran
+rr_drive "$T6"
+expect_eq "6.22 with every plant removed the same tree is green again" "0" "$RR_RC"
+expect_eq "6.23 …and its suite ran" "yes" \
+  "$([ -f "$RR_MARKS/keeper.ran" ] && echo yes || echo no)"
+
+# ============================================================
+section "§7 the runner refuses when its own width oracle is absent (walk F-9)"
+# ============================================================
+#
+# THE HARNESS PROVES ITS OWN PRECONDITIONS (design D-3). The width comes from
+# `pressure_level` in payload/scripts/lib/resources.sh, sourced by the runner. A
+# tree where that library is missing used to print two lines on the runner's OWN
+# stderr — the failed source and `pressure_level: command not found` — fall back
+# to JOBS=8 and finish with `All gating suites green ✓`. The runner's lost-command
+# reader only reads a SUITE's captured output, so nothing read those two lines,
+# and a run whose width oracle never answered still called itself green.
+
+T7="$TMPROOT/t7"
+rr_tree "$T7"
+rr_stub "$T7" "keeper"
+rm -f "$RR_MARKS"/*.ran
+rr_drive "$T7"
+expect_eq "7.1 the intact tree is green (the control)" "0" "$RR_RC"
+expect_contains "7.2 …and it says so" "All gating suites green" "$RR_OUT"
+
+rm -f "$T7/payload/scripts/lib/resources.sh"
+rm -f "$RR_MARKS"/*.ran
+rr_drive "$T7"
+expect_eq "7.3 with the width library gone the run refuses" "2" "$RR_RC"
+expect_contains "7.4 …naming the library it could not load" "resources.sh" "$RR_OUT"
+expect_contains "7.5 …and the function that answers the width" "pressure_level" "$RR_OUT"
+expect_absent "7.6 …and never reports a green run" "All gating suites green" "$RR_OUT"
+expect_eq "7.7 …with nothing run at all" "0" \
+  "$(ls "$RR_MARKS" 2>/dev/null | grep -c '\.ran$')"
+# --dry-run reads the same width, so it takes the same refusal rather than
+# printing a number nothing answered for.
+rr_drive "$T7" "--dry-run"
+expect_eq "7.8 --dry-run refuses too" "2" "$RR_RC"
+expect_absent "7.9 …and prints no width" "JOBS=" "$RR_OUT"
 
 finish
