@@ -25,16 +25,17 @@ section, and of this file, was never bootstrap-era and is unchanged.)*
   `tests/scripts.test.sh` 4a/4b/4c used to enforce hook↔test pairing and — for an always-on
   wall — that every command in the payload's `hooks/hooks.json` names a file that exists and is
   rooted at `${CLAUDE_PLUGIN_ROOT}`. That suite was deleted at 8582861 (epic-18 wave-03) and
-  nothing replaced either wall — both are logged debt now. Manual, and enforced by nothing: the suite's own `run`
-  line in `tests/run.sh`. **Adding a hook = source file + `.test.sh` sibling + a registration
-  (`hooks/hooks.json` — the only channel since bionic 1.4.0: every hook is registered there once and scopes itself by the on-disk open-run predicate `active_run`; the skill frontmatter carries no `hooks:` block any more, and a hook registered only there would arm nothing) + a `run "<name>.test.sh"` line in `tests/run.sh`.** Omit that last one and 4a still
-  passes — the pairing exists — but the suite never executes and the gate stays green over
-  nothing. Several suites defend themselves by grepping `tests/run.sh` for their own `run`
-  line as an assertion (`tests/doctor.test.sh` used to carry the pattern to copy; it was
-  deleted at 8582861, epic-18 wave-03 — `tests/patrol-duties-gate.test.sh` Group 24 is the
-  current example); no arm checks
-  the set as a whole, so a new suite that skips both the `run` line and the self-check is
-  invisible.
+  nothing replaced either wall — both are logged debt now. Gating is not manual any more:
+  `tests/run.sh` derives its roster from `tests/*.test.sh` at run time (fixit 1.5.1, D-1:
+  location is the declaration), and an adoption wall refuses, before any suite runs, a file in
+  that glob that is not a suite (a `#!/bin/bash` first line and `tests/lib/assert.sh` sourced).
+  **Adding a hook = source file + `.test.sh` sibling + a registration (`hooks/hooks.json` — the
+  only channel since bionic 1.4.0: every hook is registered there once and scopes itself by the
+  on-disk open-run predicate `active_run`; the skill frontmatter carries no `hooks:` block any
+  more, and a hook registered only there would arm nothing).** The sibling gates the moment it
+  lands in `tests/`; there is no `run` line to add and no self-registration pin to write — the
+  harness proves its own completeness once, in `tests/runner-roster.test.sh` (D-3), and a
+  suite never names the runner.
 
 - **Architecture diagram policy: composed SVG, not hand-drawn.** The current diagrams
   (`skills/canonical-sdlc/diagrams/lifecycle.svg`, `diagrams/hook-chain.svg`) are each their
