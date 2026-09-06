@@ -212,15 +212,21 @@ bionic_check_claude_proxy() {  # <row id>
   return 0
 }
 
+# THE PRE-MARKER SPELLING, and the one place it is written down. setup.sh carried
+# it as `SETUP_ALIAS_PATTERN` until 1.5.1; the predicate that reads it lives here
+# now, and setup's removal step reads this same name rather than a second copy.
+# Declared BEFORE the function that uses it, so a caller who sources this file
+# under `set -u` and reaches the removal step first still finds it.
+BIONIC_LEGACY_ALIAS_PATTERN='alias claude=.*dangerously-skip-permissions'
+
 bionic_check_legacy_alias() {  # <row id>
   local line settings
   line="$(detect_zshrc_legacy_block)"
   [ "${line#*present=}" = "yes" ] && return 0
   settings="$(_detect_shell_rc)"
-  [ -f "$settings" ] && grep -qE "$BIONIC_CHECK_ALIAS_PATTERN" "$settings" 2>/dev/null && return 0
+  [ -f "$settings" ] && grep -qE "$BIONIC_LEGACY_ALIAS_PATTERN" "$settings" 2>/dev/null && return 0
   return 1
 }
-BIONIC_CHECK_ALIAS_PATTERN='alias claude=.*dangerously-skip-permissions'
 
 bionic_check_legacy_hooks() {  # <row id>
   local line count
