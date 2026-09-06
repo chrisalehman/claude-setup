@@ -174,6 +174,15 @@ done
 # roster they all walk (`ENV_KEYS`) is spelled exactly once, there.
 # shellcheck source=/dev/null
 . "${SETUP_LIB_DIR}/env.sh"
+# checks.sh, THE TABLE OF CHECKS. Every id this script offers, every predicate
+# that decides whether an item is outstanding, and the party that repairs it come
+# from there — and doctor reads the same rows. Until 1.5.1 the roster and the
+# predicates lived here and doctor carried its own idea of what setup could fix,
+# which is the disagreement the field bug report caught (a hint naming a command
+# that then reported nothing to do). The words a step uses for its ACTION stay in
+# this file: those are the consent screen's copy, not a fact about the machine.
+# shellcheck source=/dev/null
+. "${SETUP_LIB_DIR}/checks.sh"
 # jit.sh, for ONE function: `_jit_fix_line`, which spells the command that would
 # install a row by hand. The summary needs that sentence and so does a route's
 # just-in-time offer, and it has to be the SAME sentence — an action line that
@@ -224,13 +233,14 @@ SETUP_PLUGIN_ID="$(dep_plugin_id)"
 
 # The retired alias block's markers, verbatim from claude-bootstrap.sh —
 # box-drawing dashes included, because they are what makes the block
-# addressable. `SETUP_ALIAS_PATTERN` is the pre-marker spelling the installer
+# addressable. `BIONIC_LEGACY_ALIAS_PATTERN` is the pre-marker spelling the installer
 # itself still migrates (claude-bootstrap.sh's do_install_shell_alias), and it
 # is a separate case because a machine that stopped bootstrapping before markers
 # existed has the alias with no markers around it at all.
 SETUP_ALIAS_START='# ─── bionic:start ───'
 SETUP_ALIAS_END='# ─── bionic:end ───'
-SETUP_ALIAS_PATTERN='alias claude=.*dangerously-skip-permissions'
+# The spelling itself now lives in lib/checks.sh as BIONIC_LEGACY_ALIAS_PATTERN,
+# because the predicate that reads it does; this file uses that one name.
 
 # ─── Reporting ───────────────────────────────────────────────────────────────
 #
@@ -316,29 +326,7 @@ SETUP_PLUGIN_CHANGED=no
 RM_ALL=0
 
 _setup_item_ids() {
-  local n line bare
-  say "plugin"
-  # fd 3 throughout: these lists must never be read on the standard input, which
-  # belongs to the questions.
-  while IFS= read -r line <&3; do
-    [ -n "$line" ] || continue
-    bare="${line#dup=}"; bare="${bare%% *}"
-    [ "$bare" = "unknown" ] && continue
-    say "duplicate:${bare}"
-  done 3< <(detect_plugin_duplicates)
-  while IFS= read -r n <&3; do [ -n "$n" ] && say "dependency:${n}"; done 3< <(dep_names_class core)
-  while IFS= read -r n <&3; do [ -n "$n" ] && say "tool:${n}"; done 3< <(dep_names_class basic)
-  while IFS= read -r n <&3; do [ -n "$n" ] && say "tool:${n}"; done 3< <(dep_names_class extra)
-  say "environment"
-  say "claude-proxy"
-  say "legacy-alias"
-  say "legacy-hooks"
-  say "legacy-skill-copy"
-  say "legacy-hook-files"
-  say "legacy-agent-copies"
-  say "legacy-permission-block"
-  say "permission-mode"
-  return 0
+  bionic_check_items
 }
 
 # True during a whole pass, and during a narrowed run only for the item named.
@@ -437,78 +425,7 @@ _setup_legacy_skill_dir() {
 # and the run cannot come to differ about what is outstanding. Read-only: every
 # branch here is a file test or a listing, never a change.
 _setup_item_pending() {  # <name> -> 0 when the item has something to ask about
-  local name="${1:-}" state id line present count key want have mode settings
-  case "$name" in
-    plugin)
-      IFS='|' read -r state id <<< "$(_setup_cli_plugin bionic)"
-      [ "$state" = "absent" ] ;;
-    duplicate:*)
-      # The roster only names a duplicate this machine actually carries, so a
-      # name that reached here is a question the run would ask.
-      return 0 ;;
-    dependency:*)
-      IFS='|' read -r state id <<< "$(_setup_cli_plugin "${name#dependency:}")"
-      [ "$state" = "disabled" ] ;;
-    tool:*)
-      # An `unknown` presence is OFFERED, not skipped — some mechanisms have no
-      # surface to read and the step asks anyway, so the plan names them too.
-      present="$(check_dep "${name#tool:}")" || return 1
-      present="${present#present=}"; present="${present%%|*}"
-      [ "$present" != "yes" ] ;;
-    environment)
-      for key in $ENV_KEYS; do
-        want="$(env_default "$key")" || continue
-        have="$(env_get "$key" 2>/dev/null)" || have=""
-        [ "$have" = "$want" ] || return 0
-      done
-      return 1 ;;
-    claude-proxy)
-      # A shell bionic writes no rc for is not a question: the step says so and
-      # changes nothing, so the plan must not name it either.
-      rc_file >/dev/null 2>&1 || return 1
-      rc_get claude-proxy && return 1
-      return 0 ;;
-    legacy-alias)
-      line="$(detect_zshrc_legacy_block)"
-      [ "${line#*present=}" = "yes" ] && return 0
-      settings="$(_detect_shell_rc)"
-      [ -f "$settings" ] && grep -qE "$SETUP_ALIAS_PATTERN" "$settings" 2>/dev/null && return 0
-      return 1 ;;
-    legacy-hooks)
-      line="$(detect_legacy_channel_hooks)"; count="${line#*count=}"
-      case "$count" in ''|*[!0-9]*|0) return 1 ;; esac
-      return 0 ;;
-    legacy-skill-copy)
-      line="$(detect_legacy_skill_copy)"
-      present="${line#*present=}"; present="${present%% *}"
-      [ "$present" = "yes" ] ;;
-    legacy-hook-files)
-      # `unknown` is not a question: the step says so and changes nothing.
-      line="$(detect_legacy_hook_files)"; count="${line#*count=}"; count="${count%% *}"
-      case "$count" in ''|*[!0-9]*|0) return 1 ;; esac
-      return 0 ;;
-    legacy-agent-copies)
-      line="$(detect_installed_agent_copies)"
-      present="${line#*state=}"; present="${present%% *}"
-      [ "$present" = "present" ] || return 1
-      count="${line#*drift=}"; count="${count%% *}"
-      case "$count" in ''|*[!0-9]*|0) return 1 ;; esac
-      return 0 ;;
-    legacy-permission-block)
-      bionic_has_permission_block "$(_dep_settings_file)" ;;
-    permission-mode)
-      # No jq is not a question: the step says so and changes nothing.
-      command -v jq >/dev/null 2>&1 || return 1
-      settings="$(_dep_settings_file)"
-      if [ -f "$settings" ]; then
-        mode="$(jq -r '.permissions.defaultMode // ""' "$settings" 2>/dev/null)" || mode=""
-      else
-        mode=""
-      fi
-      [ "$mode" != "$BIONIC_DEFAULT_PERMISSION_MODE" ] ;;
-    *)
-      return 1 ;;
-  esac
+  bionic_check_item_pending "${1:-}"
 }
 
 # The whole page. Non-zero means there was nothing to print, which is a machine
@@ -597,37 +514,6 @@ _setup_say_declined() {  # <rc> <tail sentence, already worded for "declined —
   else
     say "   ${SETUP_NIL} declined — ${tail}"
   fi
-}
-
-# ─── The CLI's own view of a plugin ──────────────────────────────────────────
-#
-# Presence of a core dependency is `check_dep`'s answer (it reads the install
-# registry, and it is the one owner of that fact). ENABLED-ness is not in that
-# registry at all — it lives in the CLI's settings — so it is asked of the CLI
-# itself, the same tool that would repair it. Matching is on the NAME half of
-# `name@marketplace`, exactly as `_dep_check_native` does, so a dependency
-# re-pointed at a different marketplace still resolves.
-#
-# Prints `<state>|<id>` where state is enabled | disabled | absent | unknown.
-# `unknown` is a real answer here: without the CLI or without jq there is no
-# honest way to look, and a confident `absent` would make setup offer to install
-# a plugin that is already there.
-
-_setup_cli_plugin() {  # <name>
-  local name="${1:-}" json row
-  command -v claude >/dev/null 2>&1 || { echo "unknown|"; return 0; }
-  command -v jq >/dev/null 2>&1     || { echo "unknown|"; return 0; }
-  json="$(claude plugin list --json 2>/dev/null)" || { echo "unknown|"; return 0; }
-  [ -n "$json" ] || { echo "unknown|"; return 0; }
-  row="$(jq -r --arg n "$name" '
-      [ .[]? | select(((.id // "") | split("@")[0]) == $n) ] as $m
-      | if ($m | length) == 0 then "absent|"
-        else (if ($m[0].enabled // false) then "enabled|" else "disabled|" end) + ($m[0].id // "")
-        end' <<< "$json" 2>/dev/null)" || row=""
-  case "$row" in
-    enabled*|disabled*|absent*) echo "$row" ;;
-    *)                          echo "unknown|" ;;
-  esac
 }
 
 # ─── rc block surgery ────────────────────────────────────────────────────────
@@ -733,7 +619,7 @@ setup_plugin_install() {
   say ""
   say "1. Plugin"
   local state id
-  IFS='|' read -r state id <<< "$(_setup_cli_plugin bionic)"
+  IFS='|' read -r state id <<< "$(bionic_cli_plugin_state bionic)"
 
   case "$state" in
     enabled|disabled)
@@ -938,7 +824,7 @@ setup_duplicates() {
         action "remove the duplicate copy by hand: claude plugin uninstall ${id}"
       fi
     done <<< "$losers"
-  done 3< <(detect_plugin_duplicates)
+  done 3< <(bionic_check_duplicate_lines)
   return 0
 }
 
@@ -963,7 +849,7 @@ setup_dep_enable_verify() {
     _setup_wants "dependency:${name}" || continue
     line="$(detect_dep "$name")" || continue
     present="${line#*present=}"; present="${present%% *}"
-    IFS='|' read -r state id <<< "$(_setup_cli_plugin "$name")"
+    IFS='|' read -r state id <<< "$(bionic_cli_plugin_state "$name")"
     [ -n "$id" ] || id="${name}@${SETUP_DEP_MARKETPLACE}"
 
     case "$state" in
@@ -1348,7 +1234,7 @@ setup_legacy_alias() {
     return 0
   fi
 
-  if [ -f "$rc" ] && grep -qE "$SETUP_ALIAS_PATTERN" "$rc" 2>/dev/null; then
+  if [ -f "$rc" ] && grep -qE "$BIONIC_LEGACY_ALIAS_PATTERN" "$rc" 2>/dev/null; then
     say "   ${rc} carries the legacy UNMARKED alias — the spelling that predates the marker block."
     consent "   Remove the legacy alias line from ${rc}?"; _setup_consent_rc=$?
     if [ "$_setup_consent_rc" -ne 0 ]; then
@@ -1363,7 +1249,7 @@ setup_legacy_alias() {
     # than a second one that has to be kept in step by hand, and one place that
     # decides a symlinked rc is rewritten rather than detached.
     if _setup_stage_tmp "$tmp" \
-       && grep -vE "$SETUP_ALIAS_PATTERN" "$rc" > "$tmp" \
+       && grep -vE "$BIONIC_LEGACY_ALIAS_PATTERN" "$rc" > "$tmp" \
        && _setup_publish_tmp "$tmp" "$rc_target"; then
       item "$SETUP_OK" "legacy alias" "removed (the unmarked spelling)"
     else

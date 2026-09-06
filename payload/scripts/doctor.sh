@@ -154,6 +154,17 @@ DOCTOR_LIB="$(cd "$(_doctor_self_dir)" && pwd -P)/lib"
 . "${DOCTOR_LIB}/run.sh"
 # shellcheck source=/dev/null
 . "${DOCTOR_LIB}/resources.sh"
+# checks.sh, THE TABLE OF CHECKS — one row per fact bionic needs true on a
+# machine, and for each row the label this page prints, the party that repairs it
+# and the hint that names that party. setup.sh renders its roster from the same
+# rows. This page keeps its own presentation entirely — the columns, the widths,
+# the collapsed verdict — and gets its FACTS from there, which is what stops a
+# row here from promising a repair setup has no item for (the field defect of
+# 2026-09-05: `16 legacy hook files … → /bionic:setup` over a run that then said
+# "nothing left to do"). checks.sh's detectors are read-only, every one of them,
+# so sourcing it changes nothing about this page's central promise.
+# shellcheck source=/dev/null
+. "${DOCTOR_LIB}/checks.sh"
 
 # The standalone removal door (design D5a: the remover must not depend on the
 # thing it removes). Printed as TEXT for the user to run — doctor never fetches
@@ -268,11 +279,17 @@ FIX_LINES=""
 # rest each need their own line or they reach the user as a count with no cure.
 FIX_NAMES_SETUP=""
 FIX_LINES_OTHER=""
+# THE SUFFIX THIS SORTS ON IS THE TABLE'S, NOT A LITERAL (1.5.1). Which lines fold
+# into the one collapsed sentence at the bottom of the page is decided by whether
+# they end in setup's own route, and that string is spelled once — in
+# lib/checks.sh, where every row that carries it reads it from. Read into a
+# constant because the sort runs once per fix line.
+DOCTOR_SETUP_ROUTE="$(bionic_check_route setup)"
 fix() {  # <problem> → <command>
   local line="${1}" name="${1%% → *}"
   FIX_LINES="${FIX_LINES}  ${DOCTOR_BAD} ${line}"$'\n'
   case "$line" in
-    *"/bionic:setup") FIX_NAMES_SETUP="${FIX_NAMES_SETUP}${FIX_NAMES_SETUP:+; }${name}" ;;
+    *"$DOCTOR_SETUP_ROUTE") FIX_NAMES_SETUP="${FIX_NAMES_SETUP}${FIX_NAMES_SETUP:+; }${name}" ;;
     *)                FIX_LINES_OTHER="${FIX_LINES_OTHER}${line}"$'\n' ;;
   esac
 }
@@ -694,32 +711,13 @@ done
 # block; one that has not yet adopted it names its library in the `lib/<name>.sh`
 # path it sources. Either way the answer is the hook's own, so this row keeps
 # telling the truth across the slice that rewrites the hooks.
-BIONIC_WALL_HOOKS="protect-main canonical-sdlc-evidence-gate farm-out-reminder background-suite-guard"
-
-_doctor_wall_want() {  # <hook-file> -> space-separated library basenames
-  local f="${1:-}" want=""
-  want="$(grep -m1 '^[[:space:]]*BIONIC_LIB_WANT=' "$f" 2>/dev/null \
-          | sed -e 's/^[[:space:]]*BIONIC_LIB_WANT=//' -e 's/^["'"'"']//' -e 's/["'"'"']$//')"
-  if [ -z "$want" ]; then
-    # No declaration: read the library out of the source path itself, from the
-    # CODE lines only — a prose mention in a header comment is not a dependency.
-    want="$(grep -v '^[[:space:]]*#' "$f" 2>/dev/null \
-            | grep -oE 'lib/[A-Za-z0-9_.-]+\.sh' \
-            | sed 's|^lib/||' | sort -u | tr '\n' ' ')"
-  fi
-  printf '%s' "$want"
-}
-
-# The idiom, plus one line that reports what it concluded. Built once: the pin is
-# a heredoc `cat`, and paying for it per wall would be four subshells for one
-# constant string.
-_DOCTOR_LOADER_BLOCK="$(bionic_loader_pin 2>/dev/null)"
-_DOCTOR_LOADER_PROBE="${_DOCTOR_LOADER_BLOCK}
-printf 'lib=%s|missing=%s|cands=%s\\n' \"\$BIONIC_LIB\" \"\$BIONIC_LIB_MISSING\" \"\$BIONIC_LIB_CANDS\""
-
-_doctor_wall_probe() {  # <hook-file> <wanted basenames> -> lib=…|missing=…|cands=…
-  BIONIC_LIB_WANT="${2:-}" bash -c "$_DOCTOR_LOADER_PROBE" "$1" 2>/dev/null
-}
+# THE ROSTER AND THE PROBE ARE lib/checks.sh's (1.5.1). A wall missing from the
+# payload is a row of the check table like any other — a fact bionic needs true,
+# with a party that repairs it — so the list of walls, "which libraries does this
+# hook want" and "can it get them" live beside the rest of the table, and this
+# page renders them. The detectors there are the same two questions this loop
+# asks, which is what lets the table say who repairs a broken wall without a
+# second copy of how to find one.
 
 WALLS_TOTAL=0; WALLS_OK=0; WALL_ROWS=""
 for _wall in $BIONIC_WALL_HOOKS; do
@@ -728,11 +726,11 @@ for _wall in $BIONIC_WALL_HOOKS; do
   if [ ! -r "$_wall_file" ]; then
     WALL_ROWS="${WALL_ROWS}$(_doctor_native_row "$DOCTOR_BAD" "wall" "—" \
       "${_wall} is not in this payload — reinstall the plugin")"$'\n'
-    fix "the ${_wall} wall is missing from the payload → run /bionic:setup — repair"
+    fix "the ${_wall} wall is missing from the payload → $(bionic_check_hint wall-payload)"
     continue
   fi
-  _wall_want="$(_doctor_wall_want "$_wall_file")"
-  _wall_probe="$(_doctor_wall_probe "$_wall_file" "$_wall_want")"
+  _wall_want="$(bionic_check_wall_want "$_wall_file")"
+  _wall_probe="$(bionic_check_wall_probe "$_wall_file" "$_wall_want")"
   _wall_lib="$(_doctor_pfield "$_wall_probe" lib)"
   if [ -n "$_wall_lib" ]; then
     WALLS_OK=$((WALLS_OK + 1))
@@ -746,7 +744,7 @@ for _wall in $BIONIC_WALL_HOOKS; do
   [ -n "$_wall_missing" ] || _wall_missing="the bionic library"
   WALL_ROWS="${WALL_ROWS}$(_doctor_native_row "$DOCTOR_BAD" "wall" "—" \
     "${_wall} cannot load ${_wall_missing}")"$'\n'
-  fix "the ${_wall} wall cannot load ${_wall_missing} → run /bionic:setup — repair"
+  fix "the ${_wall} wall cannot load ${_wall_missing} → $(bionic_check_hint wall-library)"
 done
 
 INST_AGENT_FACT="$(detect_installed_agent_copies)"
@@ -792,7 +790,7 @@ fi
 # (W6 S15): the registry read runs `jq` over a path that can stall, so it goes
 # through the same `detect_bounded` the listing does, and a stalled read arrives
 # here as one more `dup=unknown` line with the seconds in its cause.
-DUP_LINES="$(detect_plugin_duplicates)"
+DUP_LINES="$(bionic_check_duplicate_lines)"
 
 # ONE PLUGIN, REGISTERED TWICE — READ HERE, PRINTED IN TABLE 1 (AC-23). The scan
 # ran on every invocation and reached no reader at all. Two registrations of one
@@ -949,6 +947,16 @@ while IFS= read -r dep_name; do
   third_version="$dep_version"
   third_state=""
   third_keep=""
+  # THE ROUTE IS THE ROW'S, NOT THIS FILE'S (1.5.1). Which party repairs this
+  # dependency is a fact about the dependency, and lib/checks.sh holds it: a
+  # `basic` or `extra` row is setup's, a `core` row is the CLI's (deps.sh D1
+  # forbids setup a second installer), and a `when-needed` row has no repair at
+  # all because it is absent by design until a route asks for it. Reading the
+  # hint here instead of spelling it means the four state arms below cannot
+  # disagree with each other about who to send the reader to — which they did:
+  # the violation arm and the unknown arm both said `/bionic:setup` for a core
+  # row that the absent arm correctly sent to the CLI.
+  _doctor_dep_hint="$(bionic_check_dep_hint "$dep_name" 2>/dev/null)" || _doctor_dep_hint=""
   # MULTI-PART ROWS SAY WHAT IS PRESENT (Chris 2026-08-22: "Why is ccstatusline
   # 'ok' for version, with no status?"). The two-half probes return a status word
   # in the version slot — it is not a version and never prints as one. The
@@ -976,7 +984,7 @@ while IFS= read -r dep_name; do
   case "$present" in
     yes)
       if [ "$verdict" = "violation" ]; then
-        third_state="violates ${constraint} → /bionic:setup"
+        third_state="violates ${constraint}${_doctor_dep_hint:+ → ${_doctor_dep_hint}}"
       elif [ "$third_version" = "unknown" ] && [ -z "$third_state" ]; then
         third_state="$(_doctor_no_version_reason "$kind")"
       fi ;;
@@ -992,16 +1000,16 @@ while IFS= read -r dep_name; do
       # setup's load-failure arm — and rides in the instruction slot so a cut
       # can never reach it.
       if   [ "$dep_class" = "when-needed" ]; then third_state="installs on demand"
-      elif [ "$dep_class" = "core" ]; then third_state="absent"; third_keep=" → $(dep_core_repair_route)"
-      else third_state="not installed → /bionic:setup"; fi ;;
+      elif [ "$dep_class" = "core" ]; then third_state="absent"; third_keep="${_doctor_dep_hint:+ → ${_doctor_dep_hint}}"
+      else third_state="not installed${_doctor_dep_hint:+ → ${_doctor_dep_hint}}"; fi ;;
     stale)
-      third_state="stale against uv.lock — re-sync with /bionic:setup" ;;
+      third_state="stale against uv.lock${_doctor_dep_hint:+ — re-sync with ${_doctor_dep_hint}}" ;;
     *)
       third_state="$(_doctor_unknown_cause "$kind")"
       case "${dep_class}/${kind}" in
         when-needed/*) ;;
         */pnpm-store)  third_state="${third_state} — setup pre-warms it" ;;
-        *)             third_state="${third_state} → /bionic:setup" ;;
+        *)             third_state="${third_state}${_doctor_dep_hint:+ → ${_doctor_dep_hint}}" ;;
       esac ;;
   esac
   case "$third_version" in unknown|-|"") third_version="—" ;; esac
@@ -1068,7 +1076,7 @@ while IFS= read -r dep_name; do
           when-needed)
             fix "${dep_name} ${dep_version} violates constraint ${constraint} → the next route that needs it reinstalls it" ;;
           *)
-            fix "${dep_name} ${dep_version} violates constraint ${constraint} → run /bionic:setup" ;;
+            fix "${dep_name} ${dep_version} violates constraint ${constraint}${_doctor_dep_hint:+ → run ${_doctor_dep_hint}}" ;;
         esac
       fi
       ;;
@@ -1077,7 +1085,7 @@ while IFS= read -r dep_name; do
       # and it is wrong, which is what a violation is. The fix names a re-sync so
       # the reader is not told to install what they already have.
       N_VIOLATION=$((N_VIOLATION + 1))
-      fix "${dep_name} is stale against the shipped uv.lock → run /bionic:setup" ;;
+      fix "${dep_name} is stale against the shipped uv.lock${_doctor_dep_hint:+ → run ${_doctor_dep_hint}}" ;;
     no)
       N_ABSENT=$((N_ABSENT + 1))
       case "$dep_class" in
@@ -1646,16 +1654,16 @@ fi
 # rows themselves are in ENVIRONMENT, far below).
 case "$HOOK_FILES_COUNT" in
   unknown|0) ;;
-  *) fix "${HOOK_FILES_COUNT} legacy hook $(_doctor_plural "$HOOK_FILES_COUNT" file files) in the claude-home → run /bionic:setup" ;;
+  *) fix "${HOOK_FILES_COUNT} legacy hook $(_doctor_plural "$HOOK_FILES_COUNT" file files) in the claude-home → run $(bionic_check_hint legacy-hook-files)" ;;
 esac
 if [ "$INST_AGENT_STATE" = "present" ] && [ "$INST_AGENT_DRIFT" != "0" ]; then
-  fix "${INST_AGENT_DRIFT} installed agent $(_doctor_plural "$INST_AGENT_DRIFT" copy copies) differ from the payload → run /bionic:setup"
+  fix "${INST_AGENT_DRIFT} installed agent $(_doctor_plural "$INST_AGENT_DRIFT" copy copies) differ from the payload → run $(bionic_check_hint legacy-agent-copies)"
 fi
 
 # jq next: it gates several of the facts above, so acting on anything else while
 # the report is partly unreadable is acting on half a diagnosis.
 if [ "$HAVE_JQ" = "no" ]; then
-  fix "several facts below read unknown without it → install jq (/bionic:setup does)"
+  fix "several facts below read unknown without it → install jq ($(bionic_check_hint tool:jq) does)"
 fi
 
 # THE ABSENCES AS ONE LINE, NAMED. The ACTIONABLE absences, not every absence: a
@@ -1672,7 +1680,11 @@ if [ -n "$ABSENT_NAMES" ]; then
   # says. The line itself is a `/bionic:setup` fix, so it lands on the collapsed
   # verdict line, which bounds the whole sentence at 100 a second time.
   _doctor_absent_list="$(bionic_trunc "$ABSENT_NAMES" 44)"
-  fix "${N_ABSENT_ACTIONABLE} $(_doctor_plural "$N_ABSENT_ACTIONABLE" dependency dependencies) absent (${_doctor_absent_list}) → run /bionic:setup"
+  # AN AGGREGATE LINE READS THE PARTY, NOT A ROW. It stands for many rows at
+  # once, so there is no single row to ask; `bionic_check_route` is where the
+  # party's own command is spelled, and it is the same string every one of those
+  # rows carries.
+  fix "${N_ABSENT_ACTIONABLE} $(_doctor_plural "$N_ABSENT_ACTIONABLE" dependency dependencies) absent (${_doctor_absent_list}) → run $(bionic_check_route setup)"
 fi
 
 # THE CORE ABSENCES, ON THEIR OWN LINE AND WITH THEIR OWN COMMAND. Same shape as
@@ -1682,7 +1694,7 @@ fi
 # suffix, so this line lands in FIX_LINES_OTHER and gets its own line under the
 # verdict instead of being folded into the collapsed setup list.
 if [ -n "$ABSENT_CORE_NAMES" ]; then
-  _doctor_core_route="$(dep_core_repair_route)"
+  _doctor_core_route="$(bionic_check_route cli)"
   _doctor_core_head="${N_ABSENT_CORE} core $(_doctor_plural "$N_ABSENT_CORE" dependency dependencies) absent ("
   # THE BUDGET IS THIS LINE'S OWN, AND IT IS MEASURED (1.4.4 fixit phase 4,
   # review-a A-2 / review-c C-2). The first version of this block copied the 44
@@ -1713,7 +1725,7 @@ for _env_key in $ENV_KEYS; do
   env_get "$_env_key" >/dev/null 2>&1 || ENV_MISSING=$((ENV_MISSING + 1))
 done
 if [ "$ENV_MISSING" -gt 0 ]; then
-  fix "${ENV_MISSING} of bionic's environment settings $(_doctor_plural "$ENV_MISSING" is are) not written → run /bionic:setup"
+  fix "${ENV_MISSING} of bionic's environment settings $(_doctor_plural "$ENV_MISSING" is are) not written → run $(bionic_check_route setup)"
 fi
 
 # A STALE PROXY BLOCK IS THE ONE STATE OF THIS ITEM THAT EARNS A FIX LINE.
@@ -1722,12 +1734,12 @@ fi
 # this payload no longer writes. Setup rewrites the block wholesale, so the
 # repair is the same command as the offer — but this time there is something
 # broken to repair, which is what makes the row ✗ instead of `–`.
-[ "$RC_PROXY_STATE" = "stale" ] && fix "the claude() shell proxy is an older line → run /bionic:setup"
+[ "$RC_PROXY_STATE" = "stale" ] && fix "the claude() shell proxy is an older line → run $(bionic_check_hint claude-proxy)"
 
-[ "$LEGACY_STATE" = "yes" ] && fix "the legacy .zshrc alias block is still there → run /bionic:setup"
+[ "$LEGACY_STATE" = "yes" ] && fix "the legacy .zshrc alias block is still there → run $(bionic_check_hint legacy-alias)"
 case "$LEGACY_HOOK_COUNT" in
   unknown|0) ;;
-  *) fix "${LEGACY_HOOK_COUNT} legacy-channel managed-hook $(_doctor_plural "$LEGACY_HOOK_COUNT" entry entries) in settings.json → run /bionic:setup" ;;
+  *) fix "${LEGACY_HOOK_COUNT} legacy-channel managed-hook $(_doctor_plural "$LEGACY_HOOK_COUNT" entry entries) in settings.json → run $(bionic_check_hint legacy-hooks)" ;;
 esac
 # The skill copy, and the hook files and agent copies beside it — all three now have a
 # consented removal in setup (steps 9, 10 and 11), so all three fix lines name a command that
@@ -1740,7 +1752,7 @@ esac
 # hook files and whose setup summary still reads "nothing to do" — and was deleted at 8582861
 # (epic-18 wave-03) with nothing to replace it. The pin is back, in
 # tests/cross-gate-agreement.test.sh §DS, on the side that can go red.
-[ "$SKILL_COPY_STATE" = "yes" ] && fix "a legacy skill copy is installed, arming the same walls twice → run /bionic:setup"
+[ "$SKILL_COPY_STATE" = "yes" ] && fix "a legacy skill copy is installed, arming the same walls twice → run $(bionic_check_hint legacy-skill-copy)"
 
 if [ "$PLUGIN_HOOKS" = "degraded" ] || [ "$PLUGIN_HOOKS" = "absent" ]; then
   # THE HINT IS THE WHOLE TAIL, AND IT KNOWS WHICH STATE IS ASKING (W7 S11,
@@ -1823,7 +1835,7 @@ if [ "$N_FIX" = "0" ]; then
 else
   _doctor_verdict="→ ${N_FIX} $(_doctor_plural "$N_FIX" problem problems)."
   if [ -n "$FIX_NAMES_SETUP" ]; then
-    _doctor_verdict="${_doctor_verdict} Run /bionic:setup to fix: ${FIX_NAMES_SETUP}"
+    _doctor_verdict="${_doctor_verdict} Run ${DOCTOR_SETUP_ROUTE} to fix: ${FIX_NAMES_SETUP}"
     # TRUNCATED RATHER THAN WRAPPED. The names are what makes this line worth
     # reading, and a cold machine has enough of them to run past a terminal's
     # width — where the line would break into a second one and undo the whole
@@ -2038,7 +2050,12 @@ _doctor_env3() {  # <symbol> <setting> <value> <state> [<instruction>]
     "$(bionic_line "  $1 $(_doctor_cell "$2" 36) $(_doctor_cell "$3" 13) " "${4:-}" "${5:-}")")"
 }
 printf '    %-36s %-13s %s\n' "setting" "value" "state"
+# THE KEYS ARE env.sh's ROSTER and the routes are the table's. `ENV_KEYS` is the
+# one place the names are spelled and lib/checks.sh generates its environment rows
+# from that same list, so the two cannot come to hold different names; what this
+# loop reads from the table is who repairs an unwritten one.
 for _env_key in $ENV_KEYS; do
+  _env_hint="$(bionic_check_hint "env:${_env_key}" 2>/dev/null)" || _env_hint=""
   _env_configured="$(env_get "$_env_key" 2>/dev/null)" || _env_configured=""
   if _env_live_value="$(env_live "$_env_key" 2>/dev/null)"; then _env_is_live=yes; else _env_is_live=no; fi
   if [ -n "$_env_configured" ]; then
@@ -2051,9 +2068,9 @@ for _env_key in $ENV_KEYS; do
     # Live and not configured: the state the retired shell export leaves behind.
     # It works right now and dies with this session, which is why setup is still
     # named for it in the verdict above.
-    _doctor_env3 "$DOCTOR_BAD" "$_env_key" "$_env_live_value" "live in session, not written → /bionic:setup"
+    _doctor_env3 "$DOCTOR_BAD" "$_env_key" "$_env_live_value" "live in session, not written${_env_hint:+ → ${_env_hint}}"
   else
-    _doctor_env3 "$DOCTOR_BAD" "$_env_key" "—" "not set → /bionic:setup"
+    _doctor_env3 "$DOCTOR_BAD" "$_env_key" "—" "not set${_env_hint:+ → ${_env_hint}}"
   fi
 done
 # THE THIRD KIND OF ROW IN THIS TABLE, and the only one whose absence is not a
@@ -2070,14 +2087,16 @@ done
 # person is owed the truth and a command, not a green tick: the ✗ here is
 # matched by the fix line gathered above, which is the invariant those symbols
 # are worth anything under.
+_rc_proxy_label="$(bionic_check_label claude-proxy)"
+_rc_proxy_hint="$(bionic_check_hint claude-proxy)"
 if [ "$RC_PROXY_STATE" = "yes" ]; then
-  _doctor_env3 "$DOCTOR_OK" "claude() shell proxy" "on" \
+  _doctor_env3 "$DOCTOR_OK" "$_rc_proxy_label" "on" \
     "in $(_detect_shell_rc)" " — new shells pick it up"
 elif [ "$RC_PROXY_STATE" = "stale" ]; then
-  _doctor_env3 "$DOCTOR_BAD" "claude() shell proxy" "stale" \
-    "in $(_detect_shell_rc)" " — /bionic:setup rewrites it"
+  _doctor_env3 "$DOCTOR_BAD" "$_rc_proxy_label" "stale" \
+    "in $(_detect_shell_rc)" " — ${_rc_proxy_hint} rewrites it"
 else
-  _doctor_env3 "$DOCTOR_NIL" "claude() shell proxy" "—" "not set — /bionic:setup offers it"
+  _doctor_env3 "$DOCTOR_NIL" "$_rc_proxy_label" "—" "not set — ${_rc_proxy_hint} offers it"
 fi
 # THE LEFTOVERS, AND ONLY WHEN THERE ARE ANY. Six checks ask the same kind of
 # question — did the retired installer leave something behind — and on a machine
@@ -2085,11 +2104,12 @@ fi
 # right output for that.
 
 [ "$LEGACY_STATE" = "yes" ] && \
-  _doctor_env_row "$DOCTOR_BAD" "legacy .zshrc alias block" "present → /bionic:setup"
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-alias)" \
+    "present → $(bionic_check_hint legacy-alias)"
 case "$LEGACY_HOOK_COUNT" in
   unknown|0) ;;
-  *) _doctor_env_row "$DOCTOR_BAD" "legacy-channel managed hooks" \
-       "${LEGACY_HOOK_COUNT} in settings.json → /bionic:setup" ;;
+  *) _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-hooks)" \
+       "${LEGACY_HOOK_COUNT} in settings.json → $(bionic_check_hint legacy-hooks)" ;;
 esac
 # HOOK FILES, WHICH ARE NOT THE SETTINGS ENTRIES ABOVE. The row above counts
 # managed-hook ENTRIES in settings.json; this one counts hook SCRIPTS the retired
@@ -2100,10 +2120,10 @@ esac
 case "$HOOK_FILES_COUNT" in
   0) ;;
   unknown)
-    _doctor_env_row "$DOCTOR_NIL" "legacy hook files" "unknown — ${HOOK_FILES_CAUSE}" ;;
+    _doctor_env_row "$DOCTOR_NIL" "$(bionic_check_label legacy-hook-files)" "unknown — ${HOOK_FILES_CAUSE}" ;;
   *)
-    _doctor_env_row "$DOCTOR_BAD" "legacy hook files" \
-      "${HOOK_FILES_COUNT} in $(_doctor_tilde "$HOOK_FILES_PATH")" " → /bionic:setup" ;;
+    _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-hook-files)" \
+      "${HOOK_FILES_COUNT} in $(_doctor_tilde "$HOOK_FILES_PATH")" " → $(bionic_check_hint legacy-hook-files)" ;;
 esac
 # THE INSTALLED ROLE FILES, AND WHICH OF THEM NO LONGER MATCH THE PAYLOAD. The
 # probe compares every agent this payload ships against a same-named copy in the
@@ -2114,25 +2134,38 @@ esac
 case "$INST_AGENT_STATE" in
   present)
     if [ "$INST_AGENT_DRIFT" != "0" ]; then
-      _doctor_env_row "$DOCTOR_BAD" "legacy installed agent copies" \
-        "${INST_AGENT_DRIFT}/${INST_AGENT_TOTAL} differ (${INST_AGENT_NAMES//,/, })" " → /bionic:setup"
+      _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-agent-copies)" \
+        "${INST_AGENT_DRIFT}/${INST_AGENT_TOTAL} differ (${INST_AGENT_NAMES//,/, })" " → $(bionic_check_hint legacy-agent-copies)"
     fi ;;
   unknown)
-    _doctor_env_row "$DOCTOR_NIL" "legacy installed agent copies" \
+    _doctor_env_row "$DOCTOR_NIL" "$(bionic_check_label legacy-agent-copies)" \
       "unknown — ${INST_AGENT_CAUSE}" ;;
 esac
 # AND THE SKILL COPY NAMES ITS DIRECTORY. The path was parsed and dropped; a row
 # that says a stale copy arms the same walls twice, without saying where it is,
 # leaves the reader to go find it.
 [ "$SKILL_COPY_STATE" = "yes" ] && \
-  _doctor_env_row "$DOCTOR_BAD" "legacy installed skill copy" \
-    "$(_doctor_tilde "$SKILL_COPY_PATH")" " → /bionic:setup"
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-skill-copy)" \
+    "$(_doctor_tilde "$SKILL_COPY_PATH")" " → $(bionic_check_hint legacy-skill-copy)"
 # THE NPX STATUSLINE COMMAND (epic-21 AC-3, Fix step 5). A machine that ran
 # setup before the fix still has `npx ccstatusline@latest` recorded, and
 # nothing rewrites it but a person re-running setup.
 [ "$STATUSLINE_NPX_STATE" = "yes" ] && \
-  _doctor_env_row "$DOCTOR_BAD" "statusLine command" \
-    "still uses npx — blocks on a network lookup every render" " → /bionic:setup"
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label statusline-npx)" \
+    "still uses npx — blocks on a network lookup every render" " → $(bionic_check_hint statusline-npx)"
+# THE TWO ITEMS THAT HAD NO ROW HERE AT ALL until 1.5.1 (design D-2). Both are on
+# setup's roster and neither was ever diagnosed: the only mention of either in
+# this file was a comment naming a mutation doctor must never call. A repair with
+# no diagnosis is half a pair — the reader is offered a fix for a problem the
+# report never told them they had — so both are rows of the check table now, and
+# both render here from their own read-only detector. Silence when they do not
+# fire, like every other leftover row above.
+bionic_check_fires legacy-permission-block && \
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-permission-block)" \
+    "present in $(_doctor_tilde "$(_dep_settings_file)")" " → $(bionic_check_hint legacy-permission-block)"
+bionic_check_fires permission-mode && \
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label permission-mode)" \
+    "not ${BIONIC_DEFAULT_PERMISSION_MODE}" " → $(bionic_check_hint permission-mode)"
 
 
 # ─── The resources the fleet is running on ───────────────────────────────────
