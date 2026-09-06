@@ -46,10 +46,13 @@
 # eleven absent dependencies and a broken hook channel has been diagnosed
 # *successfully*; reporting that as a non-zero exit would make every caller treat
 # a working doctor as a broken one. The report's content is the signal, never the
-# status. The one exception is an option this script does not know, which has
-# diagnosed nothing: answering a misspelled flag with a clean report and status 0
-# would tell a caller that asked for something, and did not get it, that all was
-# well. That exits 2, before any fact is gathered.
+# status. TWO THINGS ARE NOT DIAGNOSES and both exit 2 before any fact is
+# gathered: an option this script does not know, because answering a misspelled
+# flag with a clean report and status 0 would tell a caller that asked for
+# something, and did not get it, that all was well; and a payload missing a
+# library this script sources, because there is no report to print and the
+# alternative is the interpreter's own error trace. Neither has diagnosed
+# anything, and 2 is this file's word for that.
 #
 # WHY READ-ONLY IS STRUCTURAL AND NOT MERELY INTENDED. Doctor calls only the
 # read-only half of each library — detect.sh's fact functions, env.sh's
@@ -111,6 +114,39 @@ _doctor_self_dir() {
   case "$self" in */*) echo "${self%/*}" ;; *) echo "." ;; esac
 }
 DOCTOR_LIB="$(cd "$(_doctor_self_dir)" && pwd -P)/lib"
+
+# THE PAYLOAD-INTEGRITY GUARD, WHICH SETUP HAS CARRIED SINCE 1.5.1 AND THIS FILE
+# DID NOT (Step-5 walk, Walk-D3). A payload copy missing lib/checks.sh answered
+# `doctor` with three raw bash diagnostics — `No such file or directory`,
+# `bionic_check_route: command not found`, `BIONIC_WALL_HOOKS: unbound variable`
+# — no report at all, and status 1 under a header stating that a diagnosis always
+# exits 0. Every one of those lines is the SHELL talking about doctor, in a file
+# whose whole job is to talk about the machine; the reader is left holding an
+# interpreter trace instead of the one sentence that would fix it. Setup was
+# already answering the identical damage with a named file and a reinstall
+# route, so the two surfaces disagreed about what a broken payload looks like.
+#
+# THE LIST IS WHAT THIS SCRIPT NEEDS, NOT WHAT SETUP NEEDS, which is why it is
+# spelled here rather than shared. The two scripts source different libraries —
+# setup wants deps/hooks/jit, doctor wants loader/root/run/resources — so there
+# is no one list to own; and a shared CHECKER would have to live in a library
+# that must itself exist before it can be sourced, which is the bootstrap this
+# guard exists to survive. What is shared is the sentence and the route, and
+# those are two echo lines.
+#
+# THE LAST TWO ARE ONE LEVEL DOWN, the way patrol.sh is on setup's list.
+# detect.sh soft-sources deps.sh and shell.sh from its own directory, so a
+# payload without them fails inside a library rather than at a line here — the
+# same trace, one frame deeper — and they are part of what a complete payload
+# means for this script too.
+for _doctor_lib in detect.sh env.sh patrol.sh width.sh loader.sh root.sh run.sh \
+                   resources.sh checks.sh deps.sh shell.sh; do
+  if [ ! -f "${DOCTOR_LIB}/${_doctor_lib}" ]; then
+    echo "doctor.sh: cannot find ${DOCTOR_LIB}/${_doctor_lib} — the payload looks incomplete." >&2
+    echo "           reinstall with: claude plugin install bionic@bionic" >&2
+    exit 2
+  fi
+done
 
 # shellcheck source=/dev/null
 . "${DOCTOR_LIB}/detect.sh"

@@ -293,4 +293,81 @@ expect_eq "14.11: …and the wall-payload row is what fires for it" \
 expect_match "14.12: …which is the line doctor prints for that state" \
   "*protect-main*not in this payload*" "$(run_doctor)"
 
+section "Section 7: a payload missing a library doctor sources prints a route, not a shell trace (Walk-D3)"
+
+# THE DAMAGE SETUP ALREADY ANSWERS, PUT TO DOCTOR. setup.sh checks every library
+# it sources before it sources one, and a payload without lib/checks.sh gets a
+# named file and a reinstall route from it. Doctor sourced its nine with bare `.`
+# lines, so the same copy answered with three interpreter diagnostics, no report,
+# and status 1 — in a file whose header states that a diagnosis exits 0. The
+# Step-5 walk measured that (walk-doctor.md §4b), and this section is the wall.
+#
+# ITS OWN COPY, because the sections above have been deleting libraries and hooks
+# out of $PLUG since section 1 and a guard reading that tree would be answering
+# their damage instead of this one's.
+PLUG_INT="${TMP}/plug-integrity"
+mkdir -p "$PLUG_INT"
+cp -RL "${PAYLOAD}/." "$PLUG_INT/" 2>/dev/null
+
+INT_OUT="${TMP}/integrity-stdout.txt"
+INT_ERR="${TMP}/integrity-stderr.txt"
+# THE COPY'S OWN doctor.sh IS WHAT RUNS, not the repo's pointed at the copy:
+# `DOCTOR_LIB` is derived from `${BASH_SOURCE[0]}` and takes no env override, so
+# the only way to make a library missing to THIS script is to run the script that
+# lives beside the missing file. BIONIC_PLUGIN_ROOT still points at the copy so
+# every other root the page reads is the fixture's.
+run_copy_doctor() {  # -> the exit status; stdout in $INT_OUT, stderr in $INT_ERR
+  ( cd "$REPO" && HOME="$TMP" PATH="$BIN" BIONIC_SHELL_RC="$FIXTURE_RC" \
+      BIONIC_CLAUDE_HOME="$TMP/claude-home" BIONIC_PLUGIN_ROOT="$PLUG_INT" \
+      BIONIC_PLUGINS_DIR="$EMPTY_PLUGINS" BIONIC_DOCTOR_PROBE_SECONDS=3 \
+      bash "$PLUG_INT/scripts/doctor.sh" < /dev/null > "$INT_OUT" 2> "$INT_ERR" )
+  echo $?
+}
+
+# THE INTACT ARM FIRST, so nothing below can pass over a copy that was never able
+# to render at all. This is the same tree, one file later.
+INT_RC_OK="$(run_copy_doctor)"
+expect_status "17.1: an intact payload copy renders and exits 0" "0" "$INT_RC_OK"
+expect_match "17.2: …with the report on stdout" \
+  "*Bionic Doctor — payload*" "$(cat "$INT_OUT")"
+expect_no_regex "17.3: …and nothing shaped like an interpreter diagnostic on stderr" \
+  "line [0-9]+:" "$(cat "$INT_ERR")"
+
+# NOW THE DAMAGE. checks.sh is the library the walk deleted, and the one every
+# row's detector comes from.
+rm -f "$PLUG_INT/scripts/lib/checks.sh"
+INT_RC_BAD="$(run_copy_doctor)"
+INT_ERR_BAD="$(cat "$INT_ERR")"
+expect_ne "17.4: a payload copy without lib/checks.sh does not exit 0" "0" "$INT_RC_BAD"
+expect_match "17.5: …it names the file it could not find" \
+  "*scripts/lib/checks.sh — the payload looks incomplete.*" "$INT_ERR_BAD"
+expect_match "17.6: …and the reinstall route, the same one setup prints" \
+  "*claude plugin install bionic@bionic*" "$INT_ERR_BAD"
+# THE POINT OF THE WHOLE SECTION, and a negative paired with the two positives
+# directly above it: what the reader gets is the sentence, not the three
+# `doctor.sh: line NNN: …` lines the walk captured.
+expect_no_regex "17.7: …and no interpreter diagnostic anywhere in it" \
+  "line [0-9]+:" "$INT_ERR_BAD"
+expect_empty "17.8: …and no half-rendered page on stdout" "$(cat "$INT_OUT")"
+
+# A SECOND NAME, so 17.5 is not a guard that only knows one file. root.sh is
+# sourced from a different line and carries no detectors at all.
+cp "${PAYLOAD}/scripts/lib/checks.sh" "$PLUG_INT/scripts/lib/checks.sh"
+rm -f "$PLUG_INT/scripts/lib/root.sh"
+INT_RC_ROOT="$(run_copy_doctor)"
+INT_ERR_ROOT="$(cat "$INT_ERR")"
+expect_ne "17.9: a copy without lib/root.sh does not exit 0 either" "0" "$INT_RC_ROOT"
+expect_match "17.10: …and names that file, not the previous one" \
+  "*scripts/lib/root.sh — the payload looks incomplete.*" "$INT_ERR_ROOT"
+expect_no_regex "17.11: …with no interpreter diagnostic there either" \
+  "line [0-9]+:" "$INT_ERR_ROOT"
+
+# AND BACK TO INTACT, which is what makes every assertion above a difference the
+# deletion made rather than a property of the fixture.
+cp "${PAYLOAD}/scripts/lib/root.sh" "$PLUG_INT/scripts/lib/root.sh"
+INT_RC_BACK="$(run_copy_doctor)"
+expect_status "17.12: restoring the library brings the report and exit 0 back" "0" "$INT_RC_BACK"
+expect_match "17.13: …and the page is there again" \
+  "*Bionic Doctor — payload*" "$(cat "$INT_OUT")"
+
 finish
