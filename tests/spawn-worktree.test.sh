@@ -459,14 +459,6 @@ mutate_check "mutation: the cleanup on failed verification removed is caught" \
   's|^  cleanup_partial$|  :|' \
   verify_cleanup "residue"
 
-section "Group 11: the suite is registered in tests/run.sh by name"
-#
-# tests/*.test.sh is NOT globbed by the runner — an unregistered suite is a
-# silent false green (tests/run.sh records the last time that happened).
-
-expect_true "tests/run.sh names spawn-worktree.test.sh" \
-  grep -q 'run "spawn-worktree.test.sh" bash tests/spawn-worktree.test.sh' "${REPO}/tests/run.sh"
-
 # The old "Group 12: the shipped skill is the payload's own copy" banner (git
 # HEAD:490-492) named no subject and carried zero assertions — the
 # pre-framework harness never noticed. The framework's section floor DOES

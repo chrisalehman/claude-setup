@@ -83,8 +83,8 @@
 # fell to ~188 MB and the kernel SIGKILLed a suite mid-run (W7 assumption A4.2). Four was
 # the width with headroom on that measurement; the default was raised to eight on
 # 2026-08-22 (ef23f75, user's call) and `BIONIC_TEST_JOBS_CEILING` is there for a machine
-# with less or more. NOT `BIONIC_TEST_JOBS`, which is retired as an input — line 45 above
-# says so and line 169 prints it at runtime.
+# with less or more. NOT `BIONIC_TEST_JOBS`, which is retired as an input — line 51 above
+# says so and line 249 prints it at runtime.
 #
 # EVERY SUITE IS A CLIENT OF ONE FRAMEWORK (wave-01 S10, spec AC-12). Before a
 # roster line is launched its source is read, and a suite that defines a name

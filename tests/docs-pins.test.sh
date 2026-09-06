@@ -132,12 +132,6 @@ else
      "run 'bash agents-src/render.sh --check' directly for the diff"
 fi
 
-if grep -q 'run "docs-pins.test.sh" bash tests/docs-pins.test.sh' "${REPO}/tests/run.sh"; then
-  ok "8: tests/run.sh names docs-pins.test.sh"
-else
-  no "8: tests/run.sh names docs-pins.test.sh"
-fi
-
 # ── AC-17: the version is one truth rendered at MANY surfaces ────────────────
 #
 # Assertions 1-8 pin ONE pair, plugin.json and help.md. The version is restated at more

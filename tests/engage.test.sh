@@ -228,12 +228,6 @@ fi
 # on every event, and the trigger is silently gone.
 if [ -x "$HOOK" ]; then ok "engage.sh carries the exec bit"; else no "engage.sh carries the exec bit"; fi
 
-if grep -q '^run "engage.test.sh" bash tests/engage.test.sh$' "$RUNNER" 2>/dev/null; then
-  ok "tests/run.sh carries this suite's own run line"
-else
-  no "tests/run.sh carries this suite's own run line" "no matching run line in $RUNNER"
-fi
-
 # ============================================================
 section "E1 (AC-1) — a Skill call for canonical-sdlc engages the session"
 # ============================================================

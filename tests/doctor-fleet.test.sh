@@ -389,10 +389,7 @@ RES6C="$(doctor_section "$OUT6C" "RESOURCES")"
 expect_match "18f: a project with no attestation still says so" \
   "*none has taken an attestation in this project*" "$RES6C"
 
-section "Section 7: registration, and the column budget"
-
-expect_true "19: tests/run.sh names doctor-fleet.test.sh" \
-  grep -q 'run "doctor-fleet.test.sh" bash tests/doctor-fleet.test.sh' "${REPO}/tests/run.sh"
+section "Section 7: the column budget"
 
 too_wide() {
   printf '%s\n' "$1" | awk '

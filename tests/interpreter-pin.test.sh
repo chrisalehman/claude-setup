@@ -87,25 +87,22 @@ echo "=== interpreter-pin: /bin/bash is ${SYS_VER:-unknown}; other interpreter: 
 echo ""
 
 # ── the scratch tree ─────────────────────────────────────────────────────────
-# The shipped runner, byte for byte, with its roster replaced. Same layout the runner
-# resolves against: it derives $REPO from its own path and sources
-# $REPO/payload/scripts/lib/resources.sh, and tests/lib/resolve-roots.sh sits beside it.
-mk_tree() {  # mk_tree <dir> <suite-file-name>...
-  local dir="$1"; shift
+# The shipped runner, byte for byte. Same layout the runner resolves against: it derives
+# $REPO from its own path and sources $REPO/payload/scripts/lib/resources.sh, and
+# tests/lib/resolve-roots.sh sits beside it.
+#
+# THE ROSTER IS THE TREE (fixit 1.5.1). The runner derives its roster from the tests/
+# directory it is run in, so a drive's roster is exactly the probe files planted below
+# and no rewrite is needed — the copy is the shipped file, unedited. These trees carry
+# no tests/lib/assert.sh, so the roster wall's framework half is inert here and the
+# probes are raw interpreter probes rather than framework clients, which is what they
+# have to be: §3 runs two of them directly under a second interpreter.
+mk_tree() {  # mk_tree <dir>
+  local dir="$1"
   mkdir -p "$dir/tests/lib" "$dir/payload/scripts/lib"
   cp "$REPO/tests/run.sh" "$dir/tests/run.sh"
   cp "$REPO/tests/lib/resolve-roots.sh" "$dir/tests/lib/resolve-roots.sh"
   cp "$REPO"/payload/scripts/lib/*.sh "$dir/payload/scripts/lib/" 2>/dev/null
-  # roster: drop every shipped `run` line, then name this drive's own suites in order.
-  awk -v labels="$*" '
-    /^run "/ { next }
-    { print }
-    /^echo "Gating suites:"$/ {
-      n = split(labels, a, " ")
-      for (i = 1; i <= n; i++) printf "run \"%s\" bash tests/%s\n", a[i], a[i]
-    }
-  ' "$dir/tests/run.sh" > "$dir/tests/run.sh.rewritten"
-  mv "$dir/tests/run.sh.rewritten" "$dir/tests/run.sh"
 }
 
 # drive <tree> <mode|""> — run the scratch runner with the ALTERNATE interpreter first on
@@ -134,7 +131,7 @@ section "§1 the pin: every child of the runner is /bin/bash, and the rest of PA
 # $BIONIC_PROBE_OUT, which the runner passes through by inheriting this suite's environment.
 
 PROBE_TREE="$TMPROOT/probe-tree"
-mk_tree "$PROBE_TREE" "probe.test.sh"
+mk_tree "$PROBE_TREE"
 cat > "$PROBE_TREE/tests/probe.test.sh" <<'PROBE_EOF'
 #!/bin/bash
 { echo "BASH_VERSION=$BASH_VERSION"
@@ -251,7 +248,7 @@ echo ""
 section "§3 the planted 3.2 incompatibilities: the pin catches what it exists to catch (AC-10)"
 
 PLANT_TREE="$TMPROOT/plant-tree"
-mk_tree "$PLANT_TREE" "planted-case-leak.test.sh" "planted-herestring.test.sh"
+mk_tree "$PLANT_TREE"
 
 # (a) 3.2 ends the command substitution at the first `)` of the case pattern and leaks the
 #     rest as text. Measured: 3.2.57 prints a parse error and garbage, exit 0; 5.3.15 prints A.
@@ -358,7 +355,7 @@ section "§5 stderr-strict: a green suite that lost a command is red (the runner
 # not the words, so a suite that merely quotes them stays green.
 
 STRICT_TREE="$TMPROOT/strict-tree"
-mk_tree "$STRICT_TREE" "noisy.test.sh" "quoting.test.sh"
+mk_tree "$STRICT_TREE"
 cat > "$STRICT_TREE/tests/noisy.test.sh" <<'NOISY_EOF'
 #!/bin/bash
 set -uo pipefail
