@@ -1754,6 +1754,21 @@ esac
 # tests/cross-gate-agreement.test.sh §DS, on the side that can go red.
 [ "$SKILL_COPY_STATE" = "yes" ] && fix "a legacy skill copy is installed, arming the same walls twice → run $(bionic_check_hint legacy-skill-copy)"
 
+# THE TWO ROWS THAT WERE ONLY EVER SETUP'S (design D-2, 1.5.1). Both are on
+# setup's roster and neither had a surface here — no row, no fix line, nothing —
+# so the repair was offered for a problem this report never said the machine had.
+# Asked ONCE, here, for the same reason every other leftover is: `fix` is
+# collected before anything prints, and the rows in ENVIRONMENT below read these
+# two answers rather than asking a second time. A row with no fix line would also
+# break the rule the headline count is measured against — every ✗ on the page is
+# a problem the count stands for (tests/doctor-reads.test.sh 12f18).
+PERM_BLOCK_STATE=no; bionic_check_fires legacy-permission-block && PERM_BLOCK_STATE=yes
+PERM_MODE_STATE=no;  bionic_check_fires permission-mode         && PERM_MODE_STATE=yes
+[ "$PERM_BLOCK_STATE" = "yes" ] && \
+  fix "bionic's retired permission block is still in settings.json → run $(bionic_check_hint legacy-permission-block)"
+[ "$PERM_MODE_STATE" = "yes" ] && \
+  fix "the default permission mode is not ${BIONIC_DEFAULT_PERMISSION_MODE} → run $(bionic_check_hint permission-mode)"
+
 if [ "$PLUGIN_HOOKS" = "degraded" ] || [ "$PLUGIN_HOOKS" = "absent" ]; then
   # THE HINT IS THE WHOLE TAIL, AND IT KNOWS WHICH STATE IS ASKING (W7 S11,
   # six-axis review axis 2). This used to print `re-converge with:` and then the hint
@@ -2160,10 +2175,10 @@ esac
 # report never told them they had — so both are rows of the check table now, and
 # both render here from their own read-only detector. Silence when they do not
 # fire, like every other leftover row above.
-bionic_check_fires legacy-permission-block && \
+[ "$PERM_BLOCK_STATE" = "yes" ] && \
   _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-permission-block)" \
     "present in $(_doctor_tilde "$(_dep_settings_file)")" " → $(bionic_check_hint legacy-permission-block)"
-bionic_check_fires permission-mode && \
+[ "$PERM_MODE_STATE" = "yes" ] && \
   _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label permission-mode)" \
     "not ${BIONIC_DEFAULT_PERMISSION_MODE}" " → $(bionic_check_hint permission-mode)"
 

@@ -7008,6 +7008,22 @@ ds_pending() {  # <home> <item>
   esac
 }
 
+# EVERY ITEM THIS MACHINE WOULD BE OFFERED, ASKED ONCE. `ds_pending` starts a whole
+# setup run per item, which is the right instrument for the handful of rows DS.2
+# drives — that arm is about setup's own narrowed behaviour — and the wrong one for
+# a walk over the roster: thirty script starts for one fact, on the suite the whole
+# fleet waits behind. setup's `_setup_item_pending` IS `bionic_check_item_pending`,
+# so this asks setup's own predicate in one process. DS.2c pairs the two below, so
+# the cheap oracle is bound to the expensive one rather than trusted.
+ds_pending_items() {  # <home> -> the items that fire on it, one per line
+  HOME="$1" BIONIC_CLAUDE_HOME="$1/.claude" BIONIC_PLUGIN_ROOT="$DS_PAYLOAD" \
+    bash -c '. "$1" >/dev/null 2>&1 || exit 1
+             bionic_check_items | while IFS= read -r i; do
+               [ -n "$i" ] || continue
+               bionic_check_item_pending "$i" && printf "%s\n" "$i"
+             done' _ "$DS_CHECKS_LIB" 2>/dev/null
+}
+
 # ── DS.1 the field state, and both parties' answers to it ────────────────────
 DS_HOME="$DS_DIR/full"
 ds_plant "$DS_HOME" yes yes
@@ -7098,6 +7114,9 @@ expect_eq "DS.2b …and every item the check table names is on setup's --list" \
 # for, must be flagged by doctor on the same fixture — that is the field defect in
 # its pure form, and it is asked at the ITEM level because several rows can share
 # one item (the three environment names are one step).
+DS_CLEAN_EARLY="$DS_DIR/clean-early"
+ds_plant "$DS_CLEAN_EARLY" no no
+DS_PENDING_ITEMS="$(ds_pending_items "$DS_HOME")"
 DS_SILENT=""; DS_STATE_SEEN=0
 while IFS= read -r ds_item; do
   [ -n "$ds_item" ] || continue
@@ -7107,7 +7126,7 @@ while IFS= read -r ds_item; do
       ds_field "$ds_r" 2 && echo
     done <<<"$DS_TABLE" | grep -v '^$')"
   [ -n "$ds_labels" ] || continue
-  ds_pending "$DS_HOME" "$ds_item" || continue
+  ds_listed_in "$DS_PENDING_ITEMS" "$ds_item" || continue
   DS_STATE_SEEN=$((DS_STATE_SEEN + 1))
   ds_hit=""
   while IFS= read -r ds_l; do
@@ -7119,6 +7138,18 @@ done <<<"$DS_TABLE_ITEMS"
 
 expect_true "DS.2c the fixture leaves setup work to do on labelled rows (the row under it is not vacuous)" \
   test "$DS_STATE_SEEN" -ge 4
+# THE CHEAP ORACLE, BOUND TO THE EXPENSIVE ONE. One item both ways: the one-process
+# predicate says it fires, and a real `--only` run of setup on the same fixture
+# agrees. Without this pair the walk above would be trusting a reading nothing had
+# checked against the script it is a claim about.
+expect_true "DS.2c the one-process predicate names an item setup's own narrowed run agrees on" \
+  ds_listed_in "$DS_PENDING_ITEMS" legacy-hook-files
+expect_true "DS.2c …and that run really does have something to do for it" \
+  ds_pending "$DS_HOME" legacy-hook-files
+# The other direction on the clean fixture, so the pair is a measurement: with no
+# leftovers the same item is absent from the predicate's answer AND from setup's.
+expect_false "DS.2c …while on a machine with no leftovers the predicate does not name it" \
+  ds_listed_in "$(ds_pending_items "$DS_CLEAN_EARLY")" legacy-hook-files
 expect_eq "DS.2c every item setup would offer is flagged by doctor on the same machine" "" "$DS_SILENT"
 
 # ── DS.2d the core row: the party that is NOT setup, on a real absence ───────
@@ -7255,31 +7286,127 @@ expect_contains "DS.5 …and the completeness scan goes RED on it" \
 expect_eq "DS.5 …while the shipped doctor leaves it empty" \
   "" "$(ds_unmapped "$DS_REPORT" "$DS_TABLE" "$DS_ROUTES")"
 
-# ── DS.6 mutation: the core arm removed puts the row back on the wrong party ─
+# ── DS.6 mutation: a renderer that spells the route itself goes red ─────────
 #
-# The defect the 1.4.4 fixit repaired, planted back. A copy of doctor.sh with
-# exactly one line struck out — the `core` branch of the absent arm — makes the
-# row fall through to the `else` and end `→ /bionic:setup`, a party its table row
-# does not name and an item no roster carries. DS.2's party row must go red on it.
-DS_MUT_CORE="$DS_MUT/scripts/doctor-nocore.sh"
-LC_ALL=C sed '/elif \[ "$dep_class" = "core" \]/d' "$PARTY_DOCTOR" > "$DS_MUT_CORE"
-expect_eq "DS.6 the doctored doctor differs from the shipped one by exactly the core arm" \
+# The regression this slice exists to prevent, planted. Not the 1.4.4 defect —
+# THAT one is now unreachable by the edit that used to cause it: striking out the
+# `core` branch of the absent arm leaves the row reading its hint from the table
+# anyway, so it still names the CLI. What can still go wrong is a renderer that
+# stops asking. This copy of doctor.sh replaces the one line that reads the
+# dependency's row with a literal `/bionic:setup`, which is exactly how the file
+# was written before 1.5.1, and the core row goes straight back to promising a
+# repair setup has no item for. DS.2's party row must go red on it.
+DS_MUT_CORE="$DS_MUT/scripts/doctor-literal.sh"
+LC_ALL=C awk '
+  /_doctor_dep_hint="\$\(bionic_check_dep_hint/ { print "  _doctor_dep_hint=\"/bionic:setup\""; next }
+  { print }' "$PARTY_DOCTOR" > "$DS_MUT_CORE"
+expect_eq "DS.6 the doctored doctor differs from the shipped one by exactly the one read" \
   "1" "$(diff "$PARTY_DOCTOR" "$DS_MUT_CORE" | grep -c '^< ')"
+expect_eq "DS.6 …and by exactly the one literal that replaced it" \
+  "1" "$(diff "$PARTY_DOCTOR" "$DS_MUT_CORE" | grep -c '^> ')"
 DS_MUT_CORE_REPORT="$( PARTY_DOCTOR="$DS_MUT_CORE"; ds_doctor "$DS_HOME" )"
 DS_MUT_CORE_ROW="$(ds_section "$DS_MUT_CORE_REPORT" "THIRD PARTY" | grep -E '^  . +superpowers ' | head -1)"
-expect_contains "DS.6 …the doctored row is back on the hint that has no item behind it" \
-  "→ /bionic:setup" "$DS_MUT_CORE_ROW"
-DS_MUT_PARTY=""
-while IFS= read -r ds_line; do
-  [ -n "$ds_line" ] || continue
-  ds_label="$(ds_label_of "$ds_line")"
-  ds_row="$(ds_row_for "$ds_label" "$DS_TABLE")" || continue
-  [ "$(ds_field "$ds_row" 4)" = "setup" ] && continue
-  case "$ds_line" in
-    *"/bionic:setup"*) DS_MUT_PARTY="${DS_MUT_PARTY}${DS_MUT_PARTY:+, }${ds_label}" ;;
-  esac
-done <<<"$(ds_hinted_lines "$DS_MUT_CORE_REPORT" "$DS_ROUTES")"
-expect_contains "DS.6 …and the party scan goes RED on it" "superpowers" "$DS_MUT_PARTY"
+expect_true "DS.6 the doctored doctor still renders the core row (the rows below are not vacuous)" \
+  test -n "$DS_MUT_CORE_ROW"
+expect_contains "DS.6 …and it is back on the hint that has no item behind it" \
+  "/bionic:setup" "$DS_MUT_CORE_ROW"
+expect_absent "DS.6 …while the shipped doctor's same row never says that" \
+  "/bionic:setup" "$DS_CORE_ROW"
+
+# The party scan, run over the doctored report exactly as DS.2 runs it over the
+# shipped one: a row whose table party is not setup, sending the reader to setup.
+ds_misparty() {  # <doctor report> -> the rows that state a party their row does not name
+  local line label row out=""
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    label="$(ds_label_of "$line")"
+    row="$(ds_row_for "$label" "$DS_TABLE")" || continue
+    [ "$(ds_field "$row" 4)" = "setup" ] && continue
+    case "$line" in *"/bionic:setup"*) out="${out}${out:+, }${label}" ;; esac
+  done <<<"$(ds_hinted_lines "$1" "$DS_ROUTES")"
+  printf '%s' "$out"
+}
+expect_contains "DS.6 …and the party scan goes RED on it" \
+  "superpowers" "$(ds_misparty "$DS_MUT_CORE_REPORT")"
+expect_eq "DS.6 …while the same scan over the shipped report is empty" \
+  "" "$(ds_misparty "$DS_REPORT")"
+
+# ── DS.7 mutation: a row deleted from the TABLE goes red on both renders ─────
+#
+# The direction neither old arm could reach, because until 1.5.1 there was no
+# table to delete from. This is the proof that both renderers actually read it: a
+# copy of lib/checks.sh with exactly one row struck out must take the item off
+# setup's roster AND take the hint off doctor's row, from one edit, with neither
+# script touched. If either render survived the deletion unchanged, that renderer
+# is still carrying its own copy of the check — which is the whole defect.
+# ITS OWN TREE, so the doctored library cannot reach the arm below it: DS.8 drives
+# a setup copy out of $DS_MUT, and a setup reading a library with a row missing
+# would make DS.8's set comparison about two edits instead of one.
+DS_MUT7="$DS_DIR/mutant-lib"
+rm -rf "$DS_MUT7"; mkdir -p "$DS_MUT7"
+cp -R "$DS_PAYLOAD/scripts" "$DS_MUT7/scripts"
+DS_MUT_CHECKS="$DS_MUT7/scripts/lib/checks.sh"
+LC_ALL=C sed '/^  _bionic_checks_emit "legacy-hook-files" /d' "$DS_CHECKS_LIB" > "$DS_MUT_CHECKS"
+expect_eq "DS.7 the doctored library differs from the shipped one by exactly the row" \
+  "1" "$(diff "$DS_CHECKS_LIB" "$DS_MUT_CHECKS" | grep -c '^< ')"
+expect_eq "DS.7 …and by nothing added" \
+  "0" "$(diff "$DS_CHECKS_LIB" "$DS_MUT_CHECKS" | grep -c '^> ')"
+
+# The table the doctored library builds no longer knows the row.
+DS_MUT_TABLE="$( DS_CHECKS_LIB="$DS_MUT_CHECKS"; ds_rows "$DS_HOME" )"
+expect_true "DS.7 the doctored table still builds (the rows below are not vacuous)" \
+  test "$(printf '%s\n' "$DS_MUT_TABLE" | grep -c '|')" -ge 20
+expect_false "DS.7 …and no longer carries the deleted row" \
+  ds_row_for "legacy hook files" "$DS_MUT_TABLE"
+expect_true "DS.7 …while the shipped table does" \
+  ds_row_for "legacy hook files" "$DS_TABLE"
+
+# THE SETUP SIDE. `setup.sh` sources the library beside it, so the copy under the
+# sandbox reads the doctored one and its roster loses the item.
+DS_MUT_LISTED=no
+( PARTY_SETUP="$DS_MUT7/scripts/setup.sh"; ds_listed "$DS_HOME" legacy-hook-files ) && DS_MUT_LISTED=yes
+expect_eq "DS.7 the doctored roster no longer carries the item" "no" "$DS_MUT_LISTED"
+expect_true "DS.7 …while the shipped roster does (the row above is a measurement)" \
+  ds_listed_in "$DS_LIST" legacy-hook-files
+
+# THE DOCTOR SIDE, from the same one edit. Doctor reads the row's label and its
+# hint from the table, so with the row gone the machine's leftover hook files stop
+# being reported as anything a reader can act on.
+DS_MUT_DOC7="$DS_MUT7/scripts/doctor.sh"
+cp "$PARTY_DOCTOR" "$DS_MUT_DOC7"
+DS_MUT_REPORT7="$( PARTY_DOCTOR="$DS_MUT_DOC7"; ds_doctor "$DS_HOME" )"
+DS_MUT_LABELS7="$(while IFS= read -r ds_l; do [ -n "$ds_l" ] && ds_label_of "$ds_l" && echo; done \
+  <<<"$(ds_hinted_lines "$DS_MUT_REPORT7" "$DS_ROUTES")")"
+expect_true "DS.7 the doctored doctor still renders hinted rows (the row below is not vacuous)" \
+  test "$(printf '%s\n' "$DS_MUT_LABELS7" | grep -c .)" -ge 5
+expect_absent "DS.7 …but the deleted row's hint is gone from doctor's render too" \
+  "legacy hook files" "$DS_MUT_LABELS7"
+expect_contains "DS.7 …while the shipped doctor still carries it, from the same fixture" \
+  "legacy hook files" "$DS_LABELS"
+
+# ── DS.8 mutation: an item setup names on its own goes red ──────────────────
+#
+# The other side of DS.7. A roster line added by hand — the way the roster used to
+# be written, before it was the table's item column — is a name /bionic:setup would
+# take with nothing in the table to say what it repairs or who repairs it. DS.2b's
+# set-against-set row is the one that must catch it.
+DS_MUT_SETUP8="$DS_MUT/scripts/setup-invented.sh"
+LC_ALL=C awk '
+  /^_setup_item_ids\(\) \{$/ { print; print "  say \"invented-item\""; next }
+  { print }' "$PARTY_SETUP" > "$DS_MUT_SETUP8"
+expect_eq "DS.8 the doctored setup differs from the shipped one by exactly the planted item" \
+  "1" "$(diff "$PARTY_SETUP" "$DS_MUT_SETUP8" | grep -c '^> ')"
+expect_eq "DS.8 …and by nothing removed" \
+  "0" "$(diff "$PARTY_SETUP" "$DS_MUT_SETUP8" | grep -c '^< ')"
+DS_MUT_LIST8="$( PARTY_SETUP="$DS_MUT_SETUP8"; ds_setup "$DS_HOME" --list )"
+expect_contains "DS.8 the doctored roster carries the planted item (the row below is not vacuous)" \
+  "invented-item" "$DS_MUT_LIST8"
+DS_MUT_ITEMS8="$(printf '%s\n' "$DS_MUT_LIST8" | grep -v '^$' | sort -u)"
+expect_eq "DS.8 …and the set-against-set scan goes RED on exactly that name" \
+  "invented-item" \
+  "$(comm -23 <(printf '%s\n' "$DS_MUT_ITEMS8") <(printf '%s\n' "$DS_TABLE_ITEMS") | tr '\n' ' ' | sed 's/ *$//')"
+expect_eq "DS.8 …while the shipped roster leaves that scan empty" \
+  "" "$(comm -23 <(printf '%s\n' "$DS_LIST_ITEMS") <(printf '%s\n' "$DS_TABLE_ITEMS") | tr '\n' ' ' | sed 's/ *$//')"
 
 
 # ============================================================

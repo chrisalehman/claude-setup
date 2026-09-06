@@ -400,21 +400,55 @@ _bionic_checks_build() {
   _bionic_checks_emit "wall-library" "" "bionic_check_wall_unloadable" "cli" "" "$r_cli"
 }
 
-# BUILT ONCE PER PROCESS. The build reads two catalogs and one bounded CLI probe;
-# a renderer that walks the table four times must not pay for that four times.
+# BUILT ONCE PER PROCESS, IN THE PROCESS — and this is not an optimisation, it is
+# the only place the build can go. Every reader below is called from inside a
+# command substitution (`"$(bionic_check_hint legacy-hook-files)"` is what a
+# renderer writes), and a cache filled inside `$( )` dies with the subshell that
+# filled it. A lazy build therefore does not run once; it runs once per READ, and
+# the build asks the CLI for this machine's duplicate registrations under a
+# timeout bound. Measured on doctor before this was moved: 73 seconds against 10,
+# almost all of it waiting on that probe, and long enough that a test fixture's
+# live session pid expired between two runs.
+#
+# So the table is built HERE, at source time, in the shell that sources this file.
+# A subshell inherits the variable and reads it without asking anything. Both
+# scripts that source this file already asked the same probe once on their own
+# before 1.5.1, so nothing on either page got slower than it was.
 _BIONIC_CHECKS_TABLE=""
+_bionic_checks_ensure() {
+  [ -n "$_BIONIC_CHECKS_TABLE" ] && return 0
+  # THE PROBE IS ASKED OUT HERE, not inside the build. The build itself runs in a
+  # command substitution, so a cache it fills is thrown away with it — and the
+  # duplicate probe is the one input that costs a bounded CLI call. Asked in this
+  # shell, the answer is inherited by the build AND by every later reader,
+  # including doctor's own duplicates block, so the machine is asked exactly once.
+  bionic_check_duplicate_lines >/dev/null
+  _BIONIC_CHECKS_TABLE="$(_bionic_checks_build)"
+}
+
 bionic_check_rows() {  # -> the whole table, one row per line
-  [ -n "$_BIONIC_CHECKS_TABLE" ] || _BIONIC_CHECKS_TABLE="$(_bionic_checks_build)"
+  _bionic_checks_ensure
   printf '%s\n' "$_BIONIC_CHECKS_TABLE"
 }
 
+# READ WITH THE SHELL'S OWN SPLITTER, never `cut`. A field read that forks is
+# forty rows' worth of processes per lookup and the renderers do dozens of
+# lookups; `IFS='|' read` is the same answer with no process at all.
 _bionic_check_field() {  # <id> <field index 2..6>
-  local id="${1:-}" want="${2:-}" row
-  while IFS= read -r row; do
-    case "$row" in "${id}|"*) ;; *) continue ;; esac
-    printf '%s' "$(printf '%s' "$row" | cut -d'|' -f"$want")"
+  local id="${1:-}" want="${2:-}" f1 f2 f3 f4 f5 f6
+  _bionic_checks_ensure
+  while IFS='|' read -r f1 f2 f3 f4 f5 f6; do
+    [ "$f1" = "$id" ] || continue
+    case "$want" in
+      2) printf '%s' "$f2" ;;
+      3) printf '%s' "$f3" ;;
+      4) printf '%s' "$f4" ;;
+      5) printf '%s' "$f5" ;;
+      6) printf '%s' "$f6" ;;
+      *) return 1 ;;
+    esac
     return 0
-  done <<<"$(bionic_check_rows)"
+  done <<<"$_BIONIC_CHECKS_TABLE"
   return 1
 }
 
@@ -430,20 +464,27 @@ bionic_check_hint()     { _bionic_check_field "${1:-}" 6; }
 # dependency has no row and this returns non-zero for it, which is the honest
 # answer: nothing repairs a tool that is absent by design.
 bionic_check_dep_row() {  # <dependency name> -> the row id
-  local n="${1:-}" row
-  while IFS= read -r row; do
-    case "$row" in
-      "tool:${n}|"*|"dep:${n}|"*) printf '%s' "${row%%|*}"; return 0 ;;
+  local n="${1:-}" f1
+  _bionic_checks_ensure
+  while IFS='|' read -r f1 _; do
+    case "$f1" in
+      "tool:${n}"|"dep:${n}") printf '%s' "$f1"; return 0 ;;
     esac
-  done <<<"$(bionic_check_rows)"
+  done <<<"$_BIONIC_CHECKS_TABLE"
   return 1
 }
 
-# The hint a dependency row carries, empty for a dependency no row covers.
+# The hint a dependency row carries, empty for a dependency no row covers. One
+# pass, not two: the row is found and its hint read in the same walk.
 bionic_check_dep_hint() {  # <dependency name>
-  local id
-  id="$(bionic_check_dep_row "$1")" || return 1
-  bionic_check_hint "$id"
+  local n="${1:-}" f1 f2 f3 f4 f5 f6
+  _bionic_checks_ensure
+  while IFS='|' read -r f1 f2 f3 f4 f5 f6; do
+    case "$f1" in
+      "tool:${n}"|"dep:${n}") printf '%s' "$f6"; return 0 ;;
+    esac
+  done <<<"$_BIONIC_CHECKS_TABLE"
+  return 1
 }
 
 # ─── What setup reads ────────────────────────────────────────────────────────
@@ -454,14 +495,14 @@ bionic_check_dep_hint() {  # <dependency name>
 # dependency item that already appears above it. First appearance wins, so the
 # order a user reads is the order the table is written in.
 bionic_check_items() {  # -> every setup item, once, in table order
-  local row id seen=""
-  while IFS= read -r row; do
-    id="$(printf '%s' "$row" | cut -d'|' -f5)"
-    [ -n "$id" ] || continue
-    case "$seen" in *"|${id}|"*) continue ;; esac
-    seen="${seen}|${id}|"
-    printf '%s\n' "$id"
-  done <<<"$(bionic_check_rows)"
+  local f1 f2 f3 f4 f5 f6 seen=""
+  _bionic_checks_ensure
+  while IFS='|' read -r f1 f2 f3 f4 f5 f6; do
+    [ -n "$f5" ] || continue
+    case "$seen" in *"|${f5}|"*) continue ;; esac
+    seen="${seen}|${f5}|"
+    printf '%s\n' "$f5"
+  done <<<"$_BIONIC_CHECKS_TABLE"
   return 0
 }
 
@@ -470,14 +511,13 @@ bionic_check_items() {  # -> every setup item, once, in table order
 # enough to make the step worth running, which is the sense setup's own predicate
 # always had.
 bionic_check_item_pending() {  # <setup item>
-  local want="${1:-}" row id detector
-  while IFS= read -r row; do
-    id="${row%%|*}"
-    [ "$(printf '%s' "$row" | cut -d'|' -f5)" = "$want" ] || continue
-    detector="$(printf '%s' "$row" | cut -d'|' -f3)"
-    [ -n "$detector" ] || continue
-    "$detector" "$id" && return 0
-  done <<<"$(bionic_check_rows)"
+  local want="${1:-}" f1 f2 f3 f4 f5 f6
+  _bionic_checks_ensure
+  while IFS='|' read -r f1 f2 f3 f4 f5 f6; do
+    [ "$f5" = "$want" ] || continue
+    [ -n "$f3" ] || continue
+    "$f3" "$f1" && return 0
+  done <<<"$_BIONIC_CHECKS_TABLE"
   return 1
 }
 
@@ -488,3 +528,10 @@ bionic_check_fires() {  # <row id>
   [ -n "$detector" ] || return 1
   "$detector" "$1"
 }
+
+# ─── Built now, in the sourcing shell ────────────────────────────────────────
+#
+# See the note above `_bionic_checks_ensure`: a build deferred to the first read
+# is a build that happens inside a command substitution and is thrown away again,
+# once per read. This is the one line that makes the cache a cache.
+_bionic_checks_ensure
