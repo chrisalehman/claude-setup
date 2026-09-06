@@ -16,7 +16,6 @@
 # so this is safe the same way tests/detect-probes.test.sh sources detect.sh).
 #
 # Usage: bash tests/patrol-stale.test.sh
-# Registered by name in tests/run.sh (tests/*.test.sh is NOT auto-globbed).
 
 set -uo pipefail
 

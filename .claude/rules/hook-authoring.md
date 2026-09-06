@@ -20,7 +20,7 @@ section, and of this file, was never bootstrap-era and is unchanged.)*
   exist** (CI excised 2026-06-27, "no CI by design"; the old file-listed ci.yml rule is dead).
   *(Corrected again 2026-08-18, epic-17 W4: the glob this bullet described is gone. S9 moved
   the hook tests out of `hooks/` into `tests/` and retired the `hooks/*.test.sh` glob-pick;
-  `tests/run.sh` now hand-lists all 42 suites by name and discovers nothing.)* Registration
+  `tests/run.sh` now derives its roster from `tests/*.test.sh` at run time, fixit 1.5.1.)* Registration
   coverage for a new hook is partly structural and partly manual. Structural:
   `tests/scripts.test.sh` 4a/4b/4c used to enforce hook↔test pairing and — for an always-on
   wall — that every command in the payload's `hooks/hooks.json` names a file that exists and is

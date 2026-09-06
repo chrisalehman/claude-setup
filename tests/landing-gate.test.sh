@@ -1297,7 +1297,7 @@ expect_contains "16g: …and the suite the impact command derived for it" "fake.
 # the literal string `HEAD` there, and `HEAD` resolves INSIDE the worktree to the worktree's
 # own tip — so the merge-base came back non-empty, the diff came back EMPTY, and every
 # landing reconciled clean with no refusal and no diagnostic. A wall that is off and quiet
-# is indistinguishable from a wall that is passing everything (tests/run.sh:267-272), so the
+# is indistinguishable from a wall that is passing everything (tests/run.sh:359-364), so the
 # inert state is announced. `git bisect`, `git checkout <tag>` and a checkout parked on a
 # sha are all ordinary states for this repository during an integration.
 R16H="$(make_git_wave_repo r16h)"

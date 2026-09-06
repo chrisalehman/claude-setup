@@ -21,7 +21,6 @@
 # symlinked in, everything else a recorder stub).
 #
 # Usage: bash tests/jit.test.sh
-# Registered by name in tests/run.sh (tests/*.test.sh is NOT auto-globbed).
 
 set -uo pipefail
 

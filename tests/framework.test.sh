@@ -523,14 +523,14 @@ done
 # THE COUNT PIN IS RETIRED (fixit 1.5.1, D-1). The roster is tests/*.test.sh read
 # at run time, so a suite count is stale the moment anyone adds a file, and a row
 # pinning one tests the calendar. What is still worth holding is that the scan
-# below read a real tree. The docblock's own "All 55" sentence is stale prose for
-# the same reason and is T4's to correct — together with the needle two rows down,
-# which quotes it.
+# below read a real tree. The docblock's own "All 55" sentence was stale prose for
+# the same reason; T4 corrected it, together with the needle two rows down, which
+# quotes it.
 expect_eq "6b: the docblock scan read the whole tree (not vacuous)" "yes" \
   "$([ "$C1_SUITES" -ge 40 ] && echo yes || echo no)"
 expect_eq "6b: …and none of them carries a private definition" "0" "$C1_REFUSED"
-expect_eq "6b: the docblock says all 55 are clients of this file" "yes" \
-  "$(contains "$C1_DOC" "All 55 suites on the roster are clients of it")"
+expect_eq "6b: the docblock says every suite is a client of this file" "yes" \
+  "$(contains "$C1_DOC" "Every suite on the roster is a client of it")"
 expect_eq "6b: …and that it does not DEFER to a private one" "yes" \
   "$(contains "$C1_DOC" "It does not DEFER")"
 expect_eq "6b: …and the stale claim that 49 suites still carry one is gone" "no" \
