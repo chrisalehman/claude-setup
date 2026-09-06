@@ -171,8 +171,21 @@ expect_match "6: the evidence gate is named with the library it wanted" \
 expect_no_match "7: a wall whose library is intact is not named" \
   "*background-suite-guard*" "$ROWS2"
 
+# THE PARTY THIS LINE NAMES CHANGED AT 1.5.1, and the sentence is the reason. It
+# used to end `run /bionic:setup — repair`, and there is no `repair` verb in
+# setup's argv (`--all`, `--only`, `--list`): the line named a command that could
+# not have worked. A wall that cannot reach its library is a broken install, so
+# the party is the CLI, the same one a missing core dependency takes, and the
+# route is read from the wall's own row in lib/checks.sh rather than pinned as a
+# literal here — a pin that spelled the route again would be the second source
+# the table exists to remove.
+WALL_ROUTE="$( . "$PLUG/scripts/lib/checks.sh" >/dev/null 2>&1; bionic_check_hint wall-library )"
+expect_true "8: the wall's own table row names a repair route (the row below is not vacuous)" \
+  test -n "$WALL_ROUTE"
 expect_match "8: the FIX section carries the repair-phrased line" \
-  "*protect-main*cannot load*git-argv.sh*→ run /bionic:setup — repair*" "$OUT2"
+  "*protect-main*cannot load*git-argv.sh*→ ${WALL_ROUTE}*" "$OUT2"
+expect_no_match "8: …and never setup's phantom repair verb" \
+  "*/bionic:setup — repair*" "$OUT2"
 
 section "Section 3: the second library deleted — all four go red"
 
