@@ -40,9 +40,10 @@
 # be driven must say so rather than pass.
 #
 # HERMETIC. Every runner drive below is against a SCRATCH TREE (the shipped tests/run.sh,
-# byte for byte, with its hand-listed roster replaced by this suite's own probe files) under
-# this suite's own mktemp root, with the pressure ring and clock pinned. Nothing here runs
-# the real roster — that would recurse into this very file.
+# byte for byte, over a tests/ directory holding only this suite's own probe files — the
+# roster is derived from the directory, so nothing needs rewriting) under this suite's own
+# mktemp root, with the pressure ring and clock pinned. Nothing here runs the real roster —
+# that would recurse into this very file.
 #
 # Usage: bash tests/interpreter-pin.test.sh
 

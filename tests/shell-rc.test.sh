@@ -26,7 +26,6 @@
 # bash `[[ == * ]]` in-process.
 #
 # Usage: bash tests/shell-rc.test.sh
-# Registered by name in tests/run.sh (tests/*.test.sh is NOT auto-globbed).
 
 set -uo pipefail
 

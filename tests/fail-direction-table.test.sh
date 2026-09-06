@@ -16,7 +16,6 @@
 # HERMETIC: throwaway git repos under a mktemp'd sandbox, redirected HOME.
 #
 # Usage: bash tests/fail-direction-table.test.sh
-# Registered by name in tests/run.sh (tests/*.test.sh is NOT auto-globbed).
 
 set -uo pipefail
 

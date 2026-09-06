@@ -435,7 +435,7 @@ The spec-controlled battery (#26 decision 1). What exists today and what does no
 
 | piece | what it is | exists today |
 |---|---|---|
-| statement index | one row per canon statement; per adapter a guard cell and a certificate cell; an empty cell is a visible hole (#23 decision 5) | **no.** Today's roster is by kind: `tests/run.sh` hand-lists 49 suites and pins `grep -c '^run "' == ls tests/*.test.sh` (ML T6) |
+| statement index | one row per canon statement; per adapter a guard cell and a certificate cell; an empty cell is a visible hole (#23 decision 5) | **no.** Today's roster is by kind: `tests/run.sh` derives its roster from `tests/*.test.sh` at run time, with a roster wall in place of a hand list (fixit 1.5.1, ML T6) |
 | probe list | the canon's named provocations, one per observed failure (§7) | **partly.** The drill's `probes.tsv` holds omnigent's probes (ML B4); the four rung-3 probes are named in #24 but not yet rows in any runner |
 | climb runner, omnigent | the drill (ML B4) | **yes**, for 0.11.0; never run on 0.12.0 (PL "Version caveat") |
 | climb runner, Claude plugin | a live provocation runner for seats under the plugin | **no** (#23 §"Handed onward"; ML item 3) |

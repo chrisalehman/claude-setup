@@ -11,8 +11,8 @@
 # `lib_run` harness that sources a file and calls a function. This subject is an
 # EXECUTED script whose whole behavior is mutation of a real git repository, and
 # its fixture is a scratch repo rather than a fixture root plus a stubbed PATH.
-# Sharing a file would mean two fixture regimes under one header; a second
-# hand-listed `run` line in tests/run.sh is the cheaper half of that trade.
+# Sharing a file would mean two fixture regimes under one header, so a second
+# file of its own — free to add since fixit 1.5.1 — is the cheaper half of that trade.
 #
 # WHAT THE CONTRACT IS. D4 (ratified 2026-08-17 with Chris's universality
 # amendment): parallel writers work in worktrees a DISPATCHER created, creation
@@ -40,7 +40,6 @@
 # production file is never touched.
 #
 # Usage: bash tests/spawn-worktree.test.sh
-# Registered by name in tests/run.sh (tests/*.test.sh is NOT auto-globbed).
 
 set -uo pipefail
 
