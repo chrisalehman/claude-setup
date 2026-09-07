@@ -1075,4 +1075,161 @@ for _r in "${REPO}"/agents/*.md; do
 done
 expect_eq "63b: …and every generated role file carries it" "0" "$S13_SPELL_MISSING"
 
+section "Section 11: the plugin renders whole — the skill file is a build output (wave-02 AC-1, AC-6, AC-8)"
+
+# WHAT THIS SECTION OWNS. Until wave-02 S2a, `skills/canonical-sdlc/SKILL.md` was
+# hand-written and four of its passages were hand-COPIED into role files under markers
+# that said "canonical copy of skills/canonical-sdlc/SKILL.md §…" — a promise, with no
+# test between the copies. r3's census found all four, and the irony that one of them IS
+# the agreement-test obligation. The repair is not another pairwise diff arm: the skill
+# file became the renderer's third unit and the four passages became blocks, so the
+# copies are injections and cannot disagree. This section pins BOTH halves of that —
+# that `--check` now sees the skill file at all (assertions 64-66, the defect control),
+# and that each passage really is one text reaching every surface (67-71).
+#
+# ANTI-VACUITY. 64 is the positive control 65 and 66 mean nothing without: a clone that
+# ALREADY failed --check would make any "the edit turned it red" arm true for free. The
+# byte-identity arms (67-71) each assert against a NON-EMPTY extraction, because two
+# empty strings are equal and an extractor that found nothing would otherwise pass every
+# one of them.
+#
+# HERMETIC. The clone is a copy of the working tree's render inputs and outputs under
+# the same mktemp dir the rest of this file uses; render.sh derives every directory from
+# its own location, so the clone renders against its own outputs and the repo is never
+# written.
+
+RENDERED_MANIFEST="${REPO}/payload/integrity/rendered.sha256"
+BLOCK_DIR="${REPO}/agents-src/blocks"
+SKILL_TMPL="${REPO}/agents-src/templates/skills/canonical-sdlc/SKILL.md.tmpl"
+OPRULES="${REPO}/skills/canonical-sdlc/operational-rules.md"
+
+expect_true "64a: the skill file has a template (it is a render target, not a hand-written file)" \
+  test -f "$SKILL_TMPL"
+expect_true "64b: the renderer's unit table names the skill unit" \
+  grep -qF 'agents-src/templates/skills/canonical-sdlc|skills/canonical-sdlc' "$RENDER_SH"
+
+# clone_render_tree <dest> — the render inputs and outputs, and nothing else.
+clone_render_tree() {
+  local dest="$1"
+  mkdir -p "$dest/payload/commands" "$dest/payload/.claude-plugin" "$dest/payload/integrity" \
+           "$dest/skills/canonical-sdlc" "$dest/agents" || return 1
+  cp -R "${REPO}/agents-src" "$dest/agents-src" || return 1
+  cp "${REPO}"/agents/*.md "$dest/agents/" || return 1
+  cp "${REPO}"/payload/commands/*.md "$dest/payload/commands/" || return 1
+  cp "${REPO}/payload/.claude-plugin/plugin.json" "$dest/payload/.claude-plugin/" || return 1
+  cp "${REPO}/skills/canonical-sdlc/SKILL.md" "$dest/skills/canonical-sdlc/" || return 1
+  [ -f "$RENDERED_MANIFEST" ] && cp "$RENDERED_MANIFEST" "$dest/payload/integrity/"
+  return 0
+}
+
+CLONE="$TMP/render-clone"
+if clone_render_tree "$CLONE"; then
+  ok "64: a clone of the render tree is built (the fixture 65 and 66 mutate)"
+else
+  no "64: a clone of the render tree is built (the fixture 65 and 66 mutate)" "dest: $CLONE"
+fi
+
+# THE POSITIVE CONTROL. An unedited clone must be clean, or every "the edit turned it
+# red" arm below is true for a reason that has nothing to do with the edit.
+if bash "$CLONE/agents-src/render.sh" --check >/dev/null 2>&1; then
+  ok "65: the unedited clone passes --check (the control the next two arms need)"
+else
+  no "65: the unedited clone passes --check (the control the next two arms need)" \
+     "run 'bash $CLONE/agents-src/render.sh --check' for the diff"
+fi
+
+# THE DEFECT CONTROL FOR AC-1: one hand edit to the rendered skill file.
+sed -i.bak 's/^# Canonical SDLC$/# Canonical SDLC (hand-edited)/' \
+  "$CLONE/skills/canonical-sdlc/SKILL.md" 2>/dev/null
+rm -f "$CLONE/skills/canonical-sdlc/SKILL.md.bak"
+CHECK_OUT="$(bash "$CLONE/agents-src/render.sh" --check 2>&1)"
+CHECK_RC=$?
+expect_ne "66a: one hand edit to skills/canonical-sdlc/SKILL.md turns --check red" "0" "$CHECK_RC"
+expect_match "66b: …and the diff names the file it rejected" \
+  "*skills/canonical-sdlc/SKILL.md*" "$CHECK_OUT"
+
+# THE SAME FOR THE WIDENED MANIFEST'S OTHER HALF: a command page is a rendered file too,
+# and before this slice the manifest answered only for the six role files.
+CLONE2="$TMP/render-clone-2"
+clone_render_tree "$CLONE2" || true
+printf '\nhand-edited\n' >> "$CLONE2/payload/commands/help.md"
+CHECK_OUT2="$(bash "$CLONE2/agents-src/render.sh" --check 2>&1)"
+expect_ne "67a: one hand edit to a rendered command page turns --check red" "0" "$?"
+expect_match "67b: …and the diff names that page" "*commands/help.md*" "$CHECK_OUT2"
+
+# ── The four passages: one text, every surface ──────────────────────────────
+#
+# marker_span reads the injection markers render.sh writes, so the extraction follows the
+# renderer's own contract rather than a second guess at where a passage starts.
+marker_span() {  # <file> <MARKER-NAME>
+  awk -v m="$2" '
+    $0 == "<!-- " m "-BEGIN -->" { inp = 1; next }
+    $0 == "<!-- " m "-END -->"   { inp = 0 }
+    inp { print }
+  ' "$1" 2>/dev/null
+}
+
+# same_everywhere <n> <label> <block-file> <marker> <surface...>
+same_everywhere() {
+  local n="$1" label="$2" blockfile="$3" marker="$4"; shift 4
+  local body surface span bad=""
+  body="$(cat "$blockfile" 2>/dev/null)"
+  if [ -z "$body" ]; then
+    no "${n}: ${label}" "the block ${blockfile##*/} is missing or empty — an empty pin proves nothing"
+    return
+  fi
+  for surface in "$@"; do
+    span="$(marker_span "$surface" "$marker")"
+    [ "$span" = "$body" ] || bad="${bad} ${surface#${REPO}/}"
+  done
+  if [ -z "$bad" ]; then
+    ok "${n}: ${label}"
+  else
+    no "${n}: ${label}" "differs from ${blockfile##*/} in:${bad} — run 'bash agents-src/render.sh'"
+  fi
+}
+
+same_everywhere 68 "the auditor mandate is one text in the block, the skill file and agents/auditor.md" \
+  "${BLOCK_DIR}/auditor-mandate.md" "AUDITOR-MANDATE" "$SKILL_MD" "${REPO}/agents/auditor.md"
+
+same_everywhere 69 "the critic prompt template is one text in the block, the skill file and agents/critic.md" \
+  "${BLOCK_DIR}/critic-template.md" "CRITIC-TEMPLATE" "$SKILL_MD" "${REPO}/agents/critic.md"
+
+same_everywhere 70 "the duplication axis is one text in the block, the skill file and agents/critic.md" \
+  "${BLOCK_DIR}/duplication-axis.md" "DUPLICATION-AXIS" "$SKILL_MD" "${REPO}/agents/critic.md"
+
+same_everywhere 71 "the terminal-disposition rule is one text in the block and the skill file" \
+  "${BLOCK_DIR}/terminal-disposition.md" "TERMINAL-DISPOSITION" "$SKILL_MD"
+
+same_everywhere 72 "the orchestrator's dispatch body is one text in the block and the skill file" \
+  "${BLOCK_DIR}/orchestrator-dispatch.md" "ORCHESTRATOR-DISPATCH" "$SKILL_MD"
+
+# The duplicate that had no renderer at all: two hand-written files carrying one span.
+expect_true "73a: operational-rules.md no longer carries its own copy of the rule" \
+  test -f "$OPRULES"
+expect_absent "73b: …the TERMDISP span is gone from it" "TERMDISP" "$(cat "$OPRULES")"
+expect_contains "73c: …and it points at the block instead" \
+  "agents-src/blocks/terminal-disposition.md" "$(cat "$OPRULES")"
+
+# ── The manifest covers every rendering (AC-8) ──────────────────────────────
+expect_true "74a: payload/integrity/rendered.sha256 exists" test -f "$RENDERED_MANIFEST"
+expect_false "74b: payload/integrity/agents.sha256 is gone" \
+  test -f "${REPO}/payload/integrity/agents.sha256"
+MANIFEST_BODY="$(grep -v '^#' "$RENDERED_MANIFEST" 2>/dev/null | grep -v '^[[:space:]]*$')"
+expect_eq "74c: it carries one row per rendered file (six roles, four commands, the skill)" \
+  "11" "$(printf '%s\n' "$MANIFEST_BODY" | wc -l | tr -d ' ')"
+expect_contains "74d: …including the skill file, plugin-root-relative" \
+  "  skills/canonical-sdlc/SKILL.md" "$MANIFEST_BODY"
+expect_contains "74e: …and the command pages, plugin-root-relative" \
+  "  commands/help.md" "$MANIFEST_BODY"
+expect_contains "74f: …and the role files, plugin-root-relative" \
+  "  agents/auditor.md" "$MANIFEST_BODY"
+
+# The one runtime consumer reads the file the renderer now writes. Named here because a
+# rename that missed it would leave doctor answering `unknown` on every machine.
+expect_contains "75: payload/scripts/lib/detect.sh reads integrity/rendered.sha256" \
+  'integrity/rendered.sha256' "$(cat "$DETECT_SH")"
+expect_absent "75b: …and names the deleted manifest nowhere" \
+  'integrity/agents.sha256' "$(cat "$DETECT_SH")"
+
 finish

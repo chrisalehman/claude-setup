@@ -1,0 +1,15 @@
+# GENERATED — sha256 of every rendered plugin file, plugin-root-relative.
+# Written by agents-src/render.sh alongside the finals themselves; regenerate with
+# `bash agents-src/render.sh`. /bionic:doctor reads it to report whether an installed
+# machine's rendered files are stock or locally modified.
+d6f887e0c18a1f418754aaf70821b244af044873c3ba415961cb3e55c0ea4ca9  agents/auditor.md
+502661c6f4060581572d69043541e270cd16899b224f2c273b5e63b9f021fdce  agents/critic.md
+b0a148cc49ed5b54ced46f3769714195e2cd1e002304cdce2fe027d9bfb3175e  agents/implementor.md
+acd602ee9276cff7d1fa5f39f1bd05349fa926a96e6feb9c16f6ce4edc8e0e76  agents/researcher.md
+a9522edbcd28d03507f8751c650c23c8431309b047300b0d5a331a76458f2906  agents/senior-implementor.md
+6db9b5148a5b4ac15ee9388a679dac87cfa40f53b4406e1532d28d78330f52dc  agents/test-runner.md
+99076ea38209af80a5ed931b3360252fe18b1c418383c8c7c454e203f431f6bc  commands/doctor.md
+4d8a8756ed06509a0d0413641f598026afd293b9d1931f83e77e3e46192d29f4  commands/help.md
+ba27a4cebbb30e452484f5a9d0a7dd40d594d62a4ce820daf7bd57a83b507ef7  commands/remove.md
+d75fb7c4bd3ed038cfed5fe937ec30f828f640e11047343614a848c2b79e31ff  commands/setup.md
+9bfffd3ab1f014fc8b7beb786cf510b41e60de25a7a4f7963fd5d6d52c62a1e5  skills/canonical-sdlc/SKILL.md
