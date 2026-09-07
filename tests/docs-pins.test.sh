@@ -305,10 +305,12 @@ expect_nonempty "22: …and the disagreement filter reports it as a disagreement
 #   (c) the `BIONIC_TEST_JOBS=<test_jobs>` sentence in `agents-src/blocks/survival.md`,
 #       which must reach every dispatched writer — so it is asserted in the BLOCK and
 #       again in all six rendered `agents/*.md`, which is what proves the render ran.
-#   (d) the `/clear` paragraph, which lives in TWO channels by design (a rules file
-#       lands on the next read, a role file on the next session — CLAUDE.md §Path-scoped
-#       rules). Two copies of a paragraph is exactly the drift a pin exists for, so the
-#       two are compared BYTE FOR BYTE rather than each being spot-checked.
+#   (d) the `/clear` paragraph, which lives in ONE canonical copy — `agents-src/blocks/
+#       survival.md`, rendered into all six `agents/*.md` — since S7 (AC-13) retired the
+#       second copy that used to live in `.claude/rules/agent-discipline.md`. Two copies
+#       of a paragraph is exactly the drift a pin used to exist for; now the pin is over
+#       the SINGLE home instead: the block carries it, the six role files match it
+#       byte-for-byte, and the rules file is asserted to carry it no longer.
 #
 # ANTI-VACUITY, same discriminate-a-doctored-copy pattern §1 uses: every extractor here
 # is re-run against a mutated copy and must report the mutation.
@@ -402,13 +404,19 @@ else
   no "13: agents-src/blocks/survival.md carries the '/clear does not kill agents' paragraph" \
      "file: $SURVIVAL_BLOCK"
 fi
-if [ -n "$CLEAR_RULES" ]; then
-  ok "14: .claude/rules/agent-discipline.md carries the same paragraph"
+
+# 14: ONE COPY (S7, AC-13) — the second copy that used to live in the rules file is
+# retired, not re-homed a third time (r1 §Table 3, AD18: "delete the rules copy. Do not
+# port it to the orchestrator role — that would make a fourth"). A bare absence check is
+# a vacuous-negative risk (tests/lib/assert.sh's own docblock on `expect_empty`); it is
+# paired here with assertion 13's POSITIVE result from the very same `clear_paragraph`
+# extractor, on the sibling file, moments above — proof the extractor itself works.
+if [ -z "$CLEAR_RULES" ]; then
+  ok "14: .claude/rules/agent-discipline.md no longer carries a '/clear' paragraph copy (one copy only)"
 else
-  no "14: .claude/rules/agent-discipline.md carries the same paragraph" "file: $AGENT_RULES"
+  no "14: .claude/rules/agent-discipline.md no longer carries a '/clear' paragraph copy (one copy only)" \
+     "file: $AGENT_RULES still matches the extractor — a second copy survived the move"
 fi
-expect_eq "15: the two copies of the '/clear' paragraph are byte-identical" \
-  "$CLEAR_BLOCK" "$CLEAR_RULES"
 
 PINS_CLEAR_MISSING=""
 for role in auditor critic implementor researcher senior-implementor test-runner; do
@@ -416,11 +424,22 @@ for role in auditor critic implementor researcher senior-implementor test-runner
     || PINS_CLEAR_MISSING="${PINS_CLEAR_MISSING} ${role}"
 done
 if [ -z "$PINS_CLEAR_MISSING" ]; then
-  ok "16: all six rendered agents/*.md carry that paragraph byte-identically"
+  ok "15: all six rendered agents/*.md carry that paragraph byte-identically"
 else
-  no "16: all six rendered agents/*.md carry that paragraph byte-identically" \
+  no "15: all six rendered agents/*.md carry that paragraph byte-identically" \
      "differs or missing in:${PINS_CLEAR_MISSING} — run 'bash agents-src/render.sh'"
 fi
+
+# 16: CENSUS — no THIRD home exists anywhere in the tree. Assertion 14 proves the one
+# named former home is clean; this proves nothing else picked the paragraph up either,
+# the same construction-guarded-vs-enforcement-guarded distinction r3 §Part 2 item 18
+# draws for AD18's other two copies.
+CLEAR_MARKER='`/clear` does not kill agents.'
+CLEAR_HOMES_EXPECTED="agents-src/blocks/survival.md agents/auditor.md agents/critic.md agents/implementor.md agents/researcher.md agents/senior-implementor.md agents/test-runner.md"
+CLEAR_HOMES_ACTUAL="$(cd "$REPO" && /usr/bin/grep -rl -F -- "$CLEAR_MARKER" \
+  agents-src agents .claude payload skills 2>/dev/null | sort | tr '\n' ' ' | sed 's/ $//')"
+expect_eq "16: the '/clear' marker exists ONLY at its seven expected homes (no third copy anywhere)" \
+  "$(printf '%s\n' $CLEAR_HOMES_EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')" "$CLEAR_HOMES_ACTUAL"
 
 # --- Anti-vacuity: the same extractors must report a mutation ---
 
@@ -445,11 +464,14 @@ else
   ok "18: a doctored survival.md fails the BIONIC_TEST_JOBS pin (pin discriminates)"
 fi
 
-anchor "$AGENT_RULES" 'the address that survives' 1
-DOCTORED_RULES="$TMP/rules-mutated.md"
-sed 's/the address that survives/the address that dies/' "$AGENT_RULES" > "$DOCTORED_RULES"
-expect_ne "19: a doctored agent-discipline.md reads as a different paragraph (pin discriminates)" \
-  "$CLEAR_BLOCK" "$(clear_paragraph "$DOCTORED_RULES")"
+# 19: mutation target moved to the canonical copy (S7, AC-13) — the rules file no
+# longer carries this paragraph at all, so mutating it would anchor on nothing (the
+# "anchor MOVED" failure `anchor()`'s own docblock warns against) and prove nothing.
+anchor "$SURVIVAL_BLOCK" 'the address that survives' 1
+DOCTORED_BLOCK2="$TMP/survival-clear-mutated.md"
+sed 's/the address that survives/the address that dies/' "$SURVIVAL_BLOCK" > "$DOCTORED_BLOCK2"
+expect_ne "19: a doctored survival.md reads as a different '/clear' paragraph (pin discriminates)" \
+  "$CLEAR_BLOCK" "$(clear_paragraph "$DOCTORED_BLOCK2")"
 
 # ── SECTION 3 — SCHED (spec AC-29/AC-30/AC-31/AC-38, `.bionic/docs/plans/wave-bionic-1.4.0-update/`).
 #
@@ -1074,5 +1096,162 @@ for _r in "${REPO}"/agents/*.md; do
   has_pin "$_r" "$PIN_S13_SPELLING" || S13_SPELL_MISSING=$((S13_SPELL_MISSING + 1))
 done
 expect_eq "63b: …and every generated role file carries it" "0" "$S13_SPELL_MISSING"
+
+section "Section 11: the plugin renders whole — the skill file is a build output (wave-02 AC-1, AC-6, AC-8)"
+
+# WHAT THIS SECTION OWNS. Until wave-02 S2a, `skills/canonical-sdlc/SKILL.md` was
+# hand-written and four of its passages were hand-COPIED into role files under markers
+# that said "canonical copy of skills/canonical-sdlc/SKILL.md §…" — a promise, with no
+# test between the copies. r3's census found all four, and the irony that one of them IS
+# the agreement-test obligation. The repair is not another pairwise diff arm: the skill
+# file became the renderer's third unit and the four passages became blocks, so the
+# copies are injections and cannot disagree. This section pins BOTH halves of that —
+# that `--check` now sees the skill file at all (assertions 64-66, the defect control),
+# and that each passage really is one text reaching every surface (67-71).
+#
+# ANTI-VACUITY. 64 is the positive control 65 and 66 mean nothing without: a clone that
+# ALREADY failed --check would make any "the edit turned it red" arm true for free. The
+# byte-identity arms (67-71) each assert against a NON-EMPTY extraction, because two
+# empty strings are equal and an extractor that found nothing would otherwise pass every
+# one of them.
+#
+# HERMETIC. The clone is a copy of the working tree's render inputs and outputs under
+# the same mktemp dir the rest of this file uses; render.sh derives every directory from
+# its own location, so the clone renders against its own outputs and the repo is never
+# written.
+
+RENDERED_MANIFEST="${REPO}/payload/integrity/rendered.sha256"
+BLOCK_DIR="${REPO}/agents-src/blocks"
+SKILL_TMPL="${REPO}/agents-src/templates/skills/canonical-sdlc/SKILL.md.tmpl"
+OPRULES="${REPO}/skills/canonical-sdlc/operational-rules.md"
+
+expect_true "64a: the skill file has a template (it is a render target, not a hand-written file)" \
+  test -f "$SKILL_TMPL"
+expect_true "64b: the renderer's unit table names the skill unit" \
+  grep -qF 'agents-src/templates/skills/canonical-sdlc|skills/canonical-sdlc' "$RENDER_SH"
+
+# clone_render_tree <dest> — the render inputs and outputs, and nothing else.
+clone_render_tree() {
+  local dest="$1"
+  mkdir -p "$dest/payload/commands" "$dest/payload/.claude-plugin" "$dest/payload/integrity" \
+           "$dest/skills/canonical-sdlc" "$dest/agents" || return 1
+  cp -R "${REPO}/agents-src" "$dest/agents-src" || return 1
+  cp "${REPO}"/agents/*.md "$dest/agents/" || return 1
+  cp "${REPO}"/payload/commands/*.md "$dest/payload/commands/" || return 1
+  cp "${REPO}/payload/.claude-plugin/plugin.json" "$dest/payload/.claude-plugin/" || return 1
+  cp "${REPO}/skills/canonical-sdlc/SKILL.md" "$dest/skills/canonical-sdlc/" || return 1
+  [ -f "$RENDERED_MANIFEST" ] && cp "$RENDERED_MANIFEST" "$dest/payload/integrity/"
+  return 0
+}
+
+CLONE="$TMP/render-clone"
+if clone_render_tree "$CLONE"; then
+  ok "64: a clone of the render tree is built (the fixture 65 and 66 mutate)"
+else
+  no "64: a clone of the render tree is built (the fixture 65 and 66 mutate)" "dest: $CLONE"
+fi
+
+# THE POSITIVE CONTROL. An unedited clone must be clean, or every "the edit turned it
+# red" arm below is true for a reason that has nothing to do with the edit.
+if bash "$CLONE/agents-src/render.sh" --check >/dev/null 2>&1; then
+  ok "65: the unedited clone passes --check (the control the next two arms need)"
+else
+  no "65: the unedited clone passes --check (the control the next two arms need)" \
+     "run 'bash $CLONE/agents-src/render.sh --check' for the diff"
+fi
+
+# THE DEFECT CONTROL FOR AC-1: one hand edit to the rendered skill file.
+sed -i.bak 's/^# Canonical SDLC$/# Canonical SDLC (hand-edited)/' \
+  "$CLONE/skills/canonical-sdlc/SKILL.md" 2>/dev/null
+rm -f "$CLONE/skills/canonical-sdlc/SKILL.md.bak"
+CHECK_OUT="$(bash "$CLONE/agents-src/render.sh" --check 2>&1)"
+CHECK_RC=$?
+expect_ne "66a: one hand edit to skills/canonical-sdlc/SKILL.md turns --check red" "0" "$CHECK_RC"
+expect_match "66b: …and the diff names the file it rejected" \
+  "*skills/canonical-sdlc/SKILL.md*" "$CHECK_OUT"
+
+# THE SAME FOR THE WIDENED MANIFEST'S OTHER HALF: a command page is a rendered file too,
+# and before this slice the manifest answered only for the six role files.
+CLONE2="$TMP/render-clone-2"
+clone_render_tree "$CLONE2" || true
+printf '\nhand-edited\n' >> "$CLONE2/payload/commands/help.md"
+CHECK_OUT2="$(bash "$CLONE2/agents-src/render.sh" --check 2>&1)"
+expect_ne "67a: one hand edit to a rendered command page turns --check red" "0" "$?"
+expect_match "67b: …and the diff names that page" "*commands/help.md*" "$CHECK_OUT2"
+
+# ── The four passages: one text, every surface ──────────────────────────────
+#
+# marker_span reads the injection markers render.sh writes, so the extraction follows the
+# renderer's own contract rather than a second guess at where a passage starts.
+marker_span() {  # <file> <MARKER-NAME>
+  awk -v m="$2" '
+    $0 == "<!-- " m "-BEGIN -->" { inp = 1; next }
+    $0 == "<!-- " m "-END -->"   { inp = 0 }
+    inp { print }
+  ' "$1" 2>/dev/null
+}
+
+# same_everywhere <n> <label> <block-file> <marker> <surface...>
+same_everywhere() {
+  local n="$1" label="$2" blockfile="$3" marker="$4"; shift 4
+  local body surface span bad=""
+  body="$(cat "$blockfile" 2>/dev/null)"
+  if [ -z "$body" ]; then
+    no "${n}: ${label}" "the block ${blockfile##*/} is missing or empty — an empty pin proves nothing"
+    return
+  fi
+  for surface in "$@"; do
+    span="$(marker_span "$surface" "$marker")"
+    [ "$span" = "$body" ] || bad="${bad} ${surface#${REPO}/}"
+  done
+  if [ -z "$bad" ]; then
+    ok "${n}: ${label}"
+  else
+    no "${n}: ${label}" "differs from ${blockfile##*/} in:${bad} — run 'bash agents-src/render.sh'"
+  fi
+}
+
+same_everywhere 68 "the auditor mandate is one text in the block, the skill file and agents/auditor.md" \
+  "${BLOCK_DIR}/auditor-mandate.md" "AUDITOR-MANDATE" "$SKILL_MD" "${REPO}/agents/auditor.md"
+
+same_everywhere 69 "the critic prompt template is one text in the block, the skill file and agents/critic.md" \
+  "${BLOCK_DIR}/critic-template.md" "CRITIC-TEMPLATE" "$SKILL_MD" "${REPO}/agents/critic.md"
+
+same_everywhere 70 "the duplication axis is one text in the block, the skill file and agents/critic.md" \
+  "${BLOCK_DIR}/duplication-axis.md" "DUPLICATION-AXIS" "$SKILL_MD" "${REPO}/agents/critic.md"
+
+same_everywhere 71 "the terminal-disposition rule is one text in the block and the skill file" \
+  "${BLOCK_DIR}/terminal-disposition.md" "TERMINAL-DISPOSITION" "$SKILL_MD"
+
+same_everywhere 72 "the orchestrator's dispatch body is one text in the block and the skill file" \
+  "${BLOCK_DIR}/orchestrator-dispatch.md" "ORCHESTRATOR-DISPATCH" "$SKILL_MD"
+
+# The duplicate that had no renderer at all: two hand-written files carrying one span.
+expect_true "73a: operational-rules.md no longer carries its own copy of the rule" \
+  test -f "$OPRULES"
+expect_absent "73b: …the TERMDISP span is gone from it" "TERMDISP" "$(cat "$OPRULES")"
+expect_contains "73c: …and it points at the block instead" \
+  "agents-src/blocks/terminal-disposition.md" "$(cat "$OPRULES")"
+
+# ── The manifest covers every rendering (AC-8) ──────────────────────────────
+expect_true "74a: payload/integrity/rendered.sha256 exists" test -f "$RENDERED_MANIFEST"
+expect_false "74b: payload/integrity/agents.sha256 is gone" \
+  test -f "${REPO}/payload/integrity/agents.sha256"
+MANIFEST_BODY="$(grep -v '^#' "$RENDERED_MANIFEST" 2>/dev/null | grep -v '^[[:space:]]*$')"
+expect_eq "74c: it carries one row per rendered file (six roles, four commands, the skill)" \
+  "11" "$(printf '%s\n' "$MANIFEST_BODY" | wc -l | tr -d ' ')"
+expect_contains "74d: …including the skill file, plugin-root-relative" \
+  "  skills/canonical-sdlc/SKILL.md" "$MANIFEST_BODY"
+expect_contains "74e: …and the command pages, plugin-root-relative" \
+  "  commands/help.md" "$MANIFEST_BODY"
+expect_contains "74f: …and the role files, plugin-root-relative" \
+  "  agents/auditor.md" "$MANIFEST_BODY"
+
+# The one runtime consumer reads the file the renderer now writes. Named here because a
+# rename that missed it would leave doctor answering `unknown` on every machine.
+expect_contains "75: payload/scripts/lib/detect.sh reads integrity/rendered.sha256" \
+  'integrity/rendered.sha256' "$(cat "$DETECT_SH")"
+expect_absent "75b: …and names the deleted manifest nowhere" \
+  'integrity/agents.sha256' "$(cat "$DETECT_SH")"
 
 finish

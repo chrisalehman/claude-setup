@@ -338,23 +338,9 @@ SKILL.md carries the terminal-disposition rule and names the report's ten parts;
 authoring detail — what each part is for, and the bound that keeps the whole thing from
 growing back into ceremony.
 
-<!-- TERMDISP-BEGIN -->
-> Abolish "continuation candidate." Every finding gets exactly one of three terminal
-> dispositions at wave close:
-> 1. **DO-NOW** — folded into the closing wave.
-> 2. **ACCEPT-CLOSED** — ruled won't-fix, recorded beside its reasoning, and never
->    carried forward again. An accepted residual is knowledge, not work.
-> 3. **PROMOTE** — kept only with one of two homes: **(a) a trigger** — the named
->    EVENT that reactivates it ("diagnose the flake when it next fires — output now
->    preserved"), or **(b) a charter** — promotion into a named future effort (an
->    ideas/ seed or epic charter) by the user's explicit materiality ruling at close.
->    A charter costs a decision and gives the work its own document that competes
->    for prioritization openly. What stays forbidden is the homeless deferral: an
->    item on a wave's continuation list with no decision, no home, no identity —
->    that is what schedules cleanup waves by momentum. (Amended 2026-08-16 on
->    Chris's catch: the original trigger-only form had no bin for legitimately
->    deferred major work — the plugin conversion itself is the proof case.)
-<!-- TERMDISP-END -->
+The rule itself is not restated here. It lives once, in `agents-src/blocks/terminal-disposition.md`,
+and is rendered into `SKILL.md` §Step 9 — read it there. A second copy in this file was the
+duplicate wave-02 removed (spec AC-6).
 
 **The report is one turn.** Not a document, not a file the user has to open — it is the
 close-out message itself, sent once, at Step 9. A close-out that spans multiple turns or
