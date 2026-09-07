@@ -167,76 +167,70 @@ Committing is a cross-cutting rhythm (~once per step), not a numbered step. Upda
 3. **Infer the flags.** `language` from repo files; `surface_type`/`has_ui` from the request; `multi_agent` defaults **true** (infer `false` only when there is genuinely nothing to offload — never key it off an installed plugin catalog, which silently disables the dispatched-task ledger guard); `deploy_target` **defaults to `n/a` and is never inferred** — a live surface exists only where the user names one, in the request or at this step's confirmation, and deploy-shaped signals in the repo are not that naming; `cleanup_on_finish` true; `use_worktree` false; `integration_branch` from the epic plan, else the current mainline, else `main` — print it as `unknown` rather than dropping it; `model_plan` is mechanical, never invented or recalled from memory: the orchestrator tier is the detected session model, and every other tier (implementor, senior-implementor, researcher, test-runner, auditor, critic) is read verbatim from that role's `model:` + `effort:` frontmatter in the rendered role files — `agents/*.md` in this repo, or `${CLAUDE_PLUGIN_ROOT}/agents/*.md` for an installed run.
 4. **Derive the walk requirement.** From the declared surface flags: a surface an agent can open and drive → `walk: required`; nothing drivable → `walk: exempt`. It prints in the confirmation display and is recorded as plan-frontmatter `walk:`. **Exemptions derive from declared configuration and are ratified at Step 0, never invented mid-run** — there is no mid-run `n/a`, and the Verify gate reads an absent or unrecognized key as `required`, so an omission never becomes an exemption.
 5. **Derive the Verification Matrix.** One row per acceptance criterion. Tier defaults: user-visible behavior → **T3**; engine-divergent → **T2 both engines** plus **T3** for the user-visible AC; pure substrate with no runtime surface → **T1/T2** with a one-line justification; perceptual fidelity → **T3**, T4 available; docs → **T0/none**. A criterion whose only evidence is a lifecycle artifact — a close-out report, `continuation.md`, an ADR — is a Step-9 checklist item, never a matrix row: it is a property of the report Step 9 writes, not a product behaviour the gate can validate mid-run. Print it under a `close-out obligations:` line in the confirmation display instead.
-6. **Present the confirmation display in full, in the layout below.** Every section, every flag, every inference rationale, every matrix row, the `integration-branch:` line. Never elide, sample, summarize, defer, or restate it as prose — the user is approving exactly what they can see, and an abbreviated display invalidates the confirmation. Print every matrix row even past 12 ACs; a matrix is precisely what must not be sampled. An unknown value prints as `unknown` rather than dropping its line.
+6. **Present the confirmation display in full, in the layout below.** Settings only — no matrix, no per-line inference rationale, no hooks-ok line, no slug line, no "at risk" lines; the Verification Matrix renders at Step 3 instead (`## Step-3 card`). Never elide, sample, summarize, defer, or restate it as prose — the user is approving exactly what they can see. An unknown value prints as `unknown` rather than dropping its line. Branches always carries both the `working` and the `integration` line. Omit Seed when no document seeded the run, and Warnings when there is nothing to warn about; every other section always prints, in the order shown.
 
 ```
-═══ Plan Configuration — confirm before Step 1 ═══
-environment:
-  bionic-root:  <abs path>/.bionic                   [verified | MISSING]
-  docs-root:    .bionic/docs                         [default | from config.yaml]
-  bionic-tmp:   <abs path>/.bionic/tmp               [ready]
-  hooks:        evidence-gate, governing-skill       [installed+executable | <what is wrong>]
+Step 0 · Plan Configuration
 
-slug: <wave-NN-slug | epic-NN-slug | incident-NNNN-slug>
+  Purpose
+    <one paragraph: what this run ships, in plain language>
 
-Triple:                          [the run's shaping decision]
-  intent:  <value>               [inferred: <rationale — cite the machinery test for build/bugfix>]
-  rigor:   <value>               [inferred: <rationale — name the binding floor>]
-  scale:   <value>               [inferred: <rationale — why not the neighbouring scales>]
+  Seed                                     (only when a document seeded the run)
+    brief         <path>  (rev <n>, <date>)
+    source        <path>  (cherry-picks for <theme>)
 
-  floor derivation:  scale default <v> · intent floor <v> · flag floor <v> · project floor <v>
-                     · epic floor <v> → effective <v> = MAX
+  Run
+    intent        <value>
+    rigor         <value>  (<scale default | overridden>)
+    scale         <value>
+    name          <wave-NN-slug | epic-NN-slug | incident-NNNN-slug>
 
-integration-branch: <name>       [<source: epic plan | current mainline | main> — Step 8 merges here]
+  Branches
+    working       <branch>          (from <base branch> @ <sha>)
+    integration   <branch>          (Step 8 merges here)
 
-resources:                       [probed at this step — the ceiling every dispatch batch is measured against]
-  cores: <n>  mem_gb: <n>  disk_free_gb: <n>  load_1m: <f>  os: <macos | linux>
-  parallel-budget: writers=<n> suites=<n> worktrees=<n> test_jobs=<n> source=<probe | override>
+  Paths
+    project       <abs path>
+    docs          <path>            (default | from config.yaml)
+    tmp           <path>            (default)
+    archive       <path>            (default)
+    spec          <path>            (Step 2 writes)
+    plan          <path>            (Step 3 writes)
+    record        <path>            (evidence)
 
-Discriminator flags:
-  surface_type:    <value>      [inferred: <evidence>]
-  language:        <value>      [inferred: <evidence>]
-  has_ui:          <value>      [inferred: <evidence>]
-  multi_agent:     <value>      [inferred: <evidence>]
-  deploy_target:   <value>      [n/a unless you name a live surface — never inferred]
+  Machine
+    budget        <n> writers · <n> suites · <n> worktrees · <n> test jobs
+    probe         <n> cores · <n> GB · <n> GB free · load <f>
 
-Opt-in flags:
-  cleanup_on_finish: <value>    [<consequence at Step 8>]
-  use_worktree:      <value>    [<why isolation is or is not needed>]
+  Shape
+    surface       <value>
+    agents        <multi-agent, tiered dispatch | single-thread>
+    deploy        <value>
+    worktree      <value>
+    cleanup       <value>
 
-Walk requirement:                [Step 5 opens with it — decided here, no mid-run exemption]
-  walk: <required | exempt>     [derived: <which surface flags — what an agent would open>]
+  Gates
+    walk          <required | exempt>
+    interview     <required | waived (<who or why>)>
 
-Design interview:                [Step 2's mandate — the user's to waive, never derived]
-  design-interview: <true | false>   [default true; false = the user has waived the interview]
+  Models
+    orchestrator        <detected session model>
+    implementor         <model>
+    senior-implementor  <model>
+    researcher          <model>
+    auditor             <model>
+    critic              <model>
+    test-runner         <model>
 
-Model plan:                      [multi_agent=<value> → <tiered dispatch | single-thread>; every tier below read from agents/*.md, never invented]
-  orchestrator:       <detected session model>   [main thread, fixed all wave — detected, not a role file]
-  implementor:        <model>    [standard slices — role-file default: agents/implementor.md]
-  senior-implementor: <model>    [complex slices, root-cause debugging — role-file default: agents/senior-implementor.md]
-  researcher:         <model>    [exploration — role-file default: agents/researcher.md]
-  test-runner:        <model>    [mechanical + test execution — role-file default: agents/test-runner.md]
-  auditor:            <model>    [Step 5 — fresh, independent, never the implementer — role-file default: agents/auditor.md]
-  critic:             <model>    [Step 6 — fresh, independent, never the author — role-file default: agents/critic.md]
+  Warnings                                  (preflight problems only; omitted when empty)
+    <warning text>
 
-Verification Matrix:            [locked at Step 3 approval — every row shown, never sampled]
-  stack-health: <PENDING — taken at Step 5 | snapshot | n/a: reason>
-  | AC   | tier | status  | evidence | auditor |
-  | AC-1 | <T>  | pending | see AC-1 |         |  [<tier rationale> — <criterion in one line>]
-  | AC-2 | <T>  | pending | see AC-2 |         |  [<tier rationale> — <criterion in one line>]
-
-  live-tier count: <n> of <total> rows require T3
-  at-risk rows:    <AC-id (why it may end up blocked)> | none
-  slices carrying NO ROW: <slice + why it produces a determination, not behaviour> | none
-  close-out obligations: <criterion (why its evidence is a lifecycle artifact)> | none
-
-Reply "confirm" to accept, or specify overrides:
-  e.g. "set use_worktree=true, set verify(AC-2)=T2, then confirm"
-  Reply "explain" (or "explain <axis>") for a plain-language guide to these choices.
+Do you approve this configuration? Reply "approved" to ratify it.
+explain <axis> · set <flag>=<value>
 ```
 
    **This layout is literal, and it is deliberately not marked unenforced.** No hook can check it — the display is conversational, never a file — so the template *is* the whole enforcement. A previous version expressed it as descriptive prose, which read as decoration and was deleted in an instruction-surface cut; the run then drifted into free-form summaries that satisfied nobody. Keep it as a block.
-7. **Block until explicit confirmation.** No timeout, no implicit acceptance.
+7. **Block until the literal reply `approved`.** No timeout, no implicit acceptance; a question, silence, or a partial reply is never transcribed as approval.
 8. **Create the task list immediately on approval** — one task per planned step, `0:` marked completed. Nothing runs in between.
 
 **The `design-interview:` flag.** `design-interview: true | false` is standing Step-0 configuration, default `true`, printed in the confirmation display above and recorded in plan frontmatter beside `walk:`. It is not derived from anything: `false` is the **standing Step-0 form** of Step 2's user-only interview waiver, carrying that waiver's whole force and none of it weakened — the run proceeds without the Design Interview because the user said so. A standing form is **not a second way to discharge that waiver**: the reason is still written verbatim into the design's assumptions, quoting the Step-0 reply, and the flag itself records with attribution — `design-interview: false <user> <date>`, the sibling literal of `design-waived:` and `rigor-override:`, because that attribution is the only trace that a human made the call. `design-interview:` is recorded, not validated — no hook parses it, unlike `walk:`, whose enum blocks at write time, and `rigor-override:`, whose presence the floor checks read; **an agent never sets it**, in either direction, and a later reader meets a decision rather than an absent interview.
