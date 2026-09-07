@@ -1657,6 +1657,7 @@ else
 fi
 
 # 98c: Anti-vacuity — a copy with the no-row rule's sentence stripped fails 98b's check.
+anchor "$SKILL_MD" 'never owns a matrix row' 1
 DOCTORED_NO_ROWRULE="$TMP/skill-k4-no-rowrule.md"
 sed '/never owns a matrix row/d' "$SKILL_MD" > "$DOCTORED_NO_ROWRULE"
 DOCTORED_PROTO_SPAN="$(awk '
@@ -1681,6 +1682,7 @@ expect_contains "98d: AC-K4.3 — the Step-3 card's Open-at-approval row maps a 
   "closed by slice" "$CARD3"
 
 # 98e: Anti-vacuity — a Step-3 card with the mapping text stripped fails 98d.
+anchor "$SKILL_MD" 'closed by slice' 1
 DOCTORED_NO_CLOSEDBY="$TMP/skill-k4-no-closedby.md"
 sed 's/closed by slice/discharged eventually/' "$SKILL_MD" > "$DOCTORED_NO_CLOSEDBY"
 DOCTORED_CARD3_98="$(card_span "$DOCTORED_NO_CLOSEDBY" 'Step 3 · Plan')"

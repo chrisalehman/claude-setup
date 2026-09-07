@@ -8489,9 +8489,11 @@ expect_eq "S19.2 …and the same sweep DOES fire on a copy with the idiom plante
 # DOCTORED_NO_INTEGRATION), 23 -> 26; K3 (plan slice 17, Section 6) added three more (the
 # order-reversed, Mechanisms-inherited-stripped and strategic-by-rule-stripped mutants),
 # 26 -> 29 — each of the six anchored, lifting both this row and the next by six, all told.
-expect_eq "S19.3 docs-pins holds 29 doctoring sites" "29" \
+# 31 at K4 (plan slice 18, Section 7): two more (DOCTORED_NO_ROWRULE, DOCTORED_NO_CLOSEDBY),
+# each anchored, lifting both this row and the next by two.
+expect_eq "S19.3 docs-pins holds 31 doctoring sites" "31" \
   "$(/usr/bin/grep -cE '^DOCTORED[A-Z0-9_]*="\$TMP/' "$S19_DOCS_PINS")"
-expect_eq "S19.3 …declared by 30 anchor calls (Section 8's doctoring rewrites two sentences; Section 12 adds three, K1; Section 6 adds three, K3)" "30" \
+expect_eq "S19.3 …declared by 32 anchor calls (Section 8's doctoring rewrites two sentences; Section 12 adds three, K1; Section 6 adds three, K3; Section 7 adds two, K4)" "32" \
   "$(/usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]' "$S19_DOCS_PINS")"
 # 25 since Step 6: §S13.2 lifts the wall's own reduction out of the hook and
 # anchors both lines it lifts (review-b B-3). 26 at epic-21 wave-02 S12, when §V's
@@ -8523,8 +8525,9 @@ expect_eq "S19.3 …and landing-gate by three: the inverted-guard mutant, and th
 # more again. 59 at this merge, because N1 retired §R and the one anchor its awk mutant
 # declared (see the row above). 30 + 25 + 1 + 3 = 59, RE-DERIVED BY
 # DIRECT GREP over the merged files — never carried forward from either side, which is the
-# whole reason this literal exists.
-expect_eq "S19.3 …59 anchor call sites across the four doctoring suites, all told" "59" \
+# whole reason this literal exists. 61 at K4 (plan slice 18): docs-pins gained two more
+# (Section 7's anti-vacuity mutants); 32 + 25 + 1 + 3 = 61.
+expect_eq "S19.3 …61 anchor call sites across the four doctoring suites, all told" "61" \
   "$(cat "$S19_DOCS_PINS" "$S19_TESTS_DIR/cross-gate-agreement.test.sh" \
         "$S19_TESTS_DIR/agent-context-guard.test.sh" "$S19_TESTS_DIR/landing-gate.test.sh" \
      | /usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]')"
