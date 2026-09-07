@@ -1566,9 +1566,195 @@ _dep_marketplace_known() {  # <catalog>
   [ "$(jq -r --arg n "$catalog" 'has($n)' "$file" 2>/dev/null)" = "true" ]
 }
 
+
+# ─── The row the registry lost, and the cache that outlived it ───────────────
+#
+# WHY THIS IS NOT A SECOND INSTALLER (plan A-15; slice-0 ruling §8, the open
+# question it left the orchestrator). D1 rules that a natively-installed plugin
+# has exactly one installer — the CLI — and `install_dep` refuses every native
+# row on that ground. Nothing below installs anything. No network is touched, no
+# archive is unpacked, and not one file belonging to the plugin is created,
+# moved or rewritten: the plugin's own files are already on this machine, in the
+# directory the CLI itself unpacked them into, and the only thing missing is the
+# line of bookkeeping that says so. Putting that line back repairs the CLI's
+# RECORD; it is not a second way to obtain the code, which is what D1 is about.
+# The cost of pretending otherwise was measured rather than argued: `setup --all`
+# over a machine in exactly this state re-downloaded a plugin whose bytes on disk
+# were already correct (record/wave-01-plugin-only/s00-registry-drop.md §4,
+# `CACHE VERDICT: CHANGED`).
+
+# WHERE THE CLI UNPACKS A PLUGIN: one level per catalog, one per plugin, one per
+# build. Rooted in the claude home like every other path in this file and given
+# no override of its own, so a suite that moves the home moves this with it and
+# nothing has to be told twice.
+_dep_plugin_cache_dir() {  # <name> -> the cache directory for this row
+  local name="${1:-}" marketplace
+  [ -n "$name" ] || return 1
+  marketplace="$(dep_marketplace "$name" 2>/dev/null)" || return 1
+  [ -n "$marketplace" ] || return 1
+  printf '%s/plugins/cache/%s/%s\n' "$(_dep_claude_home)" "$marketplace" "$name"
+}
+
+# NEWEST FIRST, AND THE BASENAME IS THE VERSION. Every row this machine's
+# registry carries records a `version` equal to the basename of its
+# `installPath` — `1.5.1` where the catalog pins a version, `41bbe19d1a1a` where
+# it pins a commit — so the directory name is not a guess at the version, it is
+# where the CLI keeps the version. A cache can hold several builds: a repeat
+# install of a sha-pinned source leaves a bare-sha directory beside the version
+# one (ruling §4), and an update leaves the build it replaced. The newest is the
+# one the CLI was last using, so it is the one a restore names. `ls -1t` and not
+# `stat`: the ordering is the same on BSD and GNU and costs one process rather
+# than one per entry.
+dep_cached_build() {  # <name> -> the newest cached build directory, or nothing
+  local name="${1:-}" dir entry
+  dir="$(_dep_plugin_cache_dir "$name")" || return 1
+  [ -d "$dir" ] || return 1
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    [ -d "${dir}/${entry}" ] || continue
+    printf '%s/%s\n' "$dir" "$entry"
+    return 0
+  done <<< "$(ls -1t "$dir" 2>/dev/null)"
+  return 1
+}
+
+# THE STATE THE FIELD REPORT DESCRIBES, as one question rather than two facts
+# about one name: this catalog's row is not in the registry, and the plugin's
+# files are still where the CLI put them. The cache is what tells it apart from
+# never-installed — a machine that never had the plugin has no directory there —
+# and that distinction is the whole reason a probe reading the registry alone
+# cannot see this state and offers a fresh install instead.
+#
+# `absent` AND NOT `other`. `_dep_native_registry_state` answers about the row's
+# OWN catalog: a name registered under somebody else's catalog is present, is
+# loading, and is nobody's row to restore. A registry that cannot be read at all
+# answers `unknown`, and an unknown is never treated as a missing row.
+dep_registry_row_restorable() {  # <name>
+  local name="${1:-}"
+  [ -n "$name" ] || return 1
+  [ "$(dep_field "$name" kind 2>/dev/null)" = "native" ] || return 1
+  [ "$(_dep_native_registry_state "$name")" = "absent" ] || return 1
+  dep_cached_build "$name" >/dev/null 2>&1
+}
+
+# THE COMMIT THE CATALOG PINS, read out of the clone the CLI keeps for that
+# catalog rather than out of this repo's own manifest — the row may belong to
+# somebody else's catalog (`document-skills` does), and this file must not
+# assume bionic's. `known_marketplaces.json` names the clone: `installLocation`
+# is the checkout itself for a directory-source feed and a cached clone for a
+# git one. A catalog that is not registered, a clone with no manifest, or an
+# entry that pins no commit all answer with nothing — and nothing is the right
+# answer, because `gitCommitSha` is a field this machine's registry already
+# carries as null on rows whose source pins no commit. Nothing is invented to
+# fill it.
+dep_marketplace_sha() {  # <name> -> the pinned commit, or nothing
+  local name="${1:-}" marketplace file loc manifest
+  [ -n "$name" ] || return 1
+  _dep_have jq || return 1
+  marketplace="$(dep_marketplace "$name" 2>/dev/null)" || return 1
+  file="$(_dep_known_marketplaces)"
+  [ -f "$file" ] || return 1
+  loc="$(jq -r --arg n "$marketplace" '.[$n].installLocation // empty' "$file" 2>/dev/null)"
+  [ -n "$loc" ] || return 1
+  manifest="${loc}/.claude-plugin/marketplace.json"
+  [ -f "$manifest" ] || return 1
+  jq -r --arg n "$name" \
+    '(.plugins // []) | map(select(.name == $n)) | (.[0].source.sha // empty)' \
+    "$manifest" 2>/dev/null | head -1
+}
+
+# THE REPAIR ITSELF. One consented act, the same shape every other mutating
+# entry point in this file has: the plan is printed before the question and run
+# after it, and the plan names both halves of what is true, because the reason
+# to say yes to this rather than to an install is precisely that nothing is
+# fetched.
+#
+# TWO STORES, NOT ONE. `installed_plugins.json` decides what LOADS, and
+# `settings.json`'s `enabledPlugins` decides whether a loaded plugin is switched
+# on. They disagree freely — run 4 of the ruling deleted the row and found the
+# flag still `true` — so a restore that wrote only the row would be correct on
+# that machine and would leave a differently-broken one registered and switched
+# off. The flag is written only when it is not already true, so an ordinary
+# machine's settings file is not rewritten to say what it already says.
+#
+# `_dep_settings_write_jq` WRITES BOTH, despite its name: it is this file's one
+# atomic jq-through-a-temp-file writer, mode preserved and the original left
+# untouched on any failure, and a second copy of it for the registry would be
+# the duplication the ownership table exists to prevent.
+restore_plugin_row() {  # <name>
+  local name="${1:-}" marketplace id build version sha reg settings now
+  [ -n "$name" ] || { echo "deps.sh: restore_plugin_row needs a plugin name" >&2; return 1; }
+  _dep_have jq || {
+    echo "$(_dep_indent)jq is not on PATH, so bionic cannot read or write the list of installed plugins."
+    return 1
+  }
+  marketplace="$(dep_marketplace "$name" 2>/dev/null)" || marketplace=""
+  [ -n "$marketplace" ] || marketplace="${BIONIC_DEP_MARKETPLACE:-bionic}"
+  id="${name}@${marketplace}"
+  build="$(dep_cached_build "$name")" || {
+    echo "$(_dep_indent)${name}: no files are left in the plugin cache, so there is no record to restore."
+    return 1
+  }
+  version="${build##*/}"
+
+  if [ "${SETUP_ALL:-0}" != "1" ]; then
+    echo "$(_dep_indent)${name} — the plugin's files are still on disk at ${build}, and only its entry in the list of installed plugins is missing; bionic would write that entry back and download nothing."
+  fi
+  _dep_consent "$(_dep_indent)Restore ${name}'s entry now?"
+  case $? in
+    0) ;;
+    2) _dep_not_asked "$name"; return 2 ;;
+    *) echo "$(_dep_indent)declined — ${name} stays unregistered."; return 1 ;;
+  esac
+
+  reg="$(_dep_installed_json)"
+  mkdir -p "${reg%/*}" 2>/dev/null || true
+  [ -f "$reg" ] || printf '%s\n' '{"version":2,"plugins":{}}' > "$reg"
+  now="$(date -u +%Y-%m-%dT%H:%M:%S.000Z)"
+  sha="$(dep_marketplace_sha "$name" 2>/dev/null)" || sha=""
+
+  # THE SHAPE IS THIS MACHINE'S OWN (ruling §3): `"version": 2`, and each key
+  # holding an ARRAY of entries rather than an object. Written with the fields a
+  # real install writes, and `gitCommitSha` omitted rather than nulled when the
+  # catalog pins no commit.
+  if ! _dep_settings_write_jq "$reg" \
+      '.plugins = ((.plugins // {}) | .[$k] = [ {"scope":"user","installPath":$p,"version":$v,"installedAt":$t,"lastUpdated":$t} + (if $s == "" then {} else {"gitCommitSha":$s} end) ])' \
+      --arg k "$id" --arg p "$build" --arg v "$version" --arg t "$now" --arg s "$sha"; then
+    echo "$(_dep_indent)${name}: the entry could not be written to ${reg}."
+    return 1
+  fi
+
+  settings="$(_dep_settings_file)"
+  [ -f "$settings" ] || echo '{}' > "$settings"
+  if [ "$(jq -r --arg k "$id" '.enabledPlugins[$k] // empty' "$settings" 2>/dev/null)" != "true" ]; then
+    if ! _dep_settings_write_jq "$settings" \
+        '.enabledPlugins = ((.enabledPlugins // {}) | .[$k] = true)' --arg k "$id"; then
+      echo "$(_dep_indent)${name}: the entry was restored, but it could not be switched on in ${settings}."
+      return 1
+    fi
+  fi
+
+  echo "$(_dep_indent)${name} ${version} — entry restored from the plugin cache; nothing was downloaded."
+  [ "${SETUP_ALL:-0}" = "1" ] || echo "$(_dep_indent)Takes effect after /reload-plugins or a new session."
+  SETUP_PLUGIN_CHANGED=yes
+  return 0
+}
 install_plugin_native() {  # <name>
   local name="${1:-}" marketplace id source add_first=no
   [ -n "$name" ] || { echo "deps.sh: install_plugin_native needs a plugin name" >&2; return 1; }
+  # THE CHEAPER TRUE ANSWER FIRST, AND BEFORE THE CLI GUARD BELOW. A machine
+  # whose only fault is a lost registry row does not need an install and does not
+  # need the CLI to be on PATH to have the row put back — asking for a binary
+  # this branch will not run would refuse a repair on a machine that can take it.
+  # Every caller reaches the right act by asking for the same thing: setup's
+  # extras step, a just-in-time offer and step 1 alike say "make this plugin
+  # usable", and which act that is, is a fact about the machine rather than about
+  # the caller. See the ownership note above `_dep_plugin_cache_dir` for why this
+  # is a repair of the CLI's record and not the second installer D1 forbids.
+  if dep_registry_row_restorable "$name"; then
+    restore_plugin_row "$name"
+    return $?
+  fi
   # THE ONE EXTERNAL THIS FILE USED TO CALL UNGUARDED (critic F-5). `jq`, `npm`
   # and `brew` all pass through `_dep_have` first; these two did not, so a machine
   # without the CLI got `deps.sh: line 664: claude: command not found` — a library

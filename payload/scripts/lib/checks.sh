@@ -213,6 +213,25 @@ bionic_check_dep_absent() {  # <row id: tool:<name> | dep:<name>>
   [ "$present" != "yes" ]
 }
 
+# THE ROW THE REGISTRY LOST WHILE THE FILES STAYED (REQ-S0). Two facts about one
+# plugin: the CLI's list of installed plugins has no entry for it, and the
+# directory the CLI unpacked it into is still there. Apart, neither is a finding
+# — an absent entry is the ordinary state of a plugin nobody installed, and a
+# cache directory is what every installed plugin has. Together they are the state
+# the field report describes and the one a probe reading the registry alone
+# cannot see: `bionic_check_dep_absent` above answers `absent` for it and for
+# never-installed alike, so the report offered a fresh install and setup paid for
+# a download of bytes that were already correct on disk
+# (record/wave-01-plugin-only/s00-registry-drop.md §4).
+#
+# THE PREDICATE IS deps.sh's, NOT A SECOND READING OF THE SAME FILES. The
+# registry parse and the cache walk both belong to the mechanism that installs a
+# native row, and the repair party reads the same two answers before it writes;
+# a copy here would be free to drift from the repair it is a diagnosis for.
+bionic_check_registry_row_dropped() {  # <row id: registry-row:<name>>
+  dep_registry_row_restorable "${1#registry-row:}"
+}
+
 bionic_check_env_unwritten() {  # <row id: env:<KEY>>
   local key="${1#env:}" want have
   want="$(env_default "$key")" || return 1
@@ -449,6 +468,32 @@ _bionic_checks_build() {
     [ -n "$n" ] || continue
     _bionic_checks_emit "tool:${n}" "$n" "bionic_check_dep_absent" "setup" "tool:${n}" "$r_setup"
   done 3< <(dep_names_class extra)
+
+  # ONLY ON A MACHINE THAT HAS THE STATE, the same way a `duplicate:` row exists
+  # only for a duplicate this machine actually carries. A row emitted for every
+  # native plugin would put five permanent entries on setup's roster that a
+  # healthy machine has nothing to do about; the roster is what a user reads, and
+  # a fact that is almost never true does not belong on it as a standing line.
+  # The detector is asked here AND kept on the row: the table is built once per
+  # process, and a repair that lands inside that process must be able to make the
+  # row stop firing without the build being redone.
+  #
+  # WHO REPAIRS IT DEPENDS ON WHICH ROW IT IS, and both answers were measured. A
+  # row bionic does not declare — `impeccable`, and the two anthropic skill packs
+  # — is reachable from setup's own extras item, and that item now restores the
+  # entry from the cache instead of re-installing (deps.sh `restore_plugin_row`).
+  # A `core` row is the CLI's: reinstalling bionic restores `superpowers` and
+  # `agent-skills` because bionic declares them (ruling §1), and D1 gives setup no
+  # item for either, so the row names the CLI's route exactly as `dep:<name>` does.
+  while IFS= read -r n <&3; do
+    [ -n "$n" ] || continue
+    bionic_check_registry_row_dropped "registry-row:${n}" || continue
+    if [ "$(dep_field "$n" class 2>/dev/null)" = "core" ]; then
+      _bionic_checks_emit "registry-row:${n}" "" "bionic_check_registry_row_dropped" "cli" "" "$r_cli"
+    else
+      _bionic_checks_emit "registry-row:${n}" "" "bionic_check_registry_row_dropped" "setup" "tool:${n}" "$r_setup"
+    fi
+  done 3< <(dep_names_kind native)
 
   # ONE ROW PER SETTING, ONE ITEM FOR ALL OF THEM. doctor prints a row per name
   # and setup writes them in one step, so the rows are per-name and they share an
