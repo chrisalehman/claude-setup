@@ -36,6 +36,16 @@ set -uo pipefail
 
 . "$(dirname "$0")/lib/resolve-roots.sh"
 . "$(dirname "$0")/lib/assert.sh"
+# THE SHARED FIXTURE BUILDERS, not hand-written shapes. `live_answer_body` composes a
+# ListAgents answer out of the committed corpus (tests/lib/live-answer.sh), and
+# `roster_row_fixture` writes a roster row through the production writer
+# (payload/scripts/lib/roster.sh). §2b needs both because hooks/stop-check.sh resolves a
+# target against the session's recorded live set and its roster row before it resolves any
+# path at all — and a hand-typed answer or row is how a fixture comes to test its own
+# spelling instead of the hook.
+. "$(dirname "$0")/lib/live-answer.sh"
+. "$BIONIC_SCRIPTS_DIR/lib/roster.sh"
+. "$(dirname "$0")/lib/roster-row.sh"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 LIB_DIR="$REPO_ROOT/payload/scripts/lib"
@@ -110,9 +120,20 @@ expect_eq "docs_root: an absolute docs-root: passes through unchanged" "/srv/els
 # THE SPELLINGS `config_value` ALREADY TOLERATES reach docs_root now, because docs_root IS a
 # caller of it. Before N1 the two readers were six duplicated lines apiece, held together by
 # tests/run-predicate.test.sh R9h asserting they agreed edge for edge.
-printf '  docs-root:   "alt2"  \n' > "$P/.bionic/config.yaml"
-expect_eq "docs_root: indentation, quotes and trailing space, through the one reader" \
+printf '  docs-root:   alt2  \n' > "$P/.bionic/config.yaml"
+expect_eq "docs_root: indentation and trailing space, through the one reader" \
   "$P/alt2" "$(call docs_root "$P")"
+printf 'docs-root: "alt3"\n' > "$P/.bionic/config.yaml"
+expect_eq "docs_root: a quoted value comes back unquoted" "$P/alt3" "$(call docs_root "$P")"
+# THE SHARED WART, pinned rather than fixed. The quote strip runs BEFORE the trailing-space
+# trim in `config_value`, so a quoted value with a trailing space keeps its closing quote.
+# tests/run-predicate.test.sh R9h pinned exactly this on the two readers that used to exist
+# separately, as the thing holding them in agreement. There is one reader now, so the wart
+# is one wart — and it is pinned here too, because a future slice that fixes it should have
+# to come past a row that says so rather than discover it in a hook.
+printf 'docs-root: "alt4" \n' > "$P/.bionic/config.yaml"
+expect_eq "docs_root: a quoted value with a trailing space keeps its closing quote" \
+  "$P/alt4\"" "$(call docs_root "$P")"
 
 rm -f "$P/.bionic/config.yaml"
 expect_eq "docs_root: the config file removed -> back to the default" "$P/.bionic/docs" \
@@ -157,8 +178,12 @@ expect_eq "worktree_root in the main checkout is the main checkout" "$(cd "$GITP
 ( cd "$GITP" && git worktree add -q -b wtb "$GITP/.wt/one" HEAD ) >/dev/null 2>&1
 expect_eq "worktree_root from INSIDE a linked worktree is still the main checkout" \
   "$(cd "$GITP" && pwd -P)" "$(call worktree_root "$GITP/.wt/one")"
-expect_eq "…which is exactly what --show-toplevel would have got wrong" \
-  "no" "$(contains "$(cd "$GITP/.wt/one" && git rev-parse --show-toplevel)" "$(cd "$GITP" && pwd -P)/.wt")"
+# THE PAIRED NEGATIVE: --show-toplevel, asked in the same place, answers with the LINKED
+# tree. That difference is the whole reason three resolvers existed for this question, and
+# without this row the assertion above could be green against a resolver that just called
+# --show-toplevel in a repository that happened to have no worktree.
+expect_ne "…which is exactly what --show-toplevel answers differently" \
+  "$(cd "$GITP" && pwd -P)" "$(cd "$GITP/.wt/one" && git rev-parse --show-toplevel)"
 expect_eq "worktree_root outside a repository exits non-zero" "1" \
   "$(call worktree_root "$SANDBOX/home" >/dev/null 2>&1; echo $?)"
 
@@ -214,6 +239,24 @@ current: 4
 PLAN
 printf 'progress\n' > "$PROJ/alt/record/s99.md"
 
+# THE OBSERVING SESSION, for §2b. hooks/stop-check.sh resolves a typed target against the
+# newest recorded ListAgents answer in that session's transcript, then against the roster
+# row carrying the agent id. Only after both does it resolve the contracted path — so
+# without these two the row below would measure the resolution refusal, not the root.
+PROJ_SID="rootssid1"
+PROJ_SLUG="$(printf '%s' "$PROJ" | sed 's/[^a-zA-Z0-9]/-/g')"
+mkdir -p "$CLAUDE_CONFIG_DIR/projects/$PROJ_SLUG"
+{
+  jq -nc --arg ts "2026-09-05T00:50:00.000Z" \
+    '{type:"user",timestamp:$ts,message:{role:"user",content:"go"}}'
+  jq -nc --arg ts "2026-09-05T00:51:00.000Z" \
+    '{type:"assistant",timestamp:$ts,message:{role:"assistant",content:[{type:"tool_use",id:"toolu_01FIXTURELISTAGENTS",name:"ListAgents",input:{}}]}}'
+  jq -nc --arg ts "2026-09-05T00:52:23.349Z" --arg b "$(live_answer_body some-agent)" \
+    '{type:"user",timestamp:$ts,message:{role:"user",content:[{type:"tool_result",tool_use_id:"toolu_01FIXTURELISTAGENTS",content:$b}]}}'
+} > "$CLAUDE_CONFIG_DIR/projects/$PROJ_SLUG/$PROJ_SID.jsonl"
+roster_row_fixture status=identified session="$PROJ_SID" name=some-agent \
+  agent_id=a0000001 deliverable=record/s99.md > "$PROJ/.bionic/tmp/roster-$PROJ_SID.state"
+
 # The same artifacts under the DEFAULT root, holding different content, so a hard-coding
 # consumer is not merely wrong-and-empty but demonstrably reading the other tree.
 mkdir -p "$PROJ/.bionic/docs/plans/epic-00"
@@ -248,36 +291,43 @@ expect_eq "…and not the decoy under the default root" "no" "$(contains "$RUN_P
 section "2b — hooks/stop-check.sh resolves a contracted path under docs-root:"
 # ============================================================
 #
-# `record/`-led paths are docs-root-relative — that is the rule the whole §Roots lineage
-# exists for. The observation prints the resolved deliverable, so the row reads the hook's
-# own answer rather than a proxy for it.
+# `record/`-led paths are docs-root-relative — the rule this whole lineage exists for, and
+# the one stop-check got wrong before epic-17 W6 S15: it stat'd a relative path against
+# whatever directory the observer stood in, so a landed deliverable read ABSENT.
+#
+# THE OBSERVABLE IS PRESENT vs ABSENT, not a path in the prose. The command prints the
+# deliverable under the spelling the contract used (`record/s99.md`) and never the resolved
+# absolute, so the honest reading of "which root did it resolve against" is whether it
+# FOUND the file — and the file exists under `alt/` and nowhere else. The machine line at
+# the end of the output is what other bionic readers parse, so it is what is read here.
 
-SC_OUT="$( cd "$PROJ" && CLAUDE_CODE_SESSION_ID="roots-sid-1" \
+SC_OUT="$( cd "$PROJ" && CLAUDE_CODE_SESSION_ID="$PROJ_SID" \
   bash "$PLANT/hooks/stop-check.sh" some-agent record/s99.md 2>&1 )"
-expect_eq "stop-check resolves record/ against alt/" "yes" \
-  "$(contains "$SC_OUT" "$PROJ/alt/record/s99.md")"
-expect_eq "…and never against the default root" "no" \
-  "$(contains "$SC_OUT" "$PROJ/.bionic/docs/record/s99.md")"
+expect_eq "stop-check found record/s99.md, which exists only under alt/" "yes" \
+  "$(contains "$SC_OUT" "deliverables=present:record/s99.md")"
+expect_eq "…so it did not resolve against the default root, where nothing is" "no" \
+  "$(contains "$SC_OUT" "deliverables=absent:record/s99.md")"
 
 # --- THE FAILS-WHEN ARM (AC-N1.3: "one consumer still hard-codes"). A scratch copy of the
-# hook with the library call replaced by the literal the four copies used to spell. The
-# shipped file is never touched; the mutant is a copy in the sandbox. Without this row the
-# two above prove only that the hook currently agrees, not that disagreement is visible. ---
+# hook with the library call replaced by the literal the four retired copies used to spell.
+# The shipped file is never touched; the mutant is a copy in the sandbox. Without this row
+# the two above prove only that the hook currently agrees, not that a hard-coding one would
+# be visible here. ---
 SC_MUT_DIR="$SANDBOX/stopcheck-mutant"
 mkdir -p "$SC_MUT_DIR/hooks" "$SC_MUT_DIR/scripts/lib"
 cp "$PLANT/scripts/lib"/*.sh "$SC_MUT_DIR/scripts/lib/"
-anchor -F "$PLANT/hooks/stop-check.sh" 'DOCS_ROOT="$(docs_root "$PROJECT_DIR")"' 1
+anchor "$PLANT/hooks/stop-check.sh" 'DOCS_ROOT="$(docs_root "$PROJECT_DIR")"' 1
 sed 's|DOCS_ROOT="$(docs_root "$PROJECT_DIR")"|DOCS_ROOT="$PROJECT_DIR/.bionic/docs"|' \
   "$PLANT/hooks/stop-check.sh" > "$SC_MUT_DIR/hooks/stop-check.sh"
-expect_eq "the mutant really differs from the shipped hook (the sed anchor matched)" "no" \
+expect_eq "the mutant really differs from the shipped hook (the sed landed)" "no" \
   "$(cmp -s "$PLANT/hooks/stop-check.sh" "$SC_MUT_DIR/hooks/stop-check.sh" && echo yes || echo no)"
 
-SC_MUT_OUT="$( cd "$PROJ" && CLAUDE_CODE_SESSION_ID="roots-sid-1" \
+SC_MUT_OUT="$( cd "$PROJ" && CLAUDE_CODE_SESSION_ID="$PROJ_SID" \
   bash "$SC_MUT_DIR/hooks/stop-check.sh" some-agent record/s99.md 2>&1 )"
-expect_eq "…and a hard-coding stop-check resolves against the DEFAULT root instead" "yes" \
-  "$(contains "$SC_MUT_OUT" "$PROJ/.bionic/docs/record/s99.md")"
-expect_eq "…so this section's rows do discriminate" "no" \
-  "$(contains "$SC_MUT_OUT" "$PROJ/alt/record/s99.md")"
+expect_eq "…and a hard-coding stop-check reports the SAME deliverable ABSENT" "yes" \
+  "$(contains "$SC_MUT_OUT" "deliverables=absent:record/s99.md")"
+expect_eq "…so the two rows above do discriminate" "no" \
+  "$(contains "$SC_MUT_OUT" "deliverables=present:record/s99.md")"
 
 # ============================================================
 section "2c — the governing-skill hook SCAFFOLDS under docs-root: (the live defect)"
@@ -285,45 +335,82 @@ section "2c — the governing-skill hook SCAFFOLDS under docs-root: (the live de
 #
 # The hook resolved `docs-root:` at the top and then scaffolded a literal at the bottom, so
 # a project with the key set got the default tree created and its configured tree never
-# created. Both directions are asserted: the configured tree appears, and the four leaders
-# do NOT appear under the default root.
+# created — and then met this same hook's misplacement refusal for writing where it had
+# asked to write. Both directions are asserted: the configured tree appears, and no default
+# tree is created beside it.
+#
+# THE PAYLOAD IS A COMPLETE ONE. The scaffold runs at the hook's single `exit 0`, past every
+# gate — deliberately, so a Write this hook REFUSES leaves no tree behind — so a fixture
+# missing one frontmatter flag proves nothing about the scaffold. The session id is pinned
+# in the environment as well as the payload because `session_id` prefers the environment,
+# and an unpinned call would engage against the id of whatever session is running the suite.
+
+gs_payload() {  # <cwd> <file_path> -> a complete PreToolUse Write payload on stdout
+  jq -nc --arg cwd "$1" --arg fp "$2" --arg c "$GS_CONTENT" \
+    '{session_id:"rootssid2",hook_event_name:"PreToolUse",cwd:$cwd,tool_name:"Write",
+      tool_input:{file_path:$fp,content:$c}}'
+}
+
+GS_CONTENT='---
+canonical_sdlc_version: 14
+governing-skill: agent-skills:spec-driven-development
+sdlc-step: 1
+intent: build
+rigor: audited
+scale: wave
+surface_type: cli-plugin
+language: bash
+has_ui: false
+multi_agent: false
+deploy_target: n/a
+cleanup_on_finish: true
+use_worktree: false
+model_plan: orchestrator=claude-fable-5-1
+---
+
+# Spec
+
+## Design
+
+One resolver per root; every former copy calls it.
+'
 
 GS_PROJ="$SANDBOX/gsproj"
-mkdir -p "$GS_PROJ/.bionic"
+mkdir -p "$GS_PROJ/.bionic/tmp" "$GS_PROJ/alt/specs/epic-99"
 printf 'docs-root: alt\n' > "$GS_PROJ/.bionic/config.yaml"
-mkdir -p "$GS_PROJ/alt/specs/epic-99"
-cat > "$SANDBOX/gs-payload.json" <<GSPAYLOAD
-{"session_id":"roots-sid-2","cwd":"$GS_PROJ","tool_name":"Write",
- "tool_input":{"file_path":"$GS_PROJ/alt/specs/epic-99/w.spec.md","content":""}}
-GSPAYLOAD
+touch "$GS_PROJ/.bionic/tmp/engaged-rootssid2.state"
 
-GS_OUT="$( cd "$GS_PROJ" && bash "$PLANT/hooks/canonical-sdlc-governing-skill.sh" \
-             < "$SANDBOX/gs-payload.json" 2>&1 )"; GS_ST=$?
+GS_OUT="$( cd "$GS_PROJ" && CLAUDE_CODE_SESSION_ID=rootssid2 \
+  bash "$PLANT/hooks/canonical-sdlc-governing-skill.sh" \
+    < <(gs_payload "$GS_PROJ" "$GS_PROJ/alt/specs/epic-99/w.spec.md") 2>&1 )"; GS_ST=$?
 
 expect_eq "the governing-skill hook allowed the fixture write (the scaffold runs at exit 0)" \
   "0" "$GS_ST"
+expect_eq "…with nothing on the refusal channel (a refused write scaffolds nothing)" "" "$GS_OUT"
 for _leader in specs plans adrs incidents; do
   expect_eq "…scaffolded alt/$_leader, the CONFIGURED tree" "yes" \
     "$([ -d "$GS_PROJ/alt/$_leader" ] && echo yes || echo no)"
 done
 expect_eq "…and created no .bionic/docs tree the project never asked for" "no" \
   "$([ -d "$GS_PROJ/.bionic/docs" ] && echo yes || echo no)"
-expect_eq "…while the two state directories are still the project's own" "yes" \
+expect_eq "…while the two state paths are still the project's own, not the docs root's" "yes" \
   "$([ -d "$GS_PROJ/.bionic/tmp" ] && [ -f "$GS_PROJ/.bionic/.gitignore" ] && echo yes || echo no)"
 
-# The default case is unchanged: a project WITHOUT the key still gets .bionic/docs.
+# THE OTHER DIRECTION, and the one a fix could break: a project WITHOUT the key still gets
+# `.bionic/docs`. `alt/plans` proves the value moved; this proves it moved because of the
+# config and not because the literal was simply swapped for another literal.
 GS_DEF="$SANDBOX/gsdefault"
-mkdir -p "$GS_DEF/.bionic" "$GS_DEF/.bionic/docs/specs/epic-99"
-cat > "$SANDBOX/gs-payload2.json" <<GSPAYLOAD2
-{"session_id":"roots-sid-2","cwd":"$GS_DEF","tool_name":"Write",
- "tool_input":{"file_path":"$GS_DEF/.bionic/docs/specs/epic-99/w.spec.md","content":""}}
-GSPAYLOAD2
-( cd "$GS_DEF" && bash "$PLANT/hooks/canonical-sdlc-governing-skill.sh" \
-    < "$SANDBOX/gs-payload2.json" ) >/dev/null 2>&1
+mkdir -p "$GS_DEF/.bionic/tmp" "$GS_DEF/.bionic/docs/specs/epic-99"
+touch "$GS_DEF/.bionic/tmp/engaged-rootssid2.state"
+( cd "$GS_DEF" && CLAUDE_CODE_SESSION_ID=rootssid2 \
+  bash "$PLANT/hooks/canonical-sdlc-governing-skill.sh" \
+    < <(gs_payload "$GS_DEF" "$GS_DEF/.bionic/docs/specs/epic-99/w.spec.md") ) >/dev/null 2>&1
 for _leader in specs plans adrs incidents; do
   expect_eq "no docs-root: set -> .bionic/docs/$_leader, exactly as before" "yes" \
     "$([ -d "$GS_DEF/.bionic/docs/$_leader" ] && echo yes || echo no)"
 done
+expect_eq "…and no stray alt/ tree in a project that never named one" "no" \
+  "$([ -d "$GS_DEF/alt" ] && echo yes || echo no)"
 
 # ============================================================
 section "2d — doctor's active-run row reads the same root"
