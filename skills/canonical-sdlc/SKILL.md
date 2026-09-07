@@ -132,7 +132,10 @@ table, rejected alternatives), the Eval design table, and ADR pointers. Step 3 w
 `wave-NN-<slug>.plan.md`: slices, sequencing, the dispatch ledger, and the verification matrix
 rendered from Step 2's Eval design. Requirements live beside the spec, both under
 `specs/epic-NN-<slug>/` — the governing-skill hook validates `*.requirements.md` frontmatter the
-same way it validates `*.spec.md`, minus the design three-way rule (that stays spec-only).
+same way it validates `*.spec.md`, minus the design three-way rule (that stays spec-only). Each
+of the three opens with a `## Goal` section — one concise paragraph, first after the title
+(design ledger K5.4) — and a governing-skill arm at `scale: wave` or `scale: epic` refuses a
+write whose first section is not Goal, or whose Goal section is empty.
 
 **Anything the matrix cites as evidence goes in `record/`, never `tmp/`.** Auditor reports,
 critic findings, review-axis artifacts, test-run captures — the matrix names them by path, so
