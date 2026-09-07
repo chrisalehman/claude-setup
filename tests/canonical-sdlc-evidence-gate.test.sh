@@ -1718,6 +1718,7 @@ intent: build
 rigor: peer-reviewed
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed in commit abc123, suite 5/5 green
 - T2: bash extract-helper.sh 4 cases green, commit def456"
@@ -1738,6 +1739,7 @@ intent: build
 rigor: peer-reviewed
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T2: some evidence"
 h19e=$(make_home)
@@ -1773,6 +1775,7 @@ ledger_active_no_line="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed in commit abc123, suite 5/5 green"
 h19g=$(make_home)
@@ -2316,6 +2319,7 @@ v22_no_t2_row="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed in commit abc123, suite 5/5 green"
 h22a1=$(make_home)
@@ -2335,6 +2339,7 @@ v22_t2_no_line="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed in commit abc123, suite 5/5 green"
 h22a2=$(make_home)
@@ -2354,6 +2359,7 @@ v22_t2_placeholder="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed in commit abc123, suite 5/5 green
 - T2: pending"
@@ -2374,6 +2380,7 @@ v22_t2_valid="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed in commit abc123, suite 5/5 green
 - T2: fixed enum check, bash suite 12/12"
@@ -2394,6 +2401,7 @@ v22_t2_bad_rigor="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed in commit abc123, suite 5/5 green
 - T2: fixed enum check, bash suite 12/12"
@@ -2423,6 +2431,7 @@ v22_nonaddressed_broken="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T2: fixed enum check, bash suite 12/12"
 h22a6=$(make_home)
@@ -2459,6 +2468,7 @@ v22b_t2_prose="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed in commit abc123, suite 5/5 green
 - T2: implemented and verified manually"
@@ -2479,6 +2489,7 @@ v22b_t2_proof="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed in commit abc123, suite 5/5 green
 - T2: bash test.sh 232/232 green"
@@ -2500,6 +2511,7 @@ v22b_t1_no_auditor="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash suite 12/12
 - T2: fixed enum check, bash suite 12/12"
@@ -2520,6 +2532,7 @@ v22b_t1_auditor="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 12/12, auditor CONFIRMED
 - T2: fixed enum check, bash suite 12/12"
@@ -2541,6 +2554,7 @@ v22b_t1_audited_no_critic="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 12/12 auditor CONFIRMED
 - T2: fixed enum check, bash suite 12/12"
@@ -2561,6 +2575,7 @@ v22b_t1_audited_complete="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 12/12 auditor CONFIRMED, critic no-blocking
 - T2: fixed enum check, bash suite 12/12"
@@ -2583,6 +2598,7 @@ v22b_t2_tested_prose="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed in commit abc123, suite 5/5 green
 - T2: reproduced and fixed the off-by-one"
@@ -2606,6 +2622,7 @@ v22b_t2_no_digit="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed in commit abc123, suite 5/5 green
 - T2: bash test.sh all green"
@@ -2625,6 +2642,7 @@ v22b_t2_no_command="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed in commit abc123, suite 5/5 green
 - T2: fixed 3 cases by hand"
@@ -2666,6 +2684,7 @@ v22c_bad_enum="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash suite 12/12 green"
 h22c1=$(make_home)
@@ -2696,6 +2715,7 @@ v22c_done_no_ev="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash suite 12/12 green"
 h22c3=$(make_home)
@@ -2852,6 +2872,7 @@ v22d1_body="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed it manually"
 h22d1=$(make_home)
@@ -2878,6 +2899,7 @@ v22d2_body="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: reproduced and fixed the boundary case"
 h22d2=$(make_home)
@@ -2898,6 +2920,7 @@ v22d2b_body="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: reproduced and fixed the boundary case, waiver: dana 2026-07-19 genuine bugfix"
 h22d2b=$(make_home)
@@ -2918,6 +2941,7 @@ v22d3_body="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed it manually"
 h22d3=$(make_home)
@@ -2937,6 +2961,7 @@ v22d4_body="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed it manually"
 h22d4=$(make_home)
@@ -2958,6 +2983,7 @@ v22d5_body_complete="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 12/12 auditor CONFIRMED, critic no-blocking"
 h22d5a=$(make_home)
@@ -2975,6 +3001,7 @@ v22d5_body_no_critic="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 12/12 auditor CONFIRMED"
 h22d5b=$(make_home)
@@ -3012,6 +3039,7 @@ v22d6_body="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 12/12 auditor CONFIRMED, critic no-blocking
 - T2: fixed enum check, bash suite 12/12"
@@ -3048,6 +3076,7 @@ v22d6d_body="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 12/12 auditor CONFIRMED
 - T2: fixed enum check, bash suite 12/12"
@@ -3071,6 +3100,7 @@ v22d6e_body="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: reproduced and fixed the boundary case
 - T2: fixed enum check, bash suite 12/12"
@@ -3108,6 +3138,7 @@ v22d6f_body="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: reworking the parser
 - T2: fixed enum check, bash suite 12/12"
@@ -3131,6 +3162,7 @@ v22d6g_body="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T2: fixed enum check, bash suite 12/12"
 h22d6g=$(make_home)
@@ -3153,6 +3185,7 @@ v22d6h_body="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: reworking the parser
 - T2: fixed enum check, bash suite 12/12"
@@ -3191,6 +3224,7 @@ v22f1_body="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: reproduced and fixed the boundary case"
 h22f1=$(make_home)
@@ -3210,6 +3244,7 @@ v22f2_body="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: reproduced and fixed the boundary case, waiver: dana 2026-07-19 genuine bugfix"
 h22f2=$(make_home)
@@ -3230,6 +3265,7 @@ v22f3_body="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 12/12 auditor CONFIRMED, critic no-blocking"
 h22f3=$(make_home)
@@ -3249,6 +3285,7 @@ v22f4_body="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed it by hand"
 h22f4a=$(make_home)
@@ -3266,6 +3303,7 @@ v22f4b_body="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: fixed it by hand, waiver: dana 2026-07-19 quick bugfix"
 h22f4b=$(make_home)
@@ -3286,6 +3324,7 @@ v22f5_body="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 12/12 auditor CONFIRMED, critic no-blocking"
 h22f5=$(make_home)
@@ -3308,6 +3347,7 @@ v22f6_body="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 9/9 auditor CONFIRMED
 - T2: bash suite 12/12 green"
@@ -3327,6 +3367,7 @@ v22f6b_body="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 9/9 auditor CONFIRMED, waiver: dana 2026-07-19 scoped down to peer-reviewed
 - T2: bash suite 12/12 green"
@@ -3351,6 +3392,7 @@ v22f7a_body="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 9/9, auditor CONFIRMED, fixed a critical path bug"
 h22f7a=$(make_home)
@@ -3368,6 +3410,7 @@ v22f7b_body="## Tasks
 
 scale: task
 current: T1
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 9/9, auditor CONFIRMED, fixed a critical path bug, critic no-blocking"
 h22f7b=$(make_home)
@@ -4812,6 +4855,7 @@ v32f_body="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: reproduced and fixed the boundary case
 - T2: fixed enum check, bash suite 12/12"
@@ -4876,6 +4920,7 @@ v32k_body="## Tasks
 
 scale: task
 current: T2
+approved-by: fixture 2026-09-07T00:00Z "approved"
 
 - T1: bash test.sh 12/12 green
 - T2: fixed enum check, bash suite 12/12"
@@ -5823,6 +5868,89 @@ expect_block "37l a WAIVED row still has to name its fails-when → block" \
 # record/wave-01-plugin-only/s16-step-cards.log, "the real plan" — run against the live
 # plan with the live hook, with its command and output.
 
+# ============================================================
+# Section 38: epic-22 K2.5 — the same two arms bind at task scale
+# ============================================================
+#
+# D2/K2 (Section 37) built two arms for a NUMBERED-step plan: `approved-by:`
+# absent from `## SDLC State` refuses a commit from `current: 4` onward, and a
+# Verification Matrix AC block with no `fails-when:` refuses one from the same
+# point. K2.5 (Chris 2026-09-07 "Option 2") makes both bind on a TASK-SCALE
+# plan too: any `current: T<n>` (n >= 1) reads as past Step 3, because a
+# task-scale plan is always mid-execution, never mid-authoring — there is no
+# "still being authored" state to protect the way `current: 0`-`3` protects a
+# numbered plan. `k2_step_num` (hooks/canonical-sdlc-evidence-gate.sh) is what
+# makes the T-format read that way; these cases exercise it end to end.
+
+section "Section 38: epic-22 K2.5 — approval/fails-when bind at task scale"
+
+# k2t_plan <approved-by line, or ""> <matrix section, or ""> -> a task-scale
+# plan at current: T1 with one valid, addressed ledger row — isolating the
+# approved-by/fails-when arms as the only possible source of a block.
+k2t_plan() {
+  local approved_line=""
+  [ -n "$1" ] && approved_line="$1
+"
+  printf '%s\n## Tasks\n\n| id | intent | rigor | description | status |\n|---|---|---|---|---|\n| T1 | build | tested | wire the K2.5 arms | active |\n\n## SDLC State\n\nscale: task\ncurrent: T1\n%s\n- T1: bash tests/canonical-sdlc-evidence-gate.test.sh 328/328 green\n\n%s\n' \
+    "$(task_frontmatter_rigor tested)" "$approved_line" "${2:-}"
+}
+
+# 38a — current: T1, an honest ledger, a matrix present, NO approved-by →
+# block naming approved-by (the ledger is clean, so this is the sole defect).
+h38a=$(make_home)
+write_plan "$h38a" "$(k2t_plan "" "$k2_matrix_full")" > /dev/null
+expect_block "38a task-scale current: T1 with no approved-by: → block" \
+  "$h38a" 'git commit -m "x"' "approved-by"
+
+# 38b — approved-by present; AC-2's block names no fails-when: → block naming
+# AC-2 (approved-by clears first, isolating the second arm).
+h38b=$(make_home)
+write_plan "$h38b" "$(k2t_plan "$K2_APPROVED" "$k2_matrix_missing")" > /dev/null
+expect_block "38b task-scale current: T1, AC-2 names no fails-when: → block naming AC-2" \
+  "$h38b" 'git commit -m "x"' "AC-2"
+
+# 38c — an empty fails-when: value is the same defect as an absent one.
+h38c=$(make_home)
+write_plan "$h38c" "$(k2t_plan "$K2_APPROVED" "$k2_matrix_empty")" > /dev/null
+expect_block "38c task-scale current: T1, AC-2 fails-when: is empty → block naming AC-2" \
+  "$h38c" 'git commit -m "x"' "AC-2"
+
+# 38d — both present, every AC block names a fails-when → allow.
+h38d=$(make_home)
+write_plan "$h38d" "$(k2t_plan "$K2_APPROVED" "$k2_matrix_full")" > /dev/null
+expect_allow "38d task-scale current: T1, approved-by + every fails-when present → allow" \
+  "$h38d" 'git commit -m "x"'
+
+# 38e — T2, T3: the rule is "any n >= 1", not "n == 1" — reproven at a second
+# task id so the K2.5 rule is not accidentally pinned to T1 specifically.
+k2t2_plan() {
+  local approved_line=""
+  [ -n "$1" ] && approved_line="$1
+"
+  printf '%s\n## Tasks\n\n| id | intent | rigor | description | status |\n|---|---|---|---|---|\n| T3 | build | tested | wire the K2.5 arms | active |\n\n## SDLC State\n\nscale: task\ncurrent: T3\n%s\n- T3: bash tests/canonical-sdlc-evidence-gate.test.sh 328/328 green\n\n%s\n' \
+    "$(task_frontmatter_rigor tested)" "$approved_line" "${2:-}"
+}
+h38e=$(make_home)
+write_plan "$h38e" "$(k2t2_plan "" "$k2_matrix_full")" > /dev/null
+expect_block "38e task-scale current: T3 with no approved-by: → block (any n >= 1, not just T1)" \
+  "$h38e" 'git commit -m "x"' "approved-by"
+
+# 38f — control: a numbered plan at current: 3 (wave, pre-approval) stays
+# inert on both arms regardless of scale. Section 37h already proves this;
+# reproven here beside the task-scale cases so K2.5's widening is visibly
+# bounded to `current: T<n>` and never leaks onto pre-Step-4 numbered plans.
+h38f=$(make_home)
+write_plan "$h38f" "$(k2_plan 3 "" "$k2_matrix_missing")" > /dev/null
+expect_allow "38f control: numbered current: 3 with neither approved-by nor fails-when → allow (K2.5 does not widen this)" \
+  "$h38f" 'git commit -m "x"'
+
+# 38g — control: current: 0 through 2 stay inert too, same reasoning as 38f.
+for n in 0 1 2; do
+  h38g=$(make_home)
+  write_plan "$h38g" "$(k2_plan "$n" "" "$k2_matrix_missing")" > /dev/null
+  expect_allow "38g control: numbered current: $n with neither approved-by nor fails-when → allow" \
+    "$h38g" 'git commit -m "x"'
+done
 
 # ============================================================
 # Section 38: the prototype no-row arm (epic-22 K4, AC-K4.2)

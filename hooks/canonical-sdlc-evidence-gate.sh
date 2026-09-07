@@ -1033,6 +1033,245 @@ if [ -z "$SECTION" ]; then
   exit 2
 fi
 
+# The `## Verification Matrix` section body (newline-normalized, like SECTION at
+# the top of the hook — a separate awk pass over the whole plan). Lines inside
+# ``` fenced code blocks are dropped so a jq/shell pipeline written in
+# leading-pipe continuation style is never mistaken for a table row; every
+# downstream matrix parse (rows, stack-health, false-green, AC blocks) reads
+# this body, so scoping the fence-skip here covers all of them. Fence state
+# is tracked across the whole file so section detection stays fence-aware.
+# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
+matrix_section() {
+  normalize_newlines "$PLAN" | awk '
+    /^[[:space:]]*```/ { fence = !fence; next }
+    fence { next }
+    /^## Verification Matrix/ { f=1; next }
+    /^## / { f=0 }
+    f'
+}
+
+# The indented evidence block under "<AC-id>:" within MATRIX (up to the next
+# non-indented line). index()==1 anchors at line start without regex-escaping
+# the AC id, so AC-1 never matches the AC-11 block.
+#
+# A markdown list leader before the header is tolerated: `- AC-1:` reads exactly
+# like `AC-1:`. Without this, a list-shaped block extracted as EMPTY and every
+# consumer below went silent at once — the provenance arm saw no citation, the
+# per-tier key loop saw no keys and blocked a conformant plan, and both
+# `waiver:` exemptions (per-tier and post-Verify CONFIRMED) lost their token.
+# One extractor, four behaviors, so the leader was a whole-contract bypass.
+# The strip runs on a COPY (`hdr`), which keeps two invariants: the terminator
+# below still tests the RAW line, so a following list item still ends the
+# previous block; and the index test still runs against a line that begins with
+# the AC id, so AC-1 still does not match `- AC-11:`. Accepted: the three
+# CommonMark bullet markers plus at least one space, flush left — `-AC-1:` is
+# not a list item, and an INDENTED header is refused on purpose because the
+# terminator could never end a block it introduced.
+# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
+matrix_block() {
+  echo "$MATRIX" | awk -v ac="$1:" '
+    { hdr = $0; sub(/^[-*+][[:space:]]+/, "", hdr) }
+    index(hdr, ac)==1 {f=1; next}
+    /^[^[:space:]]/ {f=0}
+    f'
+}
+
+# ================================================== THE TWO STEP-4 ARMS (epic-22 K2, K2.5)
+#
+# Defined HERE, directly before `CURRENT` is parsed — earlier than a numbered-step-only
+# wall would need to be. The reason is the task-scale branch a few lines below: epic-22
+# K2.5 calls these same two arms from inside the `current: T<n>` branch, which used to
+# `exit 0` before ever reaching them (they used to live between the matrix extractors and
+# the pointer-step exit, reachable only by the numbered-step path). Moving the DEFINITIONS
+# up costs nothing — `matrix_section`/`matrix_block` need only `$PLAN`, which is set long
+# before this point — and it lets one pair of checks serve both scales instead of a second
+# copy of either. The numbered-step CALL still runs in its original place, right before the
+# pointer-step exit below; this is only the definitions moving.
+#
+# THE STEP NUMBER IS READ AS A NUMBER, ONCE. `CURRENT` reaches here as `4`, `8b`, `10` or a
+# task-scale `T<n>`. Numbered steps are read digit-first, the leftmost run before any letter
+# (`4`, `8b` → `8`); a value whose digits cannot be read leaves both arms unmeasured rather
+# than refusing on a question they cannot ask — the fail direction every start-side
+# ambiguity in this tree takes. Task-scale is the one case that is NOT "read the digits":
+# `T1`'s leading `T` would strip to empty and read as unmeasured, which is exactly the gap
+# K2.5 closes — a task-scale plan is always mid-execution, never mid-authoring, so ANY
+# `current: T<n>` (n >= 1) reads as past Step 3 and both arms bind on it the same way they
+# do from `current: 4` onward.
+k2_step_num() {
+  case "$CURRENT" in
+    T[0-9]*) printf '4'; return ;;
+  esac
+  local n="${CURRENT%%[!0-9]*}"
+  case "$n" in ''|*[!0-9]*) printf '' ;; *) printf '%s' "$n" ;; esac
+}
+
+# ---------- the approval arm (AC-K2.4, AC-K2.5, design decision 2) ----------
+#
+# WHAT `approved` BINDS. Step 3 ends at one approval checkpoint, and until this arm
+# existed the user's word left no trace: a run could be building at Step 4 with nobody
+# able to say whether the plan had ever been ratified, and the only backstop was the
+# Patrol's below-Step-4 fill refusal, which asks a different question. Decision 2 settled
+# the recording — on the user's LITERAL `approved` the orchestrator writes
+#
+#     approved-by: <user> <ISO-UTC> "<verbatim reply>"
+#
+# into `## SDLC State` — and this is the wall that makes its absence cost something.
+# Silence, a question, or a partial reply is never transcribed as approval, so PRESENCE
+# is the whole check: nothing here grades the quote, and nothing here can tell a
+# transcription from an invention. What it can tell is that nobody wrote one down.
+#
+# INERT BELOW STEP 4, by construction and not by accident. Steps 0-3 are where the plan
+# is authored, and the approval is asked for at the END of Step 3 — a wall there would
+# refuse the very commit that writes the plan the user is about to approve.
+#
+# DURABLE FROM 4 ONWARD, the same shape the matrix prefix check has: deleting the line at
+# Step 6 loses the same fact it would have lost at Step 4. AT TASK SCALE (K2.5) there is no
+# "below Step 4" — `k2_step_num` reads every `current: T<n>` as past Step 3, so this arm is
+# durable from a task-scale plan's first commit onward.
+# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
+validate_approved_by() {
+  local step approved
+  step=$(k2_step_num)
+  [ -n "$step" ] || return 0
+  [ "$step" -ge 4 ] || return 0
+
+  approved=$(echo "$SECTION" | grep -E '^[[:space:]]*approved-by[[:space:]]*:' | head -1 \
+    | sed -E 's/^[[:space:]]*approved-by[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
+  [ -n "$approved" ] && return 0
+
+  echo "BLOCKED: canonical-sdlc step ${CURRENT} — '## SDLC State' carries no 'approved-by:' line; the Step-3 approval is what admits Step 4." >&2
+  echo "Plan: $PLAN" >&2
+  echo "Fix: on the user's literal 'approved', record 'approved-by: <user> <ISO-UTC> \"<verbatim reply>\"' under '## SDLC State' — never on silence, a question, or a partial reply." >&2
+  exit 2
+}
+
+# ---------- the fails-when arm (AC-K2.3, AC-K2.5) ----------
+#
+# AN EVAL WITH NO NAMEABLE FAILURE IS NOT AN EVAL. A matrix row that cannot say what
+# planted defect it must go red on is a row that will be green whatever the code does,
+# and the gate cannot tell the two apart at discharge time — which is the whole reason
+# the column is authored at Step 2, in the spec's `## Eval design`, and merely RENDERED
+# into the plan's matrix at Step 3. By Step 4 every AC block has one, or a step was
+# skipped; so this arm is the receipt for that authoring order rather than a new demand.
+# AT TASK SCALE (K2.5) the same receipt is owed from a plan's first `current: T<n>`
+# commit — a task-scale plan carrying a `## Verification Matrix` is held to the identical
+# standard as a numbered-step plan at `current: 4`+.
+#
+# IT JUDGES BLOCKS, NOT ROWS. A matrix row with no AC block underneath it is not a
+# fails-when finding: there is no block to lack the key, and the per-tier evidence loop
+# at the Verify gate is what owns that gap. Nor does a plan with no `## Verification
+# Matrix` at all become one — a Step-4 plan may not have written the section yet, and
+# demanding it here would be the Verify gate's demand moved four steps early.
+# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
+validate_fails_when() {
+  local step rows line ac block_txt fw
+  step=$(k2_step_num)
+  [ -n "$step" ] || return 0
+  [ "$step" -ge 4 ] || return 0
+
+  MATRIX=$(matrix_section)
+  [ -n "$MATRIX" ] || return 0
+  rows=$(echo "$MATRIX" | grep -E '^[[:space:]]*\|')
+  [ -n "$rows" ] || return 0
+
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    echo "$line" | grep -qE '^[[:space:]]*\|[-|:[:space:]]*$' && continue
+    ac=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')
+    [ "$ac" = "AC" ] && continue
+    [ -n "$ac" ] || continue
+    block_txt=$(matrix_block "$ac")
+    [ -n "$block_txt" ] || continue
+    fw=$(echo "$block_txt" | grep -E '^[[:space:]]*fails-when[[:space:]]*:' | head -1 \
+      | sed -E 's/^[[:space:]]*fails-when[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
+    [ -n "$fw" ] && continue
+    echo "BLOCKED: canonical-sdlc step ${CURRENT} — matrix row '${ac}' names no 'fails-when:'; an eval with no nameable failure is not an eval." >&2
+    echo "Plan: $PLAN" >&2
+    echo "Fix: add 'fails-when: <the planted defect this eval must go red on>' to the '${ac}:' block — it is authored in the spec's '## Eval design' and rendered here." >&2
+    exit 2
+  done <<< "$rows"
+  return 0
+}
+
+# The `## Slices` section body, same fence-aware/heading-bounded shape as
+# `matrix_section` above — a separate awk pass over the whole plan, stopping at the
+# next `## ` heading. Moved up beside the other Step-4 arms (epic-22 K2.5) for the
+# same reason: the task-scale branch below needs it defined before it is called.
+slices_section() {
+  normalize_newlines "$PLAN" | awk '
+    /^[[:space:]]*```/ { fence = !fence; next }
+    fence { next }
+    /^## Slices/ { f=1; next }
+    /^## / { f=0 }
+    f'
+}
+
+# ---------- the prototype no-row arm (AC-K4.2, epic-22 K4 + K2.5) ----------
+#
+# A PROTOTYPE NEVER DISCHARGES A MATRIX ROW (design decision D7). Its output is a
+# design ruling written back to the spec, not a shipped behavior — nothing about a
+# throwaway is provable by an eval, so a `kind: prototype` slice that also owns a
+# Verification Matrix AC block is a category error the gate can catch structurally:
+# the `## Slices` table names which slices are prototypes, and each AC block's own
+# `slice:` field names which slice discharges it. Reads both tables the same way
+# `validate_fails_when` reads the matrix — rows first, then the block underneath
+# each row — so an AC id absent from the row table (and therefore from the matrix
+# entirely) cannot be judged here either.
+#
+# INERT BELOW STEP 4 (numbered) OR BELOW `current: T<n>` (task-scale, epic-22 K2.5),
+# same reasoning as the two arms above: the Slices table and the Verification Matrix
+# are both Step-3 artifacts, not necessarily complete before then, and a task-scale
+# plan typically carries neither — `slices_section` returns empty and this is a no-op.
+# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
+validate_prototype_no_matrix_row() {
+  local step slices proto_nums line num kind rows ac block_txt ac_slice n
+  step=$(k2_step_num)
+  [ -n "$step" ] || return 0
+  [ "$step" -ge 4 ] || return 0
+
+  slices=$(slices_section | grep -E '^[[:space:]]*\|')
+  [ -n "$slices" ] || return 0
+
+  proto_nums=""
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    echo "$line" | grep -qE '^[[:space:]]*\|[-|:[:space:]]*$' && continue
+    num=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')
+    [ "$num" = "#" ] && continue
+    kind=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$4); print $4}')
+    [ "$kind" = "prototype" ] || continue
+    [ -n "$num" ] || continue
+    proto_nums="$proto_nums $num"
+  done <<< "$slices"
+  [ -n "$proto_nums" ] || return 0
+
+  MATRIX=$(matrix_section)
+  [ -n "$MATRIX" ] || return 0
+  rows=$(echo "$MATRIX" | grep -E '^[[:space:]]*\|')
+  [ -n "$rows" ] || return 0
+
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    echo "$line" | grep -qE '^[[:space:]]*\|[-|:[:space:]]*$' && continue
+    ac=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')
+    [ "$ac" = "AC" ] && continue
+    [ -n "$ac" ] || continue
+    block_txt=$(matrix_block "$ac")
+    [ -n "$block_txt" ] || continue
+    ac_slice=$(echo "$block_txt" | grep -E '^[[:space:]]*slice[[:space:]]*:' | head -1 \
+      | sed -E 's/^[[:space:]]*slice[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
+    [ -n "$ac_slice" ] || continue
+    for n in $proto_nums; do
+      [ "$ac_slice" = "$n" ] || continue
+      echo "BLOCKED: canonical-sdlc step ${CURRENT} — matrix row '${ac}' names 'slice: ${ac_slice}', a 'kind: prototype' row in '## Slices'; a prototype ships nothing and never discharges a matrix row." >&2
+      echo "Plan: $PLAN" >&2
+      echo "Fix: remove the '${ac}:' block, or repoint its 'slice:' to the build slice that cites the prototype's ruling — the prototype's own output is a design decision written to the spec, never a matrix discharge." >&2
+      exit 2
+    done
+  done <<< "$rows"
+  return 0
+}
+
 # Parse current step. Accepts integers (1-13) and the 8b adversarial
 # critic step.
 CURRENT=$(echo "$SECTION" \
@@ -1043,13 +1282,19 @@ CURRENT=$(echo "$SECTION" \
 
 # Task-scale plans address a ledger TASK, not a numbered step:
 # `current: T<n>` with evidence on `- T<n>:` lines (no `Step N:` line). Validate
-# the ledger (log-only, D12/D14) and allow the commit — the task pointer is
-# structurally valid, so a false block here would be a defect (R4.3). A
-# `current: T<n>` on a non-task plan is NOT accepted here; it falls through to
-# the numeric check below and blocks (T-format is scale: task only).
+# the ledger (log-only, D12/D14), then — epic-22 K2.5 — run the SAME three Step-4
+# arms a numbered-step plan runs below: a task-scale plan is always mid-execution,
+# never mid-authoring, so `current: T<n>` (any n >= 1) reads as past Step 3 and the
+# approved-by / fails-when / prototype-no-row walls bind on it exactly as they do
+# from `current: 4` onward (`k2_step_num`, above, recognises the T-format
+# directly). A `current: T<n>` on a non-task plan is NOT accepted here; it falls
+# through to the numeric check below and blocks (T-format is scale: task only).
 # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
 if echo "$CURRENT" | grep -qE '^T[0-9]+$' && [ "$SCALE" = "task" ]; then
   validate_task_ledger
+  validate_approved_by
+  validate_fails_when
+  validate_prototype_no_matrix_row
   exit 0
 fi
 
@@ -1450,223 +1695,14 @@ keys_for_tier() {
   esac
 }
 
-# The `## Verification Matrix` section body (newline-normalized, like SECTION at
-# the top of the hook — a separate awk pass over the whole plan). Lines inside
-# ``` fenced code blocks are dropped so a jq/shell pipeline written in
-# leading-pipe continuation style is never mistaken for a table row; every
-# downstream matrix parse (rows, stack-health, false-green, AC blocks) reads
-# this body, so scoping the fence-skip here covers all of them. Fence state
-# is tracked across the whole file so section detection stays fence-aware.
+# THE THREE STEP-4 ARMS (epic-22 K2, K4, K2.5): `matrix_section`, `matrix_block`,
+# `slices_section`, `k2_step_num`, `validate_approved_by`, `validate_fails_when` and
+# `validate_prototype_no_matrix_row` are now all defined just before `CURRENT` is
+# parsed, above — moved there so the task-scale `current: T<n>` branch can call them
+# too, instead of `exit 0`ing before ever reaching them. This is the numbered-step
+# call: it still runs in the same place it always has, right before the pointer-step
+# exit below.
 # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
-matrix_section() {
-  normalize_newlines "$PLAN" | awk '
-    /^[[:space:]]*```/ { fence = !fence; next }
-    fence { next }
-    /^## Verification Matrix/ { f=1; next }
-    /^## / { f=0 }
-    f'
-}
-
-# The indented evidence block under "<AC-id>:" within MATRIX (up to the next
-# non-indented line). index()==1 anchors at line start without regex-escaping
-# the AC id, so AC-1 never matches the AC-11 block.
-#
-# A markdown list leader before the header is tolerated: `- AC-1:` reads exactly
-# like `AC-1:`. Without this, a list-shaped block extracted as EMPTY and every
-# consumer below went silent at once — the provenance arm saw no citation, the
-# per-tier key loop saw no keys and blocked a conformant plan, and both
-# `waiver:` exemptions (per-tier and post-Verify CONFIRMED) lost their token.
-# One extractor, four behaviors, so the leader was a whole-contract bypass.
-# The strip runs on a COPY (`hdr`), which keeps two invariants: the terminator
-# below still tests the RAW line, so a following list item still ends the
-# previous block; and the index test still runs against a line that begins with
-# the AC id, so AC-1 still does not match `- AC-11:`. Accepted: the three
-# CommonMark bullet markers plus at least one space, flush left — `-AC-1:` is
-# not a list item, and an INDENTED header is refused on purpose because the
-# terminator could never end a block it introduced.
-# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
-matrix_block() {
-  echo "$MATRIX" | awk -v ac="$1:" '
-    { hdr = $0; sub(/^[-*+][[:space:]]+/, "", hdr) }
-    index(hdr, ac)==1 {f=1; next}
-    /^[^[:space:]]/ {f=0}
-    f'
-}
-
-# ================================================== THE TWO STEP-4 ARMS (epic-22 K2)
-#
-# They sit HERE, above the pointer-step exit and below the matrix extractors, because
-# that is the only place both facts are true: `matrix_section`/`matrix_block` are
-# defined, and `current: 4` has not yet taken the pointer step's `exit 0`.
-#
-# THE STEP NUMBER IS READ AS A NUMBER, ONCE. `CURRENT` reaches here as `4`, `8b` or
-# `10`; the task lane (`T<n>`) exited far above. A value whose digits cannot be read
-# leaves both arms unmeasured rather than refusing on a question they cannot ask — the
-# fail direction every start-side ambiguity in this tree takes.
-k2_step_num() {
-  local n="${CURRENT%%[!0-9]*}"
-  case "$n" in ''|*[!0-9]*) printf '' ;; *) printf '%s' "$n" ;; esac
-}
-
-# ---------- the approval arm (AC-K2.4, design decision 2) ----------
-#
-# WHAT `approved` BINDS. Step 3 ends at one approval checkpoint, and until this arm
-# existed the user's word left no trace: a run could be building at Step 4 with nobody
-# able to say whether the plan had ever been ratified, and the only backstop was the
-# Patrol's below-Step-4 fill refusal, which asks a different question. Decision 2 settled
-# the recording — on the user's LITERAL `approved` the orchestrator writes
-#
-#     approved-by: <user> <ISO-UTC> "<verbatim reply>"
-#
-# into `## SDLC State` — and this is the wall that makes its absence cost something.
-# Silence, a question, or a partial reply is never transcribed as approval, so PRESENCE
-# is the whole check: nothing here grades the quote, and nothing here can tell a
-# transcription from an invention. What it can tell is that nobody wrote one down.
-#
-# INERT BELOW STEP 4, by construction and not by accident. Steps 0-3 are where the plan
-# is authored, and the approval is asked for at the END of Step 3 — a wall there would
-# refuse the very commit that writes the plan the user is about to approve.
-#
-# DURABLE FROM 4 ONWARD, the same shape the matrix prefix check has: deleting the line at
-# Step 6 loses the same fact it would have lost at Step 4.
-# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
-validate_approved_by() {
-  local step approved
-  step=$(k2_step_num)
-  [ -n "$step" ] || return 0
-  [ "$step" -ge 4 ] || return 0
-
-  approved=$(echo "$SECTION" | grep -E '^[[:space:]]*approved-by[[:space:]]*:' | head -1 \
-    | sed -E 's/^[[:space:]]*approved-by[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
-  [ -n "$approved" ] && return 0
-
-  echo "BLOCKED: canonical-sdlc step ${CURRENT} — '## SDLC State' carries no 'approved-by:' line; the Step-3 approval is what admits Step 4." >&2
-  echo "Plan: $PLAN" >&2
-  echo "Fix: on the user's literal 'approved', record 'approved-by: <user> <ISO-UTC> \"<verbatim reply>\"' under '## SDLC State' — never on silence, a question, or a partial reply." >&2
-  exit 2
-}
-
-# ---------- the fails-when arm (AC-K2.3) ----------
-#
-# AN EVAL WITH NO NAMEABLE FAILURE IS NOT AN EVAL. A matrix row that cannot say what
-# planted defect it must go red on is a row that will be green whatever the code does,
-# and the gate cannot tell the two apart at discharge time — which is the whole reason
-# the column is authored at Step 2, in the spec's `## Eval design`, and merely RENDERED
-# into the plan's matrix at Step 3. By Step 4 every AC block has one, or a step was
-# skipped; so this arm is the receipt for that authoring order rather than a new demand.
-#
-# IT JUDGES BLOCKS, NOT ROWS. A matrix row with no AC block underneath it is not a
-# fails-when finding: there is no block to lack the key, and the per-tier evidence loop
-# at the Verify gate is what owns that gap. Nor does a plan with no `## Verification
-# Matrix` at all become one — a Step-4 plan may not have written the section yet, and
-# demanding it here would be the Verify gate's demand moved four steps early.
-# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
-validate_fails_when() {
-  local step rows line ac block_txt fw
-  step=$(k2_step_num)
-  [ -n "$step" ] || return 0
-  [ "$step" -ge 4 ] || return 0
-
-  MATRIX=$(matrix_section)
-  [ -n "$MATRIX" ] || return 0
-  rows=$(echo "$MATRIX" | grep -E '^[[:space:]]*\|')
-  [ -n "$rows" ] || return 0
-
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    echo "$line" | grep -qE '^[[:space:]]*\|[-|:[:space:]]*$' && continue
-    ac=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')
-    [ "$ac" = "AC" ] && continue
-    [ -n "$ac" ] || continue
-    block_txt=$(matrix_block "$ac")
-    [ -n "$block_txt" ] || continue
-    fw=$(echo "$block_txt" | grep -E '^[[:space:]]*fails-when[[:space:]]*:' | head -1 \
-      | sed -E 's/^[[:space:]]*fails-when[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
-    [ -n "$fw" ] && continue
-    echo "BLOCKED: canonical-sdlc step ${CURRENT} — matrix row '${ac}' names no 'fails-when:'; an eval with no nameable failure is not an eval." >&2
-    echo "Plan: $PLAN" >&2
-    echo "Fix: add 'fails-when: <the planted defect this eval must go red on>' to the '${ac}:' block — it is authored in the spec's '## Eval design' and rendered here." >&2
-    exit 2
-  done <<< "$rows"
-  return 0
-}
-
-# The `## Slices` section body, same fence-aware/heading-bounded shape as
-# `matrix_section` above — a separate awk pass over the whole plan, stopping at the
-# next `## ` heading.
-slices_section() {
-  normalize_newlines "$PLAN" | awk '
-    /^[[:space:]]*```/ { fence = !fence; next }
-    fence { next }
-    /^## Slices/ { f=1; next }
-    /^## / { f=0 }
-    f'
-}
-
-# ---------- the prototype no-row arm (AC-K4.2) ----------
-#
-# A PROTOTYPE NEVER DISCHARGES A MATRIX ROW (design decision D7). Its output is a
-# design ruling written back to the spec, not a shipped behavior — nothing about a
-# throwaway is provable by an eval, so a `kind: prototype` slice that also owns a
-# Verification Matrix AC block is a category error the gate can catch structurally:
-# the `## Slices` table names which slices are prototypes, and each AC block's own
-# `slice:` field names which slice discharges it. Reads both tables the same way
-# `validate_fails_when` reads the matrix — rows first, then the block underneath
-# each row — so an AC id absent from the row table (and therefore from the matrix
-# entirely) cannot be judged here either.
-#
-# INERT BELOW STEP 4, same reasoning as the two arms above: the Slices table and the
-# Verification Matrix are both Step-3 artifacts, not necessarily complete before then.
-# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
-validate_prototype_no_matrix_row() {
-  local step slices proto_nums line num kind rows ac block_txt ac_slice n
-  step=$(k2_step_num)
-  [ -n "$step" ] || return 0
-  [ "$step" -ge 4 ] || return 0
-
-  slices=$(slices_section | grep -E '^[[:space:]]*\|')
-  [ -n "$slices" ] || return 0
-
-  proto_nums=""
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    echo "$line" | grep -qE '^[[:space:]]*\|[-|:[:space:]]*$' && continue
-    num=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')
-    [ "$num" = "#" ] && continue
-    kind=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$4); print $4}')
-    [ "$kind" = "prototype" ] || continue
-    [ -n "$num" ] || continue
-    proto_nums="$proto_nums $num"
-  done <<< "$slices"
-  [ -n "$proto_nums" ] || return 0
-
-  MATRIX=$(matrix_section)
-  [ -n "$MATRIX" ] || return 0
-  rows=$(echo "$MATRIX" | grep -E '^[[:space:]]*\|')
-  [ -n "$rows" ] || return 0
-
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    echo "$line" | grep -qE '^[[:space:]]*\|[-|:[:space:]]*$' && continue
-    ac=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')
-    [ "$ac" = "AC" ] && continue
-    [ -n "$ac" ] || continue
-    block_txt=$(matrix_block "$ac")
-    [ -n "$block_txt" ] || continue
-    ac_slice=$(echo "$block_txt" | grep -E '^[[:space:]]*slice[[:space:]]*:' | head -1 \
-      | sed -E 's/^[[:space:]]*slice[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
-    [ -n "$ac_slice" ] || continue
-    for n in $proto_nums; do
-      [ "$ac_slice" = "$n" ] || continue
-      echo "BLOCKED: canonical-sdlc step ${CURRENT} — matrix row '${ac}' names 'slice: ${ac_slice}', a 'kind: prototype' row in '## Slices'; a prototype ships nothing and never discharges a matrix row." >&2
-      echo "Plan: $PLAN" >&2
-      echo "Fix: remove the '${ac}:' block, or repoint its 'slice:' to the build slice that cites the prototype's ruling — the prototype's own output is a design decision written to the spec, never a matrix discharge." >&2
-      exit 2
-    done
-  done <<< "$rows"
-  return 0
-}
-
 validate_approved_by
 validate_fails_when
 validate_prototype_no_matrix_row
