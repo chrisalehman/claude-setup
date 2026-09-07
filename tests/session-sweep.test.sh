@@ -74,7 +74,11 @@ expect_matches() { expect_regex "$@"; }
 # in its own subshell and a background job started inside one dies with it (the measurement
 # is recorded in tests/doctor-patrol.test.sh, whose builder this copies).
 spawn_live_pid() {
-  sleep 100 &
+  # 3600, not 100: the fixture must outlive the SUITE, not a case — under load this suite
+  # has taken 323 s (tests-floor3, 2026-09-07), and a fake session whose process has exited
+  # before the case that reads it is honestly reported dead (doctor-patrol case 44). The
+  # EXIT trap kills every one of these; nothing waits on them.
+  sleep 3600 &
   LIVE_PID=$!
   LIVE_PIDS="${LIVE_PIDS} ${LIVE_PID}"
 }

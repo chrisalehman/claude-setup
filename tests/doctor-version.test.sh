@@ -434,6 +434,74 @@ ROW8="$(version_row "$(run_doctor "$HOME8")")"
 expect_match "30: a dotted/dashed prerelease version is still reported" \
   "*9.9.9-rc.1 available*" "$ROW8"
 
+section "Section 7: plugin source — which tree the seat loads (W4 4/4)"
+
+# WHAT THIS SECTION OWNS. `detect_marketplace_source_path` (payload/scripts/lib/
+# detect.sh) reads what the registry names as bionic's source; doctor.sh turns
+# that into ONE line comparing it against the checkout doctor itself is running
+# from — the two homes for one marketplace name that a machine carrying a plugin
+# install, a checkout and a marketplace copy of the same thing can have live at
+# once. `run_doctor` (above) already `cd`s to `$REPO` before invoking doctor.sh,
+# so a fixture that names `$REPO` as bionic's source is exactly "this checkout",
+# and the same fixture with a different path is exactly the other one.
+
+plugin_source_line() {  # <full-output>
+  printf '%s\n' "$1" | awk '/^plugin source: /'
+}
+
+echo "--- 7a: this checkout ---"
+
+HOME9="$(make_registry_home)"
+write_known_marketplaces "$HOME9" '{"source":"directory","path":"'"$REPO"'"}' "$REPO"
+OUT9="$(run_doctor "$HOME9")"
+LINE9="$(plugin_source_line "$OUT9")"
+expect_match "31: a registration naming this checkout's own root reads [this checkout]" \
+  "*${REPO}*\[this checkout\]" "$LINE9"
+expect_no_match "31b: …and never carries the OTHER-checkout warning" "*OTHER checkout*" "$LINE9"
+
+echo "--- 7b: OTHER checkout ---"
+
+# Not asserted against the FULL literal path: a mktemp root under this machine's
+# $TMPDIR is long enough on its own that the bracket sentence leaves no room for
+# it whole — the truncation arm below is where that elision itself is the claim.
+OTHER_ROOT="$(mktemp -d -p "$TMP")"
+HOME10="$(make_registry_home)"
+write_known_marketplaces "$HOME10" '{"source":"directory","path":"'"$OTHER_ROOT"'"}' "$OTHER_ROOT"
+LINE10="$(plugin_source_line "$(run_doctor "$HOME10")")"
+expect_match "31c: a registration naming a DIFFERENT root reads OTHER checkout" \
+  "plugin source: *\[OTHER checkout — the CLI loads the plugin from THERE\]" "$LINE10"
+expect_no_match "31d: …and it is not read as this checkout" "*\[this checkout\]" "$LINE10"
+
+echo "--- 7c: unregistered ---"
+
+HOME11="$(make_registry_home)"
+write_empty_known_marketplaces "$HOME11"
+LINE11="$(plugin_source_line "$(run_doctor "$HOME11")")"
+expect_eq "31e: no bionic entry at all prints the plain unregistered line" \
+  "plugin source: unregistered" "$LINE11"
+
+echo "--- 7d: a git feed has no filesystem path, so it can never read 'this checkout' ---"
+
+HOME12="$(make_registry_home)"
+write_known_marketplaces "$HOME12" '{"source":"github","repo":"example/bionic"}' "/tmp/some-clone"
+LINE12="$(plugin_source_line "$(run_doctor "$HOME12")")"
+expect_match "31f: the repo slug prints as-is, verdict OTHER — nothing here can match a root" \
+  "*example/bionic*\[OTHER checkout — the CLI loads the plugin from THERE\]" "$LINE12"
+
+echo "--- 7e: the bracket verdict survives truncation; the path gives way instead ---"
+
+# THE SAME LESSON Section 5 already proved for the version row's path detail,
+# applied to this line: the informative half (the path) is expendable, the
+# verdict half (the bracket) is not.
+LONGROOT="${TMP}/${LONGSEG}/${LONGSEG}/checkout"
+mkdir -p "$LONGROOT"
+HOME13="$(make_registry_home)"
+write_known_marketplaces "$HOME13" '{"source":"directory","path":"'"$LONGROOT"'"}' "$LONGROOT"
+LINE13="$(plugin_source_line "$(run_doctor "$HOME13")")"
+expect_match "31g: the long path was elided" "*…*" "$LINE13"
+expect_match "31h: …and the OTHER-checkout verdict survived the cut whole" \
+  "*\[OTHER checkout — the CLI loads the plugin from THERE\]" "$LINE13"
+
 section "Section 8: feed kind is keyed on the installed plugin's own marketplace name (AC-18, L-DETECT/4.1)"
 
 # THE DEFECT. detect_marketplace_feed_kind used to key known_marketplaces.json
