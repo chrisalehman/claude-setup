@@ -4169,6 +4169,148 @@ expect_ne "…and the mutated copy no longer agrees with the origin, body for bo
 
 
 # ============================================================
+section "V — SUPPORTED_SDLC_VERSION: one owner, four carriers, five renderings (AC-19)"
+# ============================================================
+#
+# r3 §1E item 13: one logical constant, five renderings, and the two hooks were not held
+# in agreement by anything until this section — the only prior test hit was a single
+# spot-check literal in tests/canonical-sdlc-evidence-gate.test.sh, and operational-rules.md
+# itself says the pin-sync rows lived in tests/scripts.test.sh, retired at epic-18 W3
+# (8582861). `.claude/rules/hook-authoring.md` said both hooks pinned 12 well after they
+# moved to 14 — a stale literal in a FILE ABOUT the pin, the same failure mode this section
+# exists to catch in the pin's own carriers.
+#
+# THE OWNER is canonical-sdlc-evidence-gate.sh (spec AC-19, provenance table): it is the
+# file operational-rules.md's close-out contract cites by name ("Both hooks check
+# `SUPPORTED_SDLC_VERSION=14`") and the one whose refusal message names the fix. Four
+# carriers restate it: the governing-skill hook's own copy, the value operational-rules.md
+# documents in prose, and two SVG renderings — lifecycle.svg's title and hook-chain.svg's
+# three `class="version-pin"` chips (§1E's SVG count is 2; hook-chain.svg alone carries
+# three of the five total renderings the census counts as "both SVGs"). A per-file suite
+# cannot see this drift: each carrier reads fine on its own while all five disagree.
+
+V_ORIGIN="$PARTY_EG"
+V_GSKILL="$BIONIC_HOOKS_DIR/canonical-sdlc-governing-skill.sh"
+V_RULES="$BIONIC_SKILLS_DIR/canonical-sdlc/operational-rules.md"
+V_LIFECYCLE="$BIONIC_SKILLS_DIR/canonical-sdlc/diagrams/lifecycle.svg"
+V_HOOKCHAIN="$BIONIC_SKILLS_DIR/canonical-sdlc/diagrams/hook-chain.svg"
+
+# extractors — each pulls the bare integer out of its file's own rendering shape.
+v_hook_val() { grep -m1 '^SUPPORTED_SDLC_VERSION=' "$1" 2>/dev/null | cut -d= -f2 | tr -cd '0-9'; }
+v_rules_val() {  # operational-rules.md lists versions newest-first and says so at :17
+                 # ("Every version bullet below v14 in this file is historical record
+                 # only") — the FIRST `SUPPORTED_SDLC_VERSION=` hit is the live value, the
+                 # rest are superseded history. Same first-match convention §N.1's loader
+                 # block extraction and the evidence-gate's own frontmatter reads use.
+  grep -m1 -o 'SUPPORTED_SDLC_VERSION=[0-9]\+' "$1" 2>/dev/null | cut -d= -f2
+}
+v_lifecycle_val() {  # <text class="version-pin" data-pin="lifecycle-title" ...>...(v14)</text>
+  grep -m1 'data-pin="lifecycle-title"' "$1" 2>/dev/null | grep -oE '\(v[0-9]+\)' | tr -cd '0-9'
+}
+v_hookchain_vals() {  # three chips, one per line, in the order they render:
+                      #   "canonical_sdlc_version == 14" (x2) and
+                      #   "canonical_sdlc_version: 14 is the only value either hook accepts."
+  grep 'class="version-pin"' "$1" 2>/dev/null | while IFS= read -r _vline; do
+    printf '%s\n' "$_vline" | grep -oE 'canonical_sdlc_version[=: ]+[0-9]+' | grep -oE '[0-9]+$'
+  done
+}
+
+V_ORIGIN_VAL="$(v_hook_val "$V_ORIGIN")"
+expect_eq "the origin (evidence gate) declares a non-vacuous SUPPORTED_SDLC_VERSION" "yes" \
+  "$([ -n "$V_ORIGIN_VAL" ] && [ "$V_ORIGIN_VAL" -gt 0 ] 2>/dev/null && echo yes || echo no)"
+
+expect_eq "the governing-skill hook's SUPPORTED_SDLC_VERSION agrees with the gate's" \
+  "$V_ORIGIN_VAL" "$(v_hook_val "$V_GSKILL")"
+
+expect_eq "operational-rules.md's live SUPPORTED_SDLC_VERSION value agrees with the gate's" \
+  "$V_ORIGIN_VAL" "$(v_rules_val "$V_RULES")"
+
+expect_eq "lifecycle.svg's title renders the same version" \
+  "$V_ORIGIN_VAL" "$(v_lifecycle_val "$V_LIFECYCLE")"
+
+V_HC_VALS="$(v_hookchain_vals "$V_HOOKCHAIN")"
+expect_eq "hook-chain.svg carries exactly three version-pin chips (not fewer, not more)" "3" \
+  "$(printf '%s\n' "$V_HC_VALS" | grep -c '[0-9]')"
+V_HC_N=0
+for _v in $V_HC_VALS; do
+  V_HC_N=$((V_HC_N + 1))
+  expect_eq "…hook-chain.svg version-pin chip #$V_HC_N agrees with the gate's" \
+    "$V_ORIGIN_VAL" "$_v"
+done
+
+# MUTATION, the discriminator: doctor the governing-skill hook's value on a COPY — the
+# shipped file is never touched — and the comparison above must be provably able to catch
+# it. Without this, the rows above prove only that five renderings exist and currently
+# agree, not that disagreement is detectable. The replacement value is derived from the
+# live one (never a hardcoded "14") so this arm keeps discriminating after the next version
+# bump instead of silently passing over air the way the hook-authoring.md staleness did.
+V_MUT_DIR="$SANDBOX/version-mutant"; mkdir -p "$V_MUT_DIR"
+anchor -E "$V_GSKILL" "^SUPPORTED_SDLC_VERSION=${V_ORIGIN_VAL}\$" 1
+sed "s/^SUPPORTED_SDLC_VERSION=${V_ORIGIN_VAL}\$/SUPPORTED_SDLC_VERSION=$((V_ORIGIN_VAL + 1))/" \
+  "$V_GSKILL" > "$V_MUT_DIR/canonical-sdlc-governing-skill.sh"
+expect_ne "…and a doctored governing-skill copy no longer agrees with the gate" \
+  "$V_ORIGIN_VAL" "$(v_hook_val "$V_MUT_DIR/canonical-sdlc-governing-skill.sh")"
+
+# CONTROL — the same copy, unmutated, still agrees. Without this the RED above could be the
+# `sed`/copy machinery itself rather than the mutation.
+cp "$V_GSKILL" "$V_MUT_DIR/canonical-sdlc-governing-skill.clean.sh"
+expect_eq "control: an UNMUTATED copy still agrees with the gate" \
+  "$V_ORIGIN_VAL" "$(v_hook_val "$V_MUT_DIR/canonical-sdlc-governing-skill.clean.sh")"
+
+# AC-R6.3 — the governing-skill hook's two HINTS (the version-mismatch Fix line and the
+# missing-frontmatter YAML block) read SUPPORTED_SDLC_VERSION; neither one's source states a
+# digit. Both sites went through the hook before: the Fix line always interpolated the
+# variable, and the YAML block's `canonical_sdlc_version: 14` was a literal until this
+# wave's ed78ae3 pick bound the value near the top of the file and interpolated it there too.
+V_HINT_REPO="$(new_repo "v-hint")"
+V_HINT_PLAN="$V_HINT_REPO/.bionic/docs/plans/epic-99/wave-01-x.plan.md"
+
+# -- the version-mismatch Fix line, against the real (unmutated) hook: a planted write
+# declaring canonical_sdlc_version: 13 (one below origin, never hardcoded as 13 anywhere but
+# in this plant) must be told to set the LIVE value, not seed its own doctored one back. --
+V_MISMATCH_STDERR="$(jq -n --arg p "$V_HINT_PLAN" --arg s "$SID_A" \
+    --arg c $'---\ngoverning-skill: canonical-sdlc\ncanonical_sdlc_version: 13\n---\nbody\n' \
+    '{session_id:$s, tool_name:"Write", tool_input:{file_path:$p, content:$c}}' \
+  | env HOME="$V_HINT_REPO" CLAUDE_CODE_SESSION_ID="$SID_A" bash "$V_GSKILL" 2>&1 >/dev/null)"
+expect_contains "…a planted version-13 write's Fix line names the live value, not 13" \
+  "canonical_sdlc_version: ${V_ORIGIN_VAL}" "$V_MISMATCH_STDERR"
+expect_eq "…and never echoes the doctored value back as the fix" "" \
+  "$(printf '%s' "$V_MISMATCH_STDERR" | grep -oE "set 'canonical_sdlc_version: 13'" || true)"
+
+# -- the missing-frontmatter YAML hint: against the real hook it must print the live value,
+# and against the §V mutant built above (SUPPORTED_SDLC_VERSION=origin+1) it must print THAT
+# value instead — proving the hint tracks the variable rather than a baked-in literal. --
+V_MISSING_C='# no frontmatter here
+'
+V_MISSING_STDERR="$(jq -n --arg p "$V_HINT_PLAN" --arg s "$SID_A" --arg c "$V_MISSING_C" \
+    '{session_id:$s, tool_name:"Write", tool_input:{file_path:$p, content:$c}}' \
+  | env HOME="$V_HINT_REPO" CLAUDE_CODE_SESSION_ID="$SID_A" bash "$V_GSKILL" 2>&1 >/dev/null)"
+expect_contains "…the missing-frontmatter hint prints the live value" \
+  "canonical_sdlc_version: ${V_ORIGIN_VAL}" "$V_MISSING_STDERR"
+
+# A hook copied bare into $V_MUT_DIR resolves its libraries via loader.sh's `../scripts/lib`
+# fallback, which is not there — see .claude/rules/lib-changes-in-worktrees.md's trap, the
+# same shape one level down: a hook run standalone needs its sibling library directory, not
+# just its own file. §S.4's S4_MUT builds that sibling once for the whole suite; this arm
+# needs its own copy since it mutates the hook the shared one does not.
+V_EXEC_MUT="$SANDBOX/version-mutant-exec"
+mkdir -p "$V_EXEC_MUT/hooks" "$V_EXEC_MUT/scripts/lib"
+cp "$LIB_DIR_SRC"/*.sh "$V_EXEC_MUT/scripts/lib/" 2>/dev/null
+cp "$V_MUT_DIR/canonical-sdlc-governing-skill.sh" "$V_EXEC_MUT/hooks/canonical-sdlc-governing-skill.sh"
+V_MISSING_MUT_STDERR="$(jq -n --arg p "$V_HINT_PLAN" --arg s "$SID_A" --arg c "$V_MISSING_C" \
+    '{session_id:$s, tool_name:"Write", tool_input:{file_path:$p, content:$c}}' \
+  | env HOME="$V_HINT_REPO" CLAUDE_CODE_SESSION_ID="$SID_A" \
+    bash "$V_EXEC_MUT/hooks/canonical-sdlc-governing-skill.sh" 2>&1 >/dev/null)"
+expect_contains "…and a MUTATED hook's hint prints ITS value, proving the hint follows the variable" \
+  "canonical_sdlc_version: $((V_ORIGIN_VAL + 1))" "$V_MISSING_MUT_STDERR"
+
+# -- static proof: no site in the hook's own source states the value as a bare digit; every
+# rendering of the field name is followed by the variable, never a literal. --
+expect_eq "…no 'canonical_sdlc_version: <digit>' literal anywhere in the hook's source" "" \
+  "$(grep -nE 'canonical_sdlc_version:[[:space:]]*[0-9]' "$V_GSKILL" || true)"
+
+
+# ============================================================
 section "Section P — the Patrol stamp: the poker WRITES exactly the path the gate READS"
 # ============================================================
 #
@@ -8259,8 +8401,9 @@ expect_eq "S19.3 docs-pins holds 26 doctoring sites" "26" \
 expect_eq "S19.3 …declared by 27 anchor calls (Section 8's doctoring rewrites two sentences; Section 12 adds three, K1)" "27" \
   "$(/usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]' "$S19_DOCS_PINS")"
 # 25 since Step 6: §S13.2 lifts the wall's own reduction out of the hook and
-# anchors both lines it lifts (review-b B-3).
-expect_eq "S19.3 …and this suite's own mutant trees and lifts by 25 more" "25" \
+# anchors both lines it lifts (review-b B-3). 26 since epic-21 wave-02 S12: §V's
+# governing-skill mutation adds one more anchor call.
+expect_eq "S19.3 …and this suite's own mutant trees and lifts by 26 more" "26" \
   "$(/usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]' "$S19_TESTS_DIR/cross-gate-agreement.test.sh")"
 # The two suites the waiver used to name. `mutate_guard` anchors per call (its callers pass
 # the shipped line they delete). landing-gate anchors its inverted-guard awk, and — since
@@ -8277,9 +8420,11 @@ expect_eq "S19.3 …and landing-gate by three: the inverted-guard mutant, and th
 # anchors — F1 in this suite, F2 in landing-gate — and each rewrote this total from 49
 # to 51 in BYTE-IDENTICAL text, so the merge was conflict-free and the pin was two short
 # of the tree. Measured at the merged head, not predicted: 24 + 25 + 1 + 3 = 53.
-# 56 since K1 (epic-22 plan slice 15): docs-pins gained three anchor calls (Section 12's
-# anti-vacuity mutants), rewriting 24 -> 27 in the first row above: 27 + 25 + 1 + 3 = 56.
-expect_eq "S19.3 …56 anchor call sites across the four doctoring suites, all told" "56" \
+# 57 since both epic-22 slices landed on top of the 53 baseline: K1 (plan slice 15) gave
+# docs-pins three more anchor calls (Section 12's anti-vacuity mutants, 24 -> 27 in the
+# first row above); R6 (plan slice 3, §V's one new anchor call) gave this suite one more,
+# 25 -> 26 (see the row above this one). 27 + 26 + 1 + 3 = 57.
+expect_eq "S19.3 …57 anchor call sites across the four doctoring suites, all told" "57" \
   "$(cat "$S19_DOCS_PINS" "$S19_TESTS_DIR/cross-gate-agreement.test.sh" \
         "$S19_TESTS_DIR/agent-context-guard.test.sh" "$S19_TESTS_DIR/landing-gate.test.sh" \
      | /usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]')"
