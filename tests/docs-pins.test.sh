@@ -1336,4 +1336,91 @@ case "$DOCTORED_CARD_82" in
   *) ok "82: a Step-0 card missing the integration branch line fails the branch-pair check (pin discriminates)" ;;
 esac
 
+section "Section 13: K5 — the layout block names .requirements.md and the three-artifact sentence (spec §Eval design K5, plan slice 19)"
+#
+# WHAT THIS SECTION OWNS. K5 (design ledger K5; ADR-001) fixes three artifacts to three
+# steps. AC-K5.3 pins that SKILL.md's own text — the Artifact-layout code block and the
+# Steps table's rows 1–3 — names all three (requirements.md, spec.md, plan.md) and, in
+# one sentence each, what each holds. This is the "human reads the skill" half of K5; the
+# hook arms that enforce it (governing-skill's frontmatter contract, evidence-gate's
+# Step-1 pointer) are pinned by their own suites, not here.
+#
+# ANTI-VACUITY, same discriminate-a-doctored-copy pattern as Section 12: each extractor is
+# re-run against a copy mutated to reproduce K5.3's own "fails-when" (absent), and must go red.
+
+LAYOUT_BLOCK="$(awk '/^## Artifact layout$/{f=1;next} f&&/^```$/{c++; if(c==2) exit} f&&c==1{print}' "$SKILL_MD")"
+
+expect_true "83: the Artifact-layout code block is found in SKILL.md" \
+  test -n "$LAYOUT_BLOCK"
+
+expect_contains "84: AC-K5.3 — the layout block names wave-NN-<slug>.requirements.md beside the spec (fails-when: absent)" \
+  "wave-NN-<slug>.requirements.md" "$LAYOUT_BLOCK"
+
+expect_regex "85: 84's requirements.md sits in the SAME specs/ line as .spec.md, not its own directory" \
+  '^<docs-root>/specs/epic-NN-<slug>/\{[^}]*wave-NN-<slug>\.spec\.md[^}]*wave-NN-<slug>\.requirements\.md[^}]*\}$' \
+  "$LAYOUT_BLOCK"
+
+# The three-artifact sentence: one sentence each, naming what requirements.md, spec.md
+# and plan.md hold. Pinned as three separate substring checks (the exact prose is not
+# pinned, only that each artifact name co-occurs with its content description) rather
+# than one long regex, so a future reword of the connective prose does not false-fail
+# a check whose real subject is "does the sentence exist and name the right things".
+THREE_ARTIFACT_TEXT="$(awk '/^\*\*Three artifacts, three steps\*\*/{f=1} f{print} f&&/^$/{exit}' "$SKILL_MD")"
+
+expect_true "86: the three-artifact sentence is found in SKILL.md" \
+  test -n "$THREE_ARTIFACT_TEXT"
+
+expect_contains "87a: AC-K5.3 — names requirements.md and what it holds (fails-when: absent)" \
+  "requirements.md\`: numbered requirements" "$THREE_ARTIFACT_TEXT"
+expect_contains "87b: AC-K5.3 — names spec.md and what it holds (fails-when: absent)" \
+  "spec.md\`: the technical design" "$THREE_ARTIFACT_TEXT"
+expect_contains "87c: AC-K5.3 — names plan.md and what it holds (fails-when: absent)" \
+  "plan.md\`: slices, sequencing" "$THREE_ARTIFACT_TEXT"
+
+# Steps table rows 1-3: each row's Gate cell also names its Step's artifact + one-line content.
+STEP1_ROW="$(grep -E '^\| 1 Scope \|' "$SKILL_MD")"
+STEP2_ROW="$(grep -E '^\| 2 Design \|' "$SKILL_MD")"
+STEP3_ROW="$(grep -E '^\| 3 Plan \|' "$SKILL_MD")"
+
+expect_contains "88a: AC-K5.3 — Step 1's table row names requirements.md + what it holds (fails-when: absent)" \
+  "requirements.md\` — numbered requirements" "$STEP1_ROW"
+expect_contains "88b: AC-K5.3 — Step 2's table row names spec.md + what it holds (fails-when: absent)" \
+  "spec.md\` — the technical design" "$STEP2_ROW"
+expect_contains "88c: AC-K5.3 — Step 3's table row names plan.md + what it holds (fails-when: absent)" \
+  "plan.md\` — slices, sequencing" "$STEP3_ROW"
+
+# --- Anti-vacuity: each extractor must go red on the fails-when it names (absent) ---
+
+# 89: a layout block with requirements.md stripped out fails 84.
+anchor "$SKILL_MD" ', wave-NN-<slug>.requirements.md}' 1
+DOCTORED_NO_REQ_LAYOUT="$TMP/skill-k5-no-req-layout.md"
+sed 's/, wave-NN-<slug>\.requirements\.md}/}/' "$SKILL_MD" > "$DOCTORED_NO_REQ_LAYOUT"
+DOCTORED_LAYOUT_89="$(awk '/^## Artifact layout$/{f=1;next} f&&/^```$/{c++; if(c==2) exit} f&&c==1{print}' "$DOCTORED_NO_REQ_LAYOUT")"
+case "$DOCTORED_LAYOUT_89" in
+  *"wave-NN-<slug>.requirements.md"*) no "89: a layout block with requirements.md stripped still 'has' it (pin is vacuous)" ;;
+  *) ok "89: a layout block with requirements.md stripped fails the name check (pin discriminates)" ;;
+esac
+
+# 90: a SKILL.md with the whole three-artifact sentence removed fails 86/87a-c.
+anchor -E "$SKILL_MD" '^\*\*Three artifacts, three steps\*\*' 1
+DOCTORED_NO_SENTENCE="$TMP/skill-k5-no-sentence.md"
+awk '/^\*\*Three artifacts, three steps\*\*/{skip=1} skip&&/^$/{skip=0;next} !skip{print}' "$SKILL_MD" > "$DOCTORED_NO_SENTENCE"
+DOCTORED_SENTENCE_90="$(awk '/^\*\*Three artifacts, three steps\*\*/{f=1} f{print} f&&/^$/{exit}' "$DOCTORED_NO_SENTENCE")"
+if [ -z "$DOCTORED_SENTENCE_90" ]; then
+  ok "90: a SKILL.md with the three-artifact sentence removed fails the presence check (pin discriminates)"
+else
+  no "90: a SKILL.md with the three-artifact sentence removed fails the presence check (pin discriminates)" \
+     "the mutated copy still carried the sentence — the mutation is a no-op"
+fi
+
+# 91: a Step-1 table row with its artifact clause stripped fails 88a.
+anchor "$SKILL_MD" "requirements.md\` — numbered requirements" 1
+DOCTORED_NO_ROW_CLAUSE="$TMP/skill-k5-no-row-clause.md"
+sed -E "s/; writes \`wave-NN-<slug>\.requirements\.md\`[^|]*//" "$SKILL_MD" > "$DOCTORED_NO_ROW_CLAUSE"
+DOCTORED_ROW1_91="$(grep -E '^\| 1 Scope \|' "$DOCTORED_NO_ROW_CLAUSE")"
+case "$DOCTORED_ROW1_91" in
+  *"requirements.md\` — numbered requirements"*) no "91: a Step-1 row with its artifact clause stripped still 'has' it (pin is vacuous)" ;;
+  *) ok "91: a Step-1 row with its artifact clause stripped fails the row check (pin discriminates)" ;;
+esac
+
 finish

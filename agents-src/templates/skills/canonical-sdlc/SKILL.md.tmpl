@@ -97,7 +97,7 @@ Do not carve a sensitive concern into a tiny unflagged wave to dodge a floor. Th
 ## Artifact layout
 
 ```
-<docs-root>/specs/epic-NN-<slug>/{epic.spec.md, wave-NN-<slug>.spec.md}
+<docs-root>/specs/epic-NN-<slug>/{epic.spec.md, wave-NN-<slug>.spec.md, wave-NN-<slug>.requirements.md}
 <docs-root>/plans/epic-NN-<slug>/{epic.plan.md, wave-NN-<slug>.plan.md}
 <docs-root>/adrs/epic-NN-<slug>/adr-NNN-<slug>.md
 <docs-root>/incidents/NNNN-<slug>/{spec.md, plan.md, rca.md}
@@ -120,6 +120,17 @@ frontmatter on them and blocks a canonical artifact written anywhere else. `reco
 only by citing a path. That is the whole distinction, and it is the boundary test applied to
 this tree: growth in the gated dirs is governed, growth in the operational ones is free.
 
+**Three artifacts, three steps** (design ledger K5; ADR-001) — Steps 1–3 write exactly one
+artifact apiece, chained requirement → criterion → design decision → eval → evidence. Step 1
+writes `wave-NN-<slug>.requirements.md`: numbered requirements/user stories, each with
+provenance and acceptance criteria written so a "fails when" is nameable, plus Not Doing. Step
+2 writes `wave-NN-<slug>.spec.md`: the technical design (domain model, architecture, ownership
+table, rejected alternatives), the Eval design table, and ADR pointers. Step 3 writes
+`wave-NN-<slug>.plan.md`: slices, sequencing, the dispatch ledger, and the verification matrix
+rendered from Step 2's Eval design. Requirements live beside the spec, both under
+`specs/epic-NN-<slug>/` — the governing-skill hook validates `*.requirements.md` frontmatter the
+same way it validates `*.spec.md`, minus the design three-way rule (that stays spec-only).
+
 **Anything the matrix cites as evidence goes in `record/`, never `tmp/`.** Auditor reports,
 critic findings, review-axis artifacts, test-run captures — the matrix names them by path, so
 they must outlive the run that produced them. `tmp/` is wiped at Step 8 and takes its contents
@@ -139,9 +150,9 @@ Every artifact carries frontmatter with `governing-skill:`, `sdlc-step:`, `inten
 | Step | Governing skill | Gate |
 |---|---|---|
 | 0 Configure | `canonical-sdlc` | Frontmatter complete, matrix derived, user confirmed, task list created |
-| 1 Scope | `agent-skills:idea-refine` | Refined idea + explicit "Not Doing" + alternatives lens cites prior art |
-| 2 Design | `agent-skills:spec-driven-development` | Every requirement has an acceptance criterion; every criterion cites its `provenance:`; wave+ carries a governing design |
-| 3 Plan | `superpowers:writing-plans` | No placeholders; `integration-branch:` present; matrix locked; slices tagged; user approved |
+| 1 Scope | `agent-skills:idea-refine` | Refined idea + explicit "Not Doing" + alternatives lens cites prior art; writes `wave-NN-<slug>.requirements.md` — numbered requirements/user stories with provenance and acceptance criteria, plus Not Doing |
+| 2 Design | `agent-skills:spec-driven-development` | Every requirement has an acceptance criterion; every criterion cites its `provenance:`; wave+ carries a governing design; writes `wave-NN-<slug>.spec.md` — the technical design, ownership table, and the Eval design table |
+| 3 Plan | `superpowers:writing-plans` | No placeholders; `integration-branch:` present; matrix locked; slices tagged; user approved; writes `wave-NN-<slug>.plan.md` — slices, sequencing, and the verification matrix rendered from Step 2's Eval design |
 | 4 Implement | `agent-skills:incremental-implementation` | Every slice RED before GREEN; assumptions logged |
 | 5 Verify | `superpowers:verification-before-completion` | Walk artifact in `record/`; tests floor green; every matrix row discharged at tier or waived; auditor CONFIRMED |
 | 6 Review | `agent-skills:code-review-and-quality` | Every axis has a verdict; independent critic attached |
