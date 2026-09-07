@@ -434,7 +434,14 @@ expect_match "18h: …it counts them and sends the reader to the section that na
   "*2 attestations here, every one from a session that is gone*" "$RES6D"
 expect_no_match "18i: …and still does not render their budgets as live capacity" \
   "*writers=77*" "$RES6D"
-expect_contains "18j: …while the page names the verb that clears them" \
+# 18j RE-POINTED (R2, ticket-30). Before R2 the page named the verb
+# unconditionally whenever dead-session state existed — this fixture's own
+# reason for being: two attestations with no owner. Now hooks/session-start.sh
+# clears that residue routinely on its own, and the verb only surfaces when
+# THAT auto-sweep itself failed (a fact this fixture never plants — see
+# tests/doctor-patrol.test.sh §16 and tests/doctor-reads.test.sh §19 for the
+# marker-present case, which is this row's own test and not this section's).
+expect_absent "18j: …and the page names no verb without a failure marker to justify one" \
   "session-poker.sh sweep" "$OUT6D"
 
 section "Section 7: the column budget"

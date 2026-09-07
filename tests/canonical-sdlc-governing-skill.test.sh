@@ -1222,7 +1222,7 @@ expect_empty "ac14_b no shipped surface instructs a context.md write" "$ac14_hit
 # default yes, as in the real artifact) · design=<value> injects a
 # `design:` line · waived=<full line> injects it verbatim.
 build_spec() {
-  local scale=wave section=yes design="OMIT" waived="OMIT" step=2
+  local scale=wave section=yes design="OMIT" waived="OMIT" step=2 adrs="OMIT"
   local arg
   for arg in "$@"; do
     case "$arg" in
@@ -1231,6 +1231,7 @@ build_spec() {
       design=*)  design="${arg#design=}" ;;
       waived=*)  waived="${arg#waived=}" ;;
       step=*)    step="${arg#step=}" ;;
+      adrs=*)    adrs="${arg#adrs=}" ;;
     esac
   done
 
@@ -1245,6 +1246,7 @@ scale: '"$scale"'
 '
   [ "$design" = OMIT ] || out+="design: $design"$'\n'
   [ "$waived" = OMIT ] || out+="$waived"$'\n'
+  [ "$adrs" = OMIT ] || out+="adrs: $adrs"$'\n'
   out+='surface_type: system
 language: bash
 has_ui: false
@@ -1472,6 +1474,67 @@ echo "c15d: in-place '## Design' + a VALID pointer → allow (the documented com
 run_write "$DESIGN_SPECS/w15d.spec.md" \
   "$(build_spec design=specs/epic-01-demo/with-design.spec.md)"
 assert_eq "design_combined_valid exit 0" 0 "$HOOK_EXIT"
+
+# ============================================================
+# K3 F4 / D6: the adrs: pointer arm (AC-K3.3)
+# ============================================================
+#
+# A momentous decision's ADR is drafted at Step 2 alongside the spec and
+# pointed to from the spec's own `adrs:` frontmatter (one path, or several
+# joined by ` · `). The arm only checks the pointer RESOLVES — no in-place
+# alternative, no waiver, unlike the three-way design rule above it — and it
+# is scoped to `sdlc-step >= 3`: below that, the ADR and the pointer are
+# typically authored in the same design pass and the file may not exist yet
+# on the turn the spec names it, so a dangling path is not yet a defect.
+#
+# Fixture: a real ADR at `adrs/epic-01-demo/real.md` (make_project() already
+# creates that directory); every case below points at it, or deliberately
+# does not.
+echo
+section "K3 F4: adrs: pointer arm (AC-K3.3)"
+
+ADRS_DIR="$design_project/.bionic/docs/adrs/epic-01-demo"
+printf '# ADR 001 — a momentous decision\n\nStatus: Accepted\n' > "$ADRS_DIR/real.md"
+
+echo "k3-1: sdlc-step 3, adrs: names a real file → allow"
+run_write "$DESIGN_SPECS/k3-1.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs=adrs/epic-01-demo/real.md)"
+assert_eq "adrs_resolving_step3 exit 0" 0 "$HOOK_EXIT"
+
+echo "k3-2: sdlc-step 3, adrs: names no file → block, naming the raw value and the resolved path"
+run_write "$DESIGN_SPECS/k3-2.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs=adrs/epic-01-demo/nowhere.md)"
+assert_eq "adrs_dangling_step3 exit 2" 2 "$HOOK_EXIT"
+assert_contains "adrs_dangling_step3 names the raw value" "adrs/epic-01-demo/nowhere.md" "$HOOK_STDERR"
+assert_contains "adrs_dangling_step3 names the resolved path" "$ADRS_DIR/nowhere.md" "$HOOK_STDERR"
+
+echo "k3-3: sdlc-step 2, adrs: names no file → allow (arm inert below step 3)"
+run_write "$DESIGN_SPECS/k3-3.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=2 adrs=adrs/epic-01-demo/nowhere.md)"
+assert_eq "adrs_dangling_step2_inert exit 0" 0 "$HOOK_EXIT"
+
+echo "k3-4: sdlc-step 3, no adrs: line at all → allow (a wave with no momentous decision cites none)"
+run_write "$DESIGN_SPECS/k3-4.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3)"
+assert_eq "adrs_absent_step3 exit 0" 0 "$HOOK_EXIT"
+
+echo "k3-5: sdlc-step 3, two adrs: paths joined by ' · ', one real one dangling → block naming the dangling one"
+run_write "$DESIGN_SPECS/k3-5.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 \
+    adrs="adrs/epic-01-demo/real.md · adrs/epic-01-demo/nowhere.md")"
+assert_eq "adrs_multi_one_dangling exit 2" 2 "$HOOK_EXIT"
+assert_contains "adrs_multi_one_dangling names the dangling entry, not the real one" \
+  "adrs/epic-01-demo/nowhere.md" "$HOOK_STDERR"
+
+echo "k3-6: sdlc-step 3, adrs: path with a '..' component → block even though it would resolve to a real file"
+run_write "$DESIGN_SPECS/k3-6.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs=adrs/epic-01-demo/../epic-01-demo/real.md)"
+assert_eq "adrs_dotdot_step3 exit 2" 2 "$HOOK_EXIT"
+
+echo "k3-7: sdlc-step 3, a task-scale spec with a dangling adrs: → allow (arm is wave/epic only, matching the design wall)"
+run_write "$DESIGN_SPECS/k3-7.spec.md" \
+  "$(build_spec section=no scale=task step=3 adrs=adrs/epic-01-demo/nowhere.md)"
+assert_eq "adrs_task_scale_untouched exit 0" 0 "$HOOK_EXIT"
 
 # ============================================================
 # AC-13: the pinned-root wall

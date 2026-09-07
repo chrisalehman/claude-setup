@@ -1254,9 +1254,202 @@ expect_contains "75: payload/scripts/lib/detect.sh reads integrity/rendered.sha2
 expect_absent "75b: …and names the deleted manifest nowhere" \
   'integrity/agents.sha256' "$(cat "$DETECT_SH")"
 
+# ── Section 6: K3 — premise text (AC-K3.1, AC-K3.2) ─────────────────────────
+#
+# ideas/bug-premise-decisions-surface-at-the-pr.md F1/F2 (D3 keeps F1/F2, cuts F3;
+# adrs: is F4, covered by tests/canonical-sdlc-governing-skill.test.sh instead — a
+# hook wall, not a doc-text pin). Both ACs are STATIC: docs-pins reads the rendered
+# Step-2 Design Interview frame span (SKILL.md, "Open with the frame" paragraph)
+# byte-for-byte, the same `has_pin` idiom §1-§5 use.
+section "Section 6: K3 — premise text (Context/Problem first, Mechanisms inherited)"
+
+# AC-K3.1: Context and Problem, for a stranger, is the FIRST thing the frame
+# ratifies — ahead of the orchestrator's own design intuition and every decision
+# below it. Pinned as one substring spanning the frame's opening clause straight
+# into the Context-and-Problem sentence, so the pin itself IS an adjacency (hence
+# order) check: it can only match a copy where nothing has been inserted, or
+# swapped in, between "before any question." and "Its first ratification is
+# **Context and Problem".
+PIN_K3_FIRST='**Open with the frame**, before any question. Its first ratification is **Context and Problem, for a stranger**'
+
+# AC-K3.2, half 1: the frame carries a "Mechanisms inherited" item, each line
+# marked kept or questioned.
+PIN_K3_MECH='**Mechanisms inherited**, one line per substrate or mechanism the design builds on, each marked `kept` or `questioned`'
+
+# AC-K3.2, half 2: placement decisions (tier / runtime surface / hardware) are
+# named strategic BY RULE, not left to a default.
+PIN_K3_STRATEGIC='placing a test cohort in a tier, a job on a runtime surface, or a workload on hardware is **strategic by rule**'
+
+if has_pin "$SKILL_MD" "$PIN_K3_FIRST"; then
+  ok "76: SKILL.md's Step-2 frame ratifies Context and Problem, for a stranger, first"
+else
+  no "76: SKILL.md's Step-2 frame ratifies Context and Problem, for a stranger, first" "file: $SKILL_MD"
+fi
+
+if has_pin "$SKILL_MD" "$PIN_K3_MECH"; then
+  ok "77: …and carries a Mechanisms inherited item, each kept or questioned"
+else
+  no "77: …and carries a Mechanisms inherited item, each kept or questioned" "file: $SKILL_MD"
+fi
+
+if has_pin "$SKILL_MD" "$PIN_K3_STRATEGIC"; then
+  ok "78: …and names tier/runtime-surface/hardware placement strategic by rule"
+else
+  no "78: …and names tier/runtime-surface/hardware placement strategic by rule" "file: $SKILL_MD"
+fi
+
+# --- Anti-vacuity: the same pins must discriminate a mutated copy ---
+
+# 79: ORDER REVERSED (AC-K3.1's own fails-when). The doctored copy swaps the
+# Context-and-Problem sentence and the Design-intuition sentence in place — the
+# literal shape of "the order is reversed" — rather than deleting anything, so a
+# pin that merely checked PRESENCE of both phrases would stay green through it.
+anchor -E "$SKILL_MD" 'Its first ratification is \*\*Context and Problem, for a stranger\*\*' 1
+DOCTORED_K3_ORDER="$TMP/skill-k3-order-reversed.md"
+sed -E '
+s/(\*\*Open with the frame\*\*, before any question\. )(Its first ratification is \*\*Context and Problem, for a stranger\*\*: the problem and the goal, written as if for a reader who has never opened this repo; this comes before your own design intuition and before every decision in the frame below it — a change not yet explainable to someone who was not there is not yet understood\. )(Then your own \*\*Design intuition\*\*, the shape you expect to be right, stated so the user can push on it; )/\1\3\2/
+' "$SKILL_MD" > "$DOCTORED_K3_ORDER"
+if has_pin "$DOCTORED_K3_ORDER" "$PIN_K3_FIRST"; then
+  no "79: order-reversed SKILL.md fails the first-ratification pin (pin discriminates)" \
+     "the mutated copy still matched — the pin does not see the reorder"
+else
+  ok "79: order-reversed SKILL.md fails the first-ratification pin (pin discriminates)"
+fi
+# Control: prove the doctored copy really moved Design intuition ahead of
+# Context and Problem, rather than merely mangling the text into something that
+# happens to fail the pin for an unrelated reason.
+expect_contains "79b: …and the doctored copy really does read Design intuition, then Context and Problem" \
+  'Then your own **Design intuition**, the shape you expect to be right, stated so the user can push on it; Its first ratification is **Context and Problem' \
+  "$(cat "$DOCTORED_K3_ORDER")"
+
+# 80: Mechanisms inherited ABSENT (AC-K3.2's fails-when). The strategic-by-rule
+# clause stays untouched in this copy — proof the mutation removed only the
+# Mechanisms-inherited item, not the whole paragraph.
+anchor "$SKILL_MD" 'Mechanisms inherited' 1
+DOCTORED_K3_MECH="$TMP/skill-k3-mechanisms-absent.md"
+sed 's/\*\*Mechanisms inherited\*\*, one line per substrate or mechanism the design builds on, each marked `kept` or `questioned` — a `questioned` line becomes a strategic fork; //' \
+  "$SKILL_MD" > "$DOCTORED_K3_MECH"
+if has_pin "$DOCTORED_K3_MECH" "$PIN_K3_MECH"; then
+  no "80: SKILL.md with Mechanisms inherited stripped still passes the mech pin (pin discriminates)" \
+     "the mutated copy still matched — the pin does not see the removal"
+else
+  ok "80: SKILL.md with Mechanisms inherited stripped still passes the mech pin (pin discriminates)"
+fi
+if has_pin "$DOCTORED_K3_MECH" "$PIN_K3_STRATEGIC"; then
+  ok "80b: …and the strategic-by-rule clause survives untouched in the same copy (isolated mutation)"
+else
+  no "80b: …and the strategic-by-rule clause survives untouched in the same copy (isolated mutation)" \
+     "the mutation removed more than the Mechanisms-inherited clause"
+fi
+
+# 81: "strategic by rule" ABSENT (AC-K3.2's other half). Mechanisms inherited
+# stays untouched here, the mirror-image isolation check of 80b.
+anchor "$SKILL_MD" 'strategic by rule' 1
+DOCTORED_K3_STRAT="$TMP/skill-k3-strategic-absent.md"
+sed "s/is \\*\\*strategic by rule\\*\\* and is never defaulted/is left to the writer's judgment/" \
+  "$SKILL_MD" > "$DOCTORED_K3_STRAT"
+if has_pin "$DOCTORED_K3_STRAT" "$PIN_K3_STRATEGIC"; then
+  no "81: SKILL.md with strategic-by-rule stripped still passes the strategic pin (pin discriminates)" \
+     "the mutated copy still matched — the pin does not see the removal"
+else
+  ok "81: SKILL.md with strategic-by-rule stripped still passes the strategic pin (pin discriminates)"
+fi
+if has_pin "$DOCTORED_K3_STRAT" "$PIN_K3_MECH"; then
+  ok "81b: …and Mechanisms inherited survives untouched in the same copy (isolated mutation)"
+else
+  no "81b: …and Mechanisms inherited survives untouched in the same copy (isolated mutation)" \
+     "the mutation removed more than the strategic-by-rule clause"
+fi
+
+section "Section 12: K1 — the Step-0 confirmation display is a settings-only card (spec §Eval design K1, plan slice 15)"
+#
+# WHAT THIS SECTION OWNS. D1 (design ledger record/wave-01-plugin-only/design-ledger.md §D1)
+# moves the Verification Matrix to Step 3 and cuts per-line inference rationale from Step 0:
+# the confirmation display becomes a ten-section settings card — Purpose, Seed, Run, Branches,
+# Paths, Machine, Shape, Gates, Models, Warnings — ending in a direct approval question. AC-K1.1
+# pins the section names and their order; AC-K1.2 pins the matrix's absence; AC-K1.3 pins that
+# Branches always carries both the working and the integration line (Chris: "You must always
+# include the working branch and integration branch.").
+#
+# ANTI-VACUITY, same discriminate-a-doctored-copy pattern as the sections above: each extractor
+# is re-run against a copy mutated to reproduce the AC's own "fails-when", and must go red.
+
+# step0_card <file> -> the fenced Step-0 card, header line through the closing fence.
+step0_card() {
+  awk '/^Step 0 · Plan Configuration$/{f=1} f{print} f&&/^```$/{exit}' "$1" 2>/dev/null
+}
+
+STEP0_CARD="$(step0_card "$SKILL_MD")"
+
+expect_true "76: the Step-0 card block is found in SKILL.md" \
+  test -n "$STEP0_CARD"
+
+K1_EXPECTED_SECTIONS="Purpose
+Seed
+Run
+Branches
+Paths
+Machine
+Shape
+Gates
+Models
+Warnings"
+K1_SECTION_RE='^  (Purpose|Seed|Run|Branches|Paths|Machine|Shape|Gates|Models|Warnings)([[:space:]]|$)'
+K1_ACTUAL_SECTIONS="$(printf '%s\n' "$STEP0_CARD" | grep -E "$K1_SECTION_RE" | sed -E 's/^  ([A-Za-z]+).*/\1/')"
+
+expect_eq "77: AC-K1.1 — the Step-0 card carries the ten sections, in order (fails-when: card partially rendered)" \
+  "$K1_EXPECTED_SECTIONS" "$K1_ACTUAL_SECTIONS"
+
+expect_absent "78: AC-K1.2 — no Verification Matrix table renders in the Step-0 card (fails-when: the matrix is left in)" \
+  "Verification Matrix" "$STEP0_CARD"
+
+expect_contains "79a: AC-K1.3 — Branches carries the working branch line (fails-when: one branch line dropped)" \
+  "    working" "$STEP0_CARD"
+expect_contains "79b: AC-K1.3 — …and the integration branch line" \
+  "    integration" "$STEP0_CARD"
+
+# --- Anti-vacuity: each extractor must go red on the fails-when it names ---
+
+# 80: a card with a whole section dropped (Gates) fails K1.1's order check.
+anchor -E "$SKILL_MD" '^  Gates$' 1
+DOCTORED_NO_GATES="$TMP/skill-k1-no-gates.md"
+sed '/^  Gates$/,/^$/d' "$SKILL_MD" > "$DOCTORED_NO_GATES"
+DOCTORED_SECTIONS_80="$(printf '%s\n' "$(step0_card "$DOCTORED_NO_GATES")" | grep -E "$K1_SECTION_RE" | sed 's/^  //')"
+if [ "$DOCTORED_SECTIONS_80" = "$K1_EXPECTED_SECTIONS" ]; then
+  no "80: a Step-0 card partially rendered (a section dropped) fails the order check (pin discriminates)" \
+     "the mutated copy still matched the expected order — the pin is vacuous"
+else
+  ok "80: a Step-0 card partially rendered (a section dropped) fails the order check (pin discriminates)"
+fi
+
+# 81: a card with the matrix left in fails K1.2.
+anchor -E "$SKILL_MD" '^Step 0 · Plan Configuration$' 1
+DOCTORED_MATRIX_BACK="$TMP/skill-k1-matrix-back.md"
+awk '{print} /^Step 0 · Plan Configuration$/{print "  Verification Matrix:"}' "$SKILL_MD" > "$DOCTORED_MATRIX_BACK"
+DOCTORED_CARD_81="$(step0_card "$DOCTORED_MATRIX_BACK")"
+case "$DOCTORED_CARD_81" in
+  *"Verification Matrix"*) ok "81: a Step-0 card with the matrix left in fails the no-matrix check (pin discriminates)" ;;
+  *) no "81: a Step-0 card with the matrix left in fails the no-matrix check (pin discriminates)" \
+        "the mutated copy did not carry the matrix string — the mutation is a no-op" ;;
+esac
+
+# 82: a card missing the integration branch line fails K1.3.
+# FOUR, not one, since slice 16 landed (epic-22 K2): the Step-1, Step-2 and Step-3 cards each
+# carry the same branch pair, so this mutation now strips four lines. That is fine for THIS
+# row — `step0_card` reads only the Step-0 span, so the discrimination below is unchanged —
+# but the count has to say what the pattern really matches, or the anchor is a promise the
+# mutation does not keep.
+anchor "$SKILL_MD" '    integration   ' 4
+DOCTORED_NO_INTEGRATION="$TMP/skill-k1-no-integration.md"
+sed '/^    integration   /d' "$SKILL_MD" > "$DOCTORED_NO_INTEGRATION"
+DOCTORED_CARD_82="$(step0_card "$DOCTORED_NO_INTEGRATION")"
+case "$DOCTORED_CARD_82" in
+  *"    integration"*) no "82: a Step-0 card missing the integration branch line still 'has' it (pin is vacuous)" ;;
+  *) ok "82: a Step-0 card missing the integration branch line fails the branch-pair check (pin discriminates)" ;;
+esac
 
 # ---------------------------------------------------------------------------
-section "Section 12: the Step-1/2/3 cards and the spec's Eval design table (epic-22 K2, AC-K2.1/AC-K2.2)"
+section "Section 13: the Step-1/2/3 cards and the spec's Eval design table (epic-22 K2, AC-K2.1/AC-K2.2)"
 # ---------------------------------------------------------------------------
 #
 # WHAT THIS SECTION OWNS. Steps 0-3 each end at a gate, and since the wave-01-plugin-only
@@ -1307,9 +1500,9 @@ CARD1="$(card_span "$SKILL_MD" 'Step 1 · Requirements')"
 CARD2="$(card_span "$SKILL_MD" 'Step 2 · Design')"
 CARD3="$(card_span "$SKILL_MD" 'Step 3 · Plan')"
 
-expect_true "76a: the Step-1 card is a fenced literal in the skill file" test -n "$CARD1"
-expect_true "76b: the Step-2 card is a fenced literal in the skill file" test -n "$CARD2"
-expect_true "76c: the Step-3 card is a fenced literal in the skill file" test -n "$CARD3"
+expect_true "90a: the Step-1 card is a fenced literal in the skill file" test -n "$CARD1"
+expect_true "90b: the Step-2 card is a fenced literal in the skill file" test -n "$CARD2"
+expect_true "90c: the Step-3 card is a fenced literal in the skill file" test -n "$CARD3"
 
 # --- the ratified rows, per card -------------------------------------------
 #
@@ -1318,41 +1511,41 @@ expect_true "76c: the Step-3 card is a fenced literal in the skill file" test -n
 # decisions/ownership/eval-design/open/artifacts, Step 3 is
 # problem/branches/slices/width/eval-design/verification/open/artifacts.
 if has_all "$CARD1" "Purpose" "Requirements" "Not Doing" "Artifacts"; then
-  ok "77a: the Step-1 card carries Purpose, Requirements, Not Doing and Artifacts"
+  ok "91a: the Step-1 card carries Purpose, Requirements, Not Doing and Artifacts"
 else
-  no "77a: the Step-1 card carries Purpose, Requirements, Not Doing and Artifacts" \
+  no "91a: the Step-1 card carries Purpose, Requirements, Not Doing and Artifacts" \
      "card body: $CARD1"
 fi
 if has_all "$CARD1" "provenance" "ACs"; then
-  ok "77b: …and a requirement row names its provenance and its criteria count"
+  ok "91b: …and a requirement row names its provenance and its criteria count"
 else
-  no "77b: …and a requirement row names its provenance and its criteria count" "card body: $CARD1"
+  no "91b: …and a requirement row names its provenance and its criteria count" "card body: $CARD1"
 fi
 
 if has_all "$CARD2" "Decisions" "serves" "ADR" "Ownership" "Eval design" "Open at approval" "Artifacts"; then
-  ok "78a: the Step-2 card carries Decisions (serves/ADR), Ownership, Eval design, Open at approval, Artifacts"
+  ok "92a: the Step-2 card carries Decisions (serves/ADR), Ownership, Eval design, Open at approval, Artifacts"
 else
-  no "78a: the Step-2 card carries Decisions (serves/ADR), Ownership, Eval design, Open at approval, Artifacts" \
+  no "92a: the Step-2 card carries Decisions (serves/ADR), Ownership, Eval design, Open at approval, Artifacts" \
      "card body: $CARD2"
 fi
 if has_all "$CARD2" "static" "unit" "hermetic" "live" "human" "total"; then
-  ok "78b: …and its Eval design is one row per requirement with the five type counts and a total"
+  ok "92b: …and its Eval design is one row per requirement with the five type counts and a total"
 else
-  no "78b: …and its Eval design is one row per requirement with the five type counts and a total" \
+  no "92b: …and its Eval design is one row per requirement with the five type counts and a total" \
      "card body: $CARD2"
 fi
 
 if has_all "$CARD3" "Problem" "Branches" "Slices" "kind" "depends" "agent" \
                     "Eval design" "Verification" "Open at approval" "Artifacts"; then
-  ok "79a: the Step-3 card carries Problem, Branches, Slices (kind/depends/agent), Eval design, Verification, Open at approval, Artifacts"
+  ok "93a: the Step-3 card carries Problem, Branches, Slices (kind/depends/agent), Eval design, Verification, Open at approval, Artifacts"
 else
-  no "79a: the Step-3 card carries Problem, Branches, Slices (kind/depends/agent), Eval design, Verification, Open at approval, Artifacts" \
+  no "93a: the Step-3 card carries Problem, Branches, Slices (kind/depends/agent), Eval design, Verification, Open at approval, Artifacts" \
      "card body: $CARD3"
 fi
 if has_all "$CARD3" "first batch"; then
-  ok "79b: …and the parallel width names its first batch"
+  ok "93b: …and the parallel width names its first batch"
 else
-  no "79b: …and the parallel width names its first batch" "card body: $CARD3"
+  no "93b: …and the parallel width names its first batch" "card body: $CARD3"
 fi
 
 # --- both branch lines, on every card --------------------------------------
@@ -1360,7 +1553,7 @@ fi
 # The working branch alone is half an answer: a reader cannot tell where the wave LANDS.
 # Chris corrected exactly this on the Step-0 display (2026-09-07), and the correction is
 # a property of every card, not of one.
-for _pair in "80a:$CARD1:Step-1" "80b:$CARD2:Step-2" "80c:$CARD3:Step-3"; do
+for _pair in "94a:$CARD1:Step-1" "94b:$CARD2:Step-2" "94c:$CARD3:Step-3"; do
   _n="${_pair%%:*}"; _rest="${_pair#*:}"; _body="${_rest%:*}"; _which="${_rest##*:}"
   if has_all "$_body" "working" "integration"; then
     ok "${_n}: the ${_which} card carries BOTH branch lines (working + integration)"
@@ -1373,27 +1566,27 @@ done
 #
 # One word is the gate. The ratified sentence is a QUESTION plus the literal reply, and
 # a look-closer line beneath it; the bare footer menu it replaced was rejected by name.
-expect_contains "81a: the Step-1 card asks the ratified question" \
+expect_contains "95a: the Step-1 card asks the ratified question" \
   'Do you approve these requirements? Reply "approved" to ratify it.' "$CARD1"
-expect_contains "81b: the Step-2 card asks the ratified question" \
+expect_contains "95b: the Step-2 card asks the ratified question" \
   'Do you approve this design? Reply "approved" to ratify it.' "$CARD2"
-expect_contains "81c: the Step-3 card asks the ratified question" \
+expect_contains "95c: the Step-3 card asks the ratified question" \
   'Do you approve this plan? Reply "approved" to ratify it.' "$CARD3"
-expect_contains "81d: the Step-2 card's look-closer line opens one requirement's evals" \
+expect_contains "95d: the Step-2 card's look-closer line opens one requirement's evals" \
   'show evals <req>' "$CARD2"
-expect_contains "81e: the Step-3 card's look-closer line opens one slice" \
+expect_contains "95e: the Step-3 card's look-closer line opens one slice" \
   'show slice <n>' "$CARD3"
 
 # --- AC-K2.2: the spec template's Eval design table -------------------------
 SKILL_BODY="$(cat "$SKILL_MD" 2>/dev/null)"
-expect_contains "82a: the skill names the spec's section '## Eval design'" \
+expect_contains "96a: the skill names the spec's section '## Eval design'" \
   '## Eval design' "$SKILL_BODY"
 EVAL_HEADER="$(grep -m1 -F '| Requirement | Approach |' "$SKILL_MD" 2>/dev/null)"
-expect_true "82b: …and gives it a column header row" test -n "$EVAL_HEADER"
+expect_true "96b: …and gives it a column header row" test -n "$EVAL_HEADER"
 for _col in Requirement Approach Criterion "Eval type" Eval "Fails when"; do
-  expect_contains "82c: …carrying the ratified column '$_col'" "$_col" "$EVAL_HEADER"
+  expect_contains "96c: …carrying the ratified column '$_col'" "$_col" "$EVAL_HEADER"
 done
-expect_contains "82d: …and states the invariant that gives the sixth column its force" \
+expect_contains "96d: …and states the invariant that gives the sixth column its force" \
   'is not an eval' "$SKILL_BODY"
 
 # --- Anti-vacuity: the spans are BOUNDED, not the whole file -----------------
@@ -1406,20 +1599,19 @@ expect_contains "82d: …and states the invariant that gives the sixth column it
 # card's question, and a Step-3 sentence no card contains. Doctored copies would say the
 # same thing at the cost of two more mutation sites in a file whose census is pinned
 # elsewhere; these rows are the same discrimination, in memory.
-expect_absent "83a: the Step-1 card's span stops before the Step-2 card's question" \
+expect_absent "97a: the Step-1 card's span stops before the Step-2 card's question" \
   'Do you approve this design?' "$CARD1"
-expect_absent "83b: the Step-2 card's span stops before the Step-3 card's question" \
+expect_absent "97b: the Step-2 card's span stops before the Step-3 card's question" \
   'Do you approve this plan?' "$CARD2"
-expect_absent "83c: the Step-3 card's span stops before the Step-5 prose below it" \
+expect_absent "97c: the Step-3 card's span stops before the Step-5 prose below it" \
   'Wave shape locks at approval' "$CARD3"
 # …and the positive those three need: the text they say is outside a span really is in the
 # file, so an absence above cannot be an absence from the whole document.
-expect_contains "83d: …and all three of those sentences do exist in the skill file" \
+expect_contains "97d: …and all three of those sentences do exist in the skill file" \
   'Wave shape locks at approval' "$SKILL_BODY"
 
 # The Eval design header is one row, not a swallowed table: the extractor takes the first
 # match only, so a second header row elsewhere cannot be what the column checks read.
-expect_eq "83e: the Eval design column header is a single line" "1" \
+expect_eq "97e: the Eval design column header is a single line" "1" \
   "$(printf '%s\n' "$EVAL_HEADER" | wc -l | tr -d ' ')"
-
 finish

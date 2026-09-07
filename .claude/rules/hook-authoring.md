@@ -113,8 +113,15 @@ section, and of this file, was never bootstrap-era and is unchanged.)*
   invisible to the artifacts the lifecycle itself produces. Use a separate state-marker field
   that the lifecycle stamps independently — canonical-sdlc uses `canonical_sdlc_version:`, set
   by Step 0. *(Correction 2026-07-27: the original text cited the then-current value
-  `canonical_sdlc_version: 3`. The mechanism is live and unchanged; the supported value is now
-  **12** — both hooks pin `SUPPORTED_SDLC_VERSION=12` and block loudly on anything else.)*
+  `canonical_sdlc_version: 3`. The mechanism is live and unchanged; both hooks pin one
+  `SUPPORTED_SDLC_VERSION` and block loudly on anything else — the value itself is NOT stated
+  here, for the reason the next correction gives.)*
+  *(Correction 2026-09-07, epic-21 wave-02 S12: the supported value moved again without this
+  file following, which is why this correction — like the one above it — states no digit.
+  Read the live value from the source, never from prose: `tests/cross-gate-agreement.test.sh`
+  §V pins both hooks, `operational-rules.md`, and both diagram SVGs against
+  `canonical-sdlc-evidence-gate.sh`'s copy, with a mutation arm — this file's now-corrected
+  habit of stating the value inline is exactly the drift that section exists to catch.)*
   Caught 2026-05-04 in the canonical-sdlc dispatch-gate + governing-skill hooks: every Step 3
   plan declared `governing-skill: superpowers:writing-plans`, both hooks early-returned, and
   `dispatch_enforce: true` was a no-op for the entire epic. Dispatch-gate hook retired
