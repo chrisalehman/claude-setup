@@ -106,6 +106,19 @@
 #                                        re-render, which is the point: both mean the
 #                                        committed file is not the render of the committed
 #                                        source.
+#   bash agents-src/render.sh --archive  the same comparison with the SOURCES taken from
+#                                        `git archive HEAD` instead of the working tree.
+#                                        Implies --check; there is no write form.
+#
+# THE ARCHIVE ARM, and why --check alone is not enough. --check reads the sources that are
+# ON DISK. A render input that is untracked, gitignored, or simply not staged is on disk,
+# so --check renders with it, agrees with the finals that were rendered with it, and goes
+# green — while a clone of HEAD, which is what every other machine and every install gets,
+# would render something else. --archive closes that gap by unpacking HEAD into a scratch
+# directory, rendering from THAT, and diffing against the working tree's committed finals
+# and manifest. Red means: the finals this tree carries are not reproducible from what is
+# committed, and the diff names the file. The repair is to commit the missing input (or,
+# if it was never meant to be a source, to delete it and re-render).
 #
 # Every directory is derived from this script's own location, never from $PWD, so a copy of
 # the tree in a temp directory renders against ITS OWN outputs — that is what lets the suite
@@ -113,9 +126,17 @@
 
 set -uo pipefail
 
-SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-REPO_DIR="$(cd "$SRC_DIR/.." && pwd -P)"
-BLOCK_DIR="$SRC_DIR/blocks"
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+REPO_DIR="$(cd "$SELF_DIR/.." && pwd -P)"
+
+# THE TWO ROOTS. Sources — templates, blocks, plugin.json — are read under SRC_ROOT; the
+# committed finals a check compares against, and the manifest, live under OUT_ROOT. For
+# every ordinary run they are the same directory and nothing here is visible. `--archive`
+# is the one mode that separates them: it unpacks `git archive HEAD` into a scratch
+# directory and points SRC_ROOT there, leaving OUT_ROOT on the working tree. See THE
+# ARCHIVE ARM in the usage block above for why that is a different question from --check.
+SRC_ROOT="$REPO_DIR"
+OUT_ROOT="$REPO_DIR"
 
 # THE UNIT TABLE: one row per (templates dir -> output dir), both repo-relative. Adding a
 # third rendered surface is a row here and nothing else; every loop below is driven from it,
@@ -145,11 +166,19 @@ ROLES="auditor critic implementor researcher senior-implementor test-runner"
 # are emitted in unit-table order and, within a unit, in glob order, so the file a write
 # produces and the file a --check recomputes cannot differ by ordering alone.
 MANIFEST_REL="payload/integrity/rendered.sha256"
-MANIFEST="$REPO_DIR/$MANIFEST_REL"
-
 PLUGIN_JSON_REL="payload/.claude-plugin/plugin.json"
-PLUGIN_JSON="$REPO_DIR/$PLUGIN_JSON_REL"
 VERSION_PLACEHOLDER='@@PLUGIN_VERSION@@'
+
+# Every path either root decides, in one place, so that moving a root moves all of them.
+# Called once now (so nothing below is unset under `set -u`) and again after the argument
+# parse, which is the only thing that can move SRC_ROOT.
+derive_roots() {
+  SRC_DIR="$SRC_ROOT/agents-src"
+  BLOCK_DIR="$SRC_DIR/blocks"
+  PLUGIN_JSON="$SRC_ROOT/$PLUGIN_JSON_REL"
+  MANIFEST="$OUT_ROOT/$MANIFEST_REL"
+}
+derive_roots
 
 die() { echo "render.sh: $1" >&2; exit 1; }
 
@@ -326,25 +355,57 @@ render_one() {
 }
 
 MODE="write"
-case "${1:-}" in
-  "")       MODE="write" ;;
-  --check)  MODE="check" ;;
-  -h|--help)
-    # The leading comment block, verbatim, with its `# ` stripped — no line-number range to
-    # fall out of step with the comment it is meant to print.
-    awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "${BASH_SOURCE[0]}"
-    exit 0 ;;
-  *) die "unknown argument '$1' (want --check, or no argument to write)" ;;
-esac
+ARCHIVE="no"
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --check)   MODE="check" ;;
+    # --archive implies --check. There is no write form of it on purpose: writing the
+    # working tree's finals from a render of HEAD would silently discard whatever source
+    # edit the tree is carrying, which is the opposite of what an operator running a
+    # reproducibility check wants.
+    --archive) MODE="check"; ARCHIVE="yes" ;;
+    -h|--help)
+      # The leading comment block, verbatim, with its `# ` stripped — no line-number range to
+      # fall out of step with the comment it is meant to print.
+      awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "${BASH_SOURCE[0]}"
+      exit 0 ;;
+    *) die "unknown argument '$1' (want --check, --archive, or no argument to write)" ;;
+  esac
+  shift
+done
+
+# THE ARCHIVE ROOT. `git archive HEAD` is the bytes a stranger gets from a clone: tracked
+# files at HEAD and nothing else. Unpacking it and rendering FROM it, while still diffing
+# AGAINST the working tree's finals and manifest, is what turns "these finals match their
+# sources" into "these finals are reproducible from what is committed". The gap between the
+# two answers is exactly a render input that is not in HEAD — untracked, gitignored, or
+# merely unstaged — and the tree arm cannot see it, because it reads that input too.
+ARCH=""
+if [ "$ARCHIVE" = yes ]; then
+  command -v git >/dev/null 2>&1 || die "--archive needs git on PATH"
+  git -C "$REPO_DIR" rev-parse --verify HEAD >/dev/null 2>&1 \
+    || die "--archive needs a git work tree with a commit at HEAD ($REPO_DIR)"
+  ARCH="$(mktemp -d)" || die "cannot create a temp directory for the archive"
+  # No pipe: `git archive | tar -x` under `set -o pipefail` reports the LAST command, and a
+  # tar that succeeds on a truncated stream would hide an archive failure. Two steps, two
+  # exit codes, each checked.
+  git -C "$REPO_DIR" archive --format=tar -o "$ARCH/HEAD.tar" HEAD \
+    || { rm -rf "$ARCH"; die "git archive HEAD failed in $REPO_DIR"; }
+  tar -xf "$ARCH/HEAD.tar" -C "$ARCH" \
+    || { rm -rf "$ARCH"; die "cannot unpack the archive of HEAD into $ARCH"; }
+  rm -f "$ARCH/HEAD.tar"
+  SRC_ROOT="$ARCH"
+  derive_roots
+fi
 
 [ -d "$BLOCK_DIR" ] || die "no blocks directory at $BLOCK_DIR"
 for unit in $RENDER_UNITS; do
-  [ -d "$REPO_DIR/${unit%%|*}" ] || die "no templates directory at $REPO_DIR/${unit%%|*}"
-  [ -d "$REPO_DIR/${unit##*|}" ] || die "no output directory at $REPO_DIR/${unit##*|}"
+  [ -d "$SRC_ROOT/${unit%%|*}" ] || die "no templates directory at $SRC_ROOT/${unit%%|*}"
+  [ -d "$OUT_ROOT/${unit##*|}" ] || die "no output directory at $OUT_ROOT/${unit##*|}"
 done
 
 WORK="$(mktemp -d)" || die "cannot create a temp directory"
-trap 'rm -rf "$WORK"' EXIT
+trap 'rm -rf "$WORK" ${ARCH:+"$ARCH"}' EXIT
 
 RC=0
 STALE=""
@@ -360,7 +421,7 @@ for unit in $RENDER_UNITS; do
   # maxdepth 1 by construction: the role unit's directory HOLDS the command unit's and the
   # skill unit's, and a recursive glob would render those twice, into the wrong place the
   # second time. A unit whose templates sit deeper names the deeper directory in the table.
-  for tmpl in "$REPO_DIR/$tmpl_dir"/*.md.tmpl; do
+  for tmpl in "$SRC_ROOT/$tmpl_dir"/*.md.tmpl; do
     [ -f "$tmpl" ] || continue
     base="$(basename "$tmpl")"; base="${base%.md.tmpl}"
     rel="$out_dir/$base.md"
@@ -373,16 +434,16 @@ for unit in $RENDER_UNITS; do
 "
 
     if [ "$MODE" = check ]; then
-      if [ ! -f "$REPO_DIR/$rel" ]; then
+      if [ ! -f "$OUT_ROOT/$rel" ]; then
         echo "render.sh: $rel does not exist (the template renders, nothing committed)" >&2
         STALE="$STALE $rel"; RC=1
-      elif ! diff -u "$REPO_DIR/$rel" "$WORK/$rel" > "$WORK/$out_dir/$base.diff" 2>&1; then
+      elif ! diff -u "$OUT_ROOT/$rel" "$WORK/$rel" > "$WORK/$out_dir/$base.diff" 2>&1; then
         echo "── $rel differs from a fresh render ──"
-        sed -e "s|$WORK/|<rendered>/|" -e "s|$REPO_DIR/||" "$WORK/$out_dir/$base.diff"
+        sed -e "s|$WORK/|<rendered>/|" -e "s|$OUT_ROOT/||" "$WORK/$out_dir/$base.diff"
         STALE="$STALE $rel"; RC=1
       fi
     else
-      cp "$WORK/$rel" "$REPO_DIR/$rel" || { echo "render.sh: cannot write $rel" >&2; RC=1; }
+      cp "$WORK/$rel" "$OUT_ROOT/$rel" || { echo "render.sh: cannot write $rel" >&2; RC=1; }
     fi
   done
 done
@@ -419,14 +480,27 @@ fi
 
 if [ "$MODE" = check ]; then
   if [ "$RC" = 0 ]; then
-    echo "render.sh --check: every rendered final matches a fresh render, and so does the manifest"
+    if [ "$ARCHIVE" = yes ]; then
+      echo "render.sh --check --archive: every rendered final matches a render of git archive HEAD, and so does the manifest"
+    else
+      echo "render.sh --check: every rendered final matches a fresh render, and so does the manifest"
+    fi
   else
     [ "$MANIFEST_STALE" = yes ] && STALE="$STALE $MANIFEST_REL"
-    echo "render.sh --check: STALE —${STALE:- (render failure)}" >&2
-    echo "  the committed file is not the render of the committed source. Either a final was" >&2
-    echo "  edited directly, a block/template was edited without re-rendering, or the manifest" >&2
-    echo "  was not refreshed with the finals." >&2
-    echo "  Repair: bash agents-src/render.sh — then commit the finals with the sources." >&2
+    if [ "$ARCHIVE" = yes ]; then
+      echo "render.sh --check --archive: NOT REPRODUCIBLE FROM HEAD —${STALE:- (render failure)}" >&2
+      echo "  the file in this tree is not what a render of \`git archive HEAD\` produces, so a" >&2
+      echo "  clone would not reproduce it. Some render input is missing from HEAD — untracked," >&2
+      echo "  gitignored, or unstaged — or a final was committed without its source." >&2
+      echo "  Repair: commit every render input (git status --porcelain agents-src), then" >&2
+      echo "  bash agents-src/render.sh and commit the finals with them." >&2
+    else
+      echo "render.sh --check: STALE —${STALE:- (render failure)}" >&2
+      echo "  the committed file is not the render of the committed source. Either a final was" >&2
+      echo "  edited directly, a block/template was edited without re-rendering, or the manifest" >&2
+      echo "  was not refreshed with the finals." >&2
+      echo "  Repair: bash agents-src/render.sh — then commit the finals with the sources." >&2
+    fi
   fi
 else
   [ "$RC" = 0 ] && echo "render.sh: rendered every final and refreshed $MANIFEST_REL"
