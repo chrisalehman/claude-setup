@@ -8393,12 +8393,14 @@ expect_eq "S19.2 …and the same sweep DOES fire on a copy with the idiom plante
 
 # --- §S19.3 POSITIVE: every doctoring site declares through `anchor` ---
 # The census: a doctoring site in docs-pins is a `DOCTORED…="$TMP/…"` assignment.
-# RE-POINTED (epic-22 K1, plan slice 15): Section 12's three K1 anti-vacuity mutants
-# (DOCTORED_NO_GATES, DOCTORED_MATRIX_BACK, DOCTORED_NO_INTEGRATION) add three doctoring
-# sites and three anchor calls — 23->26, 24->27, folding into the suite-wide total below.
-expect_eq "S19.3 docs-pins holds 26 doctoring sites" "26" \
+# 29 since both epic-22 slices landed on the 23 baseline: K1 (plan slice 15, Section 12)
+# added three doctoring sites (DOCTORED_NO_GATES, DOCTORED_MATRIX_BACK,
+# DOCTORED_NO_INTEGRATION), 23 -> 26; K3 (plan slice 17, Section 6) added three more (the
+# order-reversed, Mechanisms-inherited-stripped and strategic-by-rule-stripped mutants),
+# 26 -> 29 — each of the six anchored, lifting both this row and the next by six, all told.
+expect_eq "S19.3 docs-pins holds 29 doctoring sites" "29" \
   "$(/usr/bin/grep -cE '^DOCTORED[A-Z0-9_]*="\$TMP/' "$S19_DOCS_PINS")"
-expect_eq "S19.3 …declared by 27 anchor calls (Section 8's doctoring rewrites two sentences; Section 12 adds three, K1)" "27" \
+expect_eq "S19.3 …declared by 30 anchor calls (Section 8's doctoring rewrites two sentences; Section 12 adds three, K1; Section 6 adds three, K3)" "30" \
   "$(/usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]' "$S19_DOCS_PINS")"
 # 25 since Step 6: §S13.2 lifts the wall's own reduction out of the hook and
 # anchors both lines it lifts (review-b B-3). 26 since epic-21 wave-02 S12: §V's
@@ -8420,11 +8422,12 @@ expect_eq "S19.3 …and landing-gate by three: the inverted-guard mutant, and th
 # anchors — F1 in this suite, F2 in landing-gate — and each rewrote this total from 49
 # to 51 in BYTE-IDENTICAL text, so the merge was conflict-free and the pin was two short
 # of the tree. Measured at the merged head, not predicted: 24 + 25 + 1 + 3 = 53.
-# 57 since both epic-22 slices landed on top of the 53 baseline: K1 (plan slice 15) gave
-# docs-pins three more anchor calls (Section 12's anti-vacuity mutants, 24 -> 27 in the
-# first row above); R6 (plan slice 3, §V's one new anchor call) gave this suite one more,
-# 25 -> 26 (see the row above this one). 27 + 26 + 1 + 3 = 57.
-expect_eq "S19.3 …57 anchor call sites across the four doctoring suites, all told" "57" \
+# 60 since three epic-22 slices landed on top of the 53 baseline: K1 (plan slice 15) gave
+# docs-pins three more anchor calls (Section 12's anti-vacuity mutants); R6 (plan slice 3,
+# §V's one new anchor call) gave this suite one more, 25 -> 26 (see the row above this
+# one); K3 (plan slice 17, Section 6) gave docs-pins three more again, 27 -> 30 (see the
+# first row above). 30 + 26 + 1 + 3 = 60, re-derived by direct grep, not carried forward.
+expect_eq "S19.3 …60 anchor call sites across the four doctoring suites, all told" "60" \
   "$(cat "$S19_DOCS_PINS" "$S19_TESTS_DIR/cross-gate-agreement.test.sh" \
         "$S19_TESTS_DIR/agent-context-guard.test.sh" "$S19_TESTS_DIR/landing-gate.test.sh" \
      | /usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]')"
