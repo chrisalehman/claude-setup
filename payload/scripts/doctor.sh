@@ -617,10 +617,8 @@ AGENT_CAUSE="${AGENT_FACT##*cause=}"
 
 TODO_FACT="$(detect_env_todo_tools)";        TODO_STATE="${TODO_FACT##*present=}"
 RC_PROXY_FACT="$(detect_rc_claude_proxy)";   RC_PROXY_STATE="${RC_PROXY_FACT##*present=}"
-LEGACY_FACT="$(detect_zshrc_legacy_block)";  LEGACY_STATE="${LEGACY_FACT##*present=}"
 LEGACY_HOOK_FACT="$(detect_legacy_channel_hooks)"; LEGACY_HOOK_COUNT="${LEGACY_HOOK_FACT##*count=}"
 SKILL_COPY_FACT="$(detect_legacy_skill_copy)"
-SKILL_COPY_STATE="${SKILL_COPY_FACT#*present=}"; SKILL_COPY_STATE="${SKILL_COPY_STATE%% *}"
 SKILL_COPY_PATH="${SKILL_COPY_FACT##*path=}"
 HOOK_FILES_FACT="$(detect_legacy_hook_files)"
 HOOK_FILES_COUNT="${HOOK_FILES_FACT#*count=}"; HOOK_FILES_COUNT="${HOOK_FILES_COUNT%% *}"
@@ -1776,11 +1774,37 @@ fi
 # explain — this whole section runs before anything is printed, and a fix raised
 # from inside a render is a fix the verdict has already gone past (AC-23; the
 # rows themselves are in ENVIRONMENT, far below).
-case "$HOOK_FILES_COUNT" in
-  unknown|0) ;;
-  *) fix "${HOOK_FILES_COUNT} legacy hook $(_doctor_plural "$HOOK_FILES_COUNT" file files) in the claude-home → run $(bionic_check_hint legacy-hook-files)" ;;
-esac
-if [ "$INST_AGENT_STATE" = "present" ] && [ "$INST_AGENT_DRIFT" != "0" ]; then
+#
+# AND EACH OF THEM IS DECIDED ONCE, HERE (Step-6 recheck part 4, ruling R-2). Five
+# of these leftovers were decided TWICE — once for the fix line in this section and
+# once for the row in ENVIRONMENT below — by re-applying the table's rule to the
+# raw fact instead of asking the table. That is exactly the shape B-1 was in when
+# doctor ticked an environment name setup was still offering to repair: two owners
+# for one question, agreeing until they didn't. The raw facts stay: the lines and
+# rows print COUNTS, NAMES and PATHS out of them, and `unknown` is still read here
+# because "we could not look" is a different question from "it fires". What the
+# raw facts no longer decide is whether the row fires.
+#
+# `legacy-alias` is where the two rules had ALREADY drifted, which is why this is
+# not only tidiness: `bionic_check_legacy_alias` also fires on the pre-marker
+# `alias claude=…--dangerously-skip-permissions` spelling, which no `bionic:start`
+# block wraps, and this file's own test read the marker and nothing else. On such
+# a machine setup offered the removal and this page said nothing. The two names
+# that carried that second rule — and the marker probe behind them, which the
+# detector runs itself — are gone from the fact block above with it.
+#
+# The claude-proxy line 90 lines below is NOT on this list, deliberately; the
+# comment above it says why.
+HOOK_FILES_FIRES=no;   bionic_check_fires legacy-hook-files   && HOOK_FILES_FIRES=yes
+AGENT_COPIES_FIRES=no; bionic_check_fires legacy-agent-copies && AGENT_COPIES_FIRES=yes
+LEGACY_ALIAS_FIRES=no; bionic_check_fires legacy-alias        && LEGACY_ALIAS_FIRES=yes
+LEGACY_HOOKS_FIRES=no; bionic_check_fires legacy-hooks        && LEGACY_HOOKS_FIRES=yes
+SKILL_COPY_FIRES=no;   bionic_check_fires legacy-skill-copy   && SKILL_COPY_FIRES=yes
+
+if [ "$HOOK_FILES_FIRES" = "yes" ]; then
+  fix "${HOOK_FILES_COUNT} legacy hook $(_doctor_plural "$HOOK_FILES_COUNT" file files) in the claude-home → run $(bionic_check_hint legacy-hook-files)"
+fi
+if [ "$AGENT_COPIES_FIRES" = "yes" ]; then
   fix "${INST_AGENT_DRIFT} installed agent $(_doctor_plural "$INST_AGENT_DRIFT" copy copies) differ from the payload → run $(bionic_check_hint legacy-agent-copies)"
 fi
 
@@ -1869,13 +1893,17 @@ fi
 # this payload no longer writes. Setup rewrites the block wholesale, so the
 # repair is the same command as the offer — but this time there is something
 # broken to repair, which is what makes the row ✗ instead of `–`.
+# WHICH IS ALSO WHY THIS LINE IS NOT ROUTED THROUGH THE TABLE, alone among the six
+# leftovers: the row `claude-proxy` fires on ABSENT and this line fires on STALE,
+# so asking `bionic_check_fires` here would print a fix line on every machine that
+# declined the offer. Ruling A-T6-2 — upheld by the Step-6 recheck for this site,
+# and overturned for the other five, which the block above now decides once each.
 [ "$RC_PROXY_STATE" = "stale" ] && fix "the claude() shell proxy is an older line → run $(bionic_check_hint claude-proxy)"
 
-[ "$LEGACY_STATE" = "yes" ] && fix "the legacy .zshrc alias block is still there → run $(bionic_check_hint legacy-alias)"
-case "$LEGACY_HOOK_COUNT" in
-  unknown|0) ;;
-  *) fix "${LEGACY_HOOK_COUNT} legacy-channel managed-hook $(_doctor_plural "$LEGACY_HOOK_COUNT" entry entries) in settings.json → run $(bionic_check_hint legacy-hooks)" ;;
-esac
+[ "$LEGACY_ALIAS_FIRES" = "yes" ] && fix "the legacy .zshrc alias block is still there → run $(bionic_check_hint legacy-alias)"
+if [ "$LEGACY_HOOKS_FIRES" = "yes" ]; then
+  fix "${LEGACY_HOOK_COUNT} legacy-channel managed-hook $(_doctor_plural "$LEGACY_HOOK_COUNT" entry entries) in settings.json → run $(bionic_check_hint legacy-hooks)"
+fi
 # The skill copy, and the hook files and agent copies beside it — all three now have a
 # consented removal in setup (steps 9, 10 and 11), so all three fix lines name a command that
 # has something to do. Until 1.4.4 only this one did, and the two above it ended `→ run
@@ -1887,7 +1915,7 @@ esac
 # hook files and whose setup summary still reads "nothing to do" — and was deleted at 8582861
 # (epic-18 wave-03) with nothing to replace it. The pin is back, in
 # tests/cross-gate-agreement.test.sh §DS, on the side that can go red.
-[ "$SKILL_COPY_STATE" = "yes" ] && fix "a legacy skill copy is installed, arming the same walls twice → run $(bionic_check_hint legacy-skill-copy)"
+[ "$SKILL_COPY_FIRES" = "yes" ] && fix "a legacy skill copy is installed, arming the same walls twice → run $(bionic_check_hint legacy-skill-copy)"
 
 # THE TWO ROWS THAT WERE ONLY EVER SETUP'S (design D-2, 1.5.1). Both are on
 # setup's roster and neither had a surface here — no row, no fix line, nothing —
@@ -2247,48 +2275,47 @@ fi
 # that never ran it, or has been cleaned once, all six answer no. Silence is the
 # right output for that.
 
-[ "$LEGACY_STATE" = "yes" ] && \
+# AND EVERY ONE OF THEM READS THE ANSWER GATHERED ABOVE, never its own copy of
+# the rule (Step-6 recheck part 4, R-2). The raw facts are still here for the
+# counts, names and paths these rows print, and for the `unknown` state, which is
+# "we could not look" and not a firing. Whether a row fires was decided once, in
+# the leftovers block of the fix section.
+[ "$LEGACY_ALIAS_FIRES" = "yes" ] && \
   _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-alias)" \
     "present → $(bionic_check_hint legacy-alias)"
-case "$LEGACY_HOOK_COUNT" in
-  unknown|0) ;;
-  *) _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-hooks)" \
-       "${LEGACY_HOOK_COUNT} in settings.json → $(bionic_check_hint legacy-hooks)" ;;
-esac
+if [ "$LEGACY_HOOKS_FIRES" = "yes" ]; then
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-hooks)" \
+    "${LEGACY_HOOK_COUNT} in settings.json → $(bionic_check_hint legacy-hooks)"
+fi
 # HOOK FILES, WHICH ARE NOT THE SETTINGS ENTRIES ABOVE. The row above counts
 # managed-hook ENTRIES in settings.json; this one counts hook SCRIPTS the retired
 # installer copied into the claude-home, which the plugin now ships and which
 # shadow nothing but still sit there. Both were computed on every run; only the
 # first was printed. `detect_legacy_hook_files` also names the directory, which
 # is the one thing a reader needs to go look.
-case "$HOOK_FILES_COUNT" in
-  0) ;;
-  unknown)
-    _doctor_env_row "$DOCTOR_NIL" "$(bionic_check_label legacy-hook-files)" "unknown — ${HOOK_FILES_CAUSE}" ;;
-  *)
-    _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-hook-files)" \
-      "${HOOK_FILES_COUNT} in $(_doctor_tilde "$HOOK_FILES_PATH")" " → $(bionic_check_hint legacy-hook-files)" ;;
-esac
+if [ "$HOOK_FILES_FIRES" = "yes" ]; then
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-hook-files)" \
+    "${HOOK_FILES_COUNT} in $(_doctor_tilde "$HOOK_FILES_PATH")" " → $(bionic_check_hint legacy-hook-files)"
+elif [ "$HOOK_FILES_COUNT" = "unknown" ]; then
+  _doctor_env_row "$DOCTOR_NIL" "$(bionic_check_label legacy-hook-files)" "unknown — ${HOOK_FILES_CAUSE}"
+fi
 # THE INSTALLED ROLE FILES, AND WHICH OF THEM NO LONGER MATCH THE PAYLOAD. The
 # probe compares every agent this payload ships against a same-named copy in the
 # claude-home and counts the ones that differ; nothing rendered either half. A
 # drifted copy is the actionable one — it is what a session will read instead of
 # the shipped role — so that is the row, and a clean set of copies stays silent
 # under format rule 4.
-case "$INST_AGENT_STATE" in
-  present)
-    if [ "$INST_AGENT_DRIFT" != "0" ]; then
-      _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-agent-copies)" \
-        "${INST_AGENT_DRIFT}/${INST_AGENT_TOTAL} differ (${INST_AGENT_NAMES//,/, })" " → $(bionic_check_hint legacy-agent-copies)"
-    fi ;;
-  unknown)
-    _doctor_env_row "$DOCTOR_NIL" "$(bionic_check_label legacy-agent-copies)" \
-      "unknown — ${INST_AGENT_CAUSE}" ;;
-esac
+if [ "$AGENT_COPIES_FIRES" = "yes" ]; then
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-agent-copies)" \
+    "${INST_AGENT_DRIFT}/${INST_AGENT_TOTAL} differ (${INST_AGENT_NAMES//,/, })" " → $(bionic_check_hint legacy-agent-copies)"
+elif [ "$INST_AGENT_STATE" = "unknown" ]; then
+  _doctor_env_row "$DOCTOR_NIL" "$(bionic_check_label legacy-agent-copies)" \
+    "unknown — ${INST_AGENT_CAUSE}"
+fi
 # AND THE SKILL COPY NAMES ITS DIRECTORY. The path was parsed and dropped; a row
 # that says a stale copy arms the same walls twice, without saying where it is,
 # leaves the reader to go find it.
-[ "$SKILL_COPY_STATE" = "yes" ] && \
+[ "$SKILL_COPY_FIRES" = "yes" ] && \
   _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-skill-copy)" \
     "$(_doctor_tilde "$SKILL_COPY_PATH")" " → $(bionic_check_hint legacy-skill-copy)"
 # THE NPX STATUSLINE COMMAND (epic-21 AC-3, Fix step 5). A machine that ran

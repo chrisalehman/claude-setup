@@ -6822,8 +6822,8 @@ mkdir -p "$DS_DIR"
 # nothing about the command; planting both is the pre-1.4.4 shape, where the ONLY thing
 # wrong is the recorded command. That is the state doctor's `statusLine command` row fires
 # on, so it is the state this scan has to see it in.
-ds_plant() {  # <home> <hooks:yes|no> <agents:yes|no>
-  local h="$1" want_hooks="$2" want_agents="$3" f n=0
+ds_plant() {  # <home> <hooks:yes|no> <agents:yes|no> [alias:yes|no, default no]
+  local h="$1" want_hooks="$2" want_agents="$3" want_alias="${4:-no}" f n=0
   rm -rf "$h"; mkdir -p "$h/.claude"
   # AND ONE ENVIRONMENT NAME WRITTEN TO THE WRONG VALUE (Step-6 review B-1). The
   # environment row has two firing states — the name is absent from the `env`
@@ -6877,6 +6877,21 @@ DSREG
       n=$((n + 1))
     done
     printf '#!/bin/bash\n# the machine owner wrote this one\n' > "$h/.claude/hooks/not-bionics.sh"
+  fi
+  # THE PRE-MARKER ALIAS, OFF BY DEFAULT (Step-6 recheck part 4, R-2). This is the
+  # one leftover whose two rules had genuinely drifted:
+  # `bionic_check_legacy_alias` fires on the marked `# ─── bionic:start ───`
+  # block OR on a bare `alias claude=…--dangerously-skip-permissions` line, which
+  # is the spelling bionic wrote before it wrapped its edits in markers; doctor's
+  # own test read the marker and nothing else. Planted here is the SECOND state
+  # only — the raw alias, no marker — which is the machine where the two answers
+  # differ. BOTH rc names are written because `shell_rc_file` picks between
+  # `$HOME/.zshrc` and `$HOME/.bashrc` off `$SHELL`, and the suite must not read
+  # the runner's shell. Default `no`, so every fixture planted before this arm
+  # existed is byte-identical to what it was.
+  if [ "$want_alias" = "yes" ]; then
+    printf '%s\n' 'alias claude="claude --dangerously-skip-permissions"' > "$h/.zshrc"
+    cp "$h/.zshrc" "$h/.bashrc"
   fi
   if [ "$want_agents" = "yes" ]; then
     mkdir -p "$h/.claude/agents"
@@ -7252,24 +7267,42 @@ expect_eq "DS.2b …and every item the check table names is on setup's --list" \
 DS_CLEAN_EARLY="$DS_DIR/clean-early"
 ds_plant "$DS_CLEAN_EARLY" no no
 DS_PENDING_ITEMS="$(ds_pending_items "$DS_HOME")"
-DS_SILENT=""; DS_STATE_SEEN=0
-while IFS= read -r ds_item; do
-  [ -n "$ds_item" ] || continue
-  ds_labels="$(while IFS= read -r ds_r; do
-      [ -n "$ds_r" ] || continue
-      [ "$(ds_field "$ds_r" 5)" = "$ds_item" ] || continue
-      ds_field "$ds_r" 2 && echo
-    done <<<"$DS_TABLE" | grep -v '^$')"
-  [ -n "$ds_labels" ] || continue
-  ds_listed_in "$DS_PENDING_ITEMS" "$ds_item" || continue
-  DS_STATE_SEEN=$((DS_STATE_SEEN + 1))
-  ds_hit=""
-  while IFS= read -r ds_l; do
-    [ -n "$ds_l" ] || continue
-    case "$DS_LABELS" in *"$ds_l"*) ds_hit=1; break ;; esac
-  done <<<"$ds_labels"
-  [ -n "$ds_hit" ] || DS_SILENT="${DS_SILENT}${DS_SILENT:+, }${ds_item} (${ds_labels//$'\n'/, })"
-done <<<"$DS_TABLE_ITEMS"
+
+# THE WALK ITSELF, NAMED — because DS.12 below runs the very same comparison over
+# a doctored doctor and has to come out non-empty. Every item setup would offer,
+# whose table rows carry a label, must have one of those labels on the hinted
+# lines of doctor's page; what comes back is the items that went unsaid, and the
+# count of items the walk actually reached is left in `DS_STATE_SEEN` so a caller
+# can prove it was not vacuous.
+# THE COUNT COMES BACK WITH THE ANSWER, on one line, because a command
+# substitution is a subshell and a global set inside one never reaches the
+# caller — which is how the first draft of this helper turned the non-vacuity
+# guard below into an unbound-variable error. No id and no label carries a `|`;
+# the table's own record separator is that character, so one could not.
+ds_silent_items() {  # <pending items> <page labels> <table> -> "<items reached>|<items doctor never said>"
+  local pending="$1" labels="$2" table="$3" silent="" item labs hit r seen=0
+  while IFS= read -r item; do
+    [ -n "$item" ] || continue
+    labs="$(while IFS= read -r r; do
+        [ -n "$r" ] || continue
+        [ "$(ds_field "$r" 5)" = "$item" ] || continue
+        ds_field "$r" 2 && echo
+      done <<<"$table" | grep -v '^$')"
+    [ -n "$labs" ] || continue
+    ds_listed_in "$pending" "$item" || continue
+    seen=$((seen + 1))
+    hit=""
+    while IFS= read -r ds_l; do
+      [ -n "$ds_l" ] || continue
+      case "$labels" in *"$ds_l"*) hit=1; break ;; esac
+    done <<<"$labs"
+    [ -n "$hit" ] || silent="${silent}${silent:+, }${item} (${labs//$'\n'/, })"
+  done <<<"$(while IFS= read -r r; do [ -n "$r" ] && ds_field "$r" 5 && echo; done <<<"$table" | grep -v '^$' | sort -u)"
+  printf '%s|%s' "$seen" "$silent"
+}
+
+DS_2C="$(ds_silent_items "$DS_PENDING_ITEMS" "$DS_LABELS" "$DS_TABLE")"
+DS_STATE_SEEN="${DS_2C%%|*}"; DS_SILENT="${DS_2C#*|}"
 
 expect_true "DS.2c the fixture leaves setup work to do on labelled rows (the row under it is not vacuous)" \
   test "$DS_STATE_SEEN" -ge 4
@@ -7685,6 +7718,88 @@ expect_contains "DS.11 …so the fired-row walk goes RED on that name" \
   "env:BASH_MAX_TIMEOUT_MS" "$(ds_unrendered "$DS_MUT_REPORT11" "$DS_FIRED")"
 expect_eq "DS.11 …while the shipped doctor leaves the same walk empty" \
   "" "$(ds_unrendered "$DS_REPORT" "$DS_FIRED")"
+
+# ── DS.12 mutation: the LEFTOVER rows have one owner too ────────────────────
+#
+# THE SAME SECOND OWNER, ON THE FIVE ROWS B-1 DID NOT COVER (Step-6 recheck part
+# 4, ruling R-2). doctor decided `legacy-hook-files`, `legacy-agent-copies`,
+# `legacy-alias`, `legacy-hooks` and `legacy-skill-copy` twice each — once for the
+# fix line, once for the row — by re-applying the table's rule to the raw fact.
+# Four of those five pairs agreed on every state a fixture can reach; the fifth
+# did not, and that is what this arm plants.
+#
+# THE STATE. `bionic_check_legacy_alias` fires on the marked block OR on the bare
+# pre-marker `alias claude=…--dangerously-skip-permissions` line. doctor's own
+# test read `detect_zshrc_legacy_block`, which knows only the marker. A machine
+# carrying the bare line is therefore one setup offers to clean and doctor said
+# nothing about — the 2026-09-05 field defect in its own shape, on a different
+# row. `ds_plant`'s fourth argument writes exactly that machine and nothing else.
+#
+# WHY ITS OWN HOME. Adding an rc file to the shared fixture would change what
+# `claude-proxy` answers there too (an rc that exists with no bionic block is a
+# different state from no rc at all), so the drift is planted where it is the only
+# thing that moved.
+DS_ALIAS_HOME="$DS_DIR/alias-premarker"
+ds_plant "$DS_ALIAS_HOME" no no yes
+expect_true "DS.12 the fixture carries the pre-marker alias line (the rows below are not vacuous)" \
+  grep -q 'alias claude=' "$DS_ALIAS_HOME/.zshrc"
+expect_false "DS.12 …and no marked bionic block, which is what makes the two rules disagree" \
+  grep -q 'bionic:start' "$DS_ALIAS_HOME/.zshrc"
+
+DS_ALIAS_TABLE="$(ds_rows "$DS_ALIAS_HOME")"
+DS_ALIAS_PENDING="$(ds_pending_items "$DS_ALIAS_HOME")"
+# The row's rendered LABEL, read out of the table by id rather than spelled here —
+# a literal would go stale the day the column's wording changes, which is the
+# class of pin §DS exists to replace.
+DS_ALIAS_LABEL="$(while IFS= read -r ds_r; do
+    [ -n "$ds_r" ] || continue
+    [ "$(ds_field "$ds_r" 1)" = "legacy-alias" ] || continue
+    ds_field "$ds_r" 2
+  done <<<"$DS_ALIAS_TABLE")"
+expect_true "DS.12 the table names a label for the row under test" test -n "$DS_ALIAS_LABEL"
+expect_true "DS.12 setup offers the removal on this machine" \
+  ds_listed_in "$DS_ALIAS_PENDING" legacy-alias
+expect_true "DS.12 …and setup's own narrowed run agrees it has something to do" \
+  ds_pending "$DS_ALIAS_HOME" legacy-alias
+
+ds_alias_labels() {  # <report> -> the labels on that page's hinted lines
+  local rep="$1" routes hinted
+  routes="$(while IFS= read -r r; do [ -n "$r" ] && ds_field "$r" 6 && echo; done <<<"$DS_ALIAS_TABLE" | sort -u | grep -v '^$')"
+  hinted="$(ds_hinted_lines "$rep" "$routes")"
+  while IFS= read -r l; do [ -n "$l" ] && ds_label_of "$l" && echo; done <<<"$hinted"
+}
+
+DS_ALIAS_REPORT="$(ds_doctor "$DS_ALIAS_HOME")"
+DS_ALIAS_LABELS="$(ds_alias_labels "$DS_ALIAS_REPORT")"
+expect_contains "DS.12 the shipped doctor renders the row, because it asks the table" \
+  "$DS_ALIAS_LABEL" "$DS_ALIAS_LABELS"
+DS_ALIAS_2C="$(ds_silent_items "$DS_ALIAS_PENDING" "$DS_ALIAS_LABELS" "$DS_ALIAS_TABLE")"
+expect_true "DS.12 …and the same-state walk reaches this machine's items at all" \
+  test "${DS_ALIAS_2C%%|*}" -ge 2
+expect_absent "DS.12 …so DS.2c's walk says nothing about it on the shipped doctor" \
+  "legacy-alias" "${DS_ALIAS_2C#*|}"
+
+# THE MUTANT: one line, doctor's own pre-1.5.1 rule put back where the table's
+# answer now goes. Everything else on the page is the shipped renderer.
+DS_MUT12="$DS_DIR/mutant-alias"
+rm -rf "$DS_MUT12"; mkdir -p "$DS_MUT12"
+cp -R "$DS_PAYLOAD/scripts" "$DS_MUT12/scripts"
+DS_MUT_DOC12="$DS_MUT12/scripts/doctor-own-alias-rule.sh"
+LC_ALL=C awk -v repl='LEGACY_ALIAS_FIRES=no; case "$(detect_zshrc_legacy_block)" in *present=yes) LEGACY_ALIAS_FIRES=yes ;; esac' '
+  /^LEGACY_ALIAS_FIRES=no; bionic_check_fires legacy-alias/ { print repl; next }
+  { print }' "$PARTY_DOCTOR" > "$DS_MUT_DOC12"
+expect_eq "DS.12 the doctored doctor differs from the shipped one by exactly the one read" \
+  "1" "$(diff "$PARTY_DOCTOR" "$DS_MUT_DOC12" | grep -c '^< ')"
+expect_eq "DS.12 …and by exactly the one rule that replaced it" \
+  "1" "$(diff "$PARTY_DOCTOR" "$DS_MUT_DOC12" | grep -c '^> ')"
+
+DS_MUT_REPORT12="$( PARTY_DOCTOR="$DS_MUT_DOC12"; ds_doctor "$DS_ALIAS_HOME" )"
+expect_contains "DS.12 the doctored doctor still renders a page (the rows below are not vacuous)" \
+  "ENVIRONMENT" "$DS_MUT_REPORT12"
+expect_absent "DS.12 …and its own rule cannot see the pre-marker line, so the row is gone" \
+  "$DS_ALIAS_LABEL" "$DS_MUT_REPORT12"
+expect_contains "DS.12 …so DS.2c's walk goes RED on it, by item name" \
+  "legacy-alias" "$(DS_M="$(ds_silent_items "$DS_ALIAS_PENDING" "$(ds_alias_labels "$DS_MUT_REPORT12")" "$DS_ALIAS_TABLE")"; printf '%s' "${DS_M#*|}")"
 
 
 # ============================================================
