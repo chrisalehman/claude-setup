@@ -17,7 +17,7 @@
 # (user 2026-09-02, "1 amended"). Over-subscribing cores costs wall time and nothing else.
 # Over-subscribing memory destroys work: the measured failure is a kernel SIGKILL, seven
 # concurrent suites on an 8 GB machine driving free memory to ~188 MB and a suite dying
-# mid-run (tests/run.sh:63-68, W7 assumption A4.2). So the memory term is measured and
+# mid-run (tests/run.sh:81-87, W7 assumption A4.2). So the memory term is measured and
 # binding; the compute term is a placeholder that degenerates to `cores` until AC-32's live
 # run at the wave head measures it.
 #
@@ -50,13 +50,13 @@
 
 # Memory the machine must keep for itself — the OS, the editor, the agent processes, and
 # the headroom between "slow" and "the kernel starts killing things".
-MEM_RESERVE_GB=2       # datum: 2026-08 measurement, tests/run.sh:63-68 — the 8 GB machine
+MEM_RESERVE_GB=2       # datum: 2026-08 measurement, tests/run.sh:81-87 — the 8 GB machine
                        # died at ~188 MB free, so a 2 GB floor is the nearest round reserve
                        # that keeps the kill point out of reach.
 
 # What one concurrent test suite costs in resident memory. THE BINDING TERM.
 MEM_PER_SUITE_GB=1.2   # datum: 8 GB, 7 concurrent suites, ~188 MB free, kernel SIGKILL,
-                       # tests/run.sh:63-68 — (8 − 2) GB across 7 suites is ~0.86 GB each
+                       # tests/run.sh:81-87 — (8 − 2) GB across 7 suites is ~0.86 GB each
                        # with nothing left; 1.2 GB is that measurement with headroom.
 
 # What one concurrent suite costs in cores. THE SOFT TERM, measured once at the wave head
@@ -81,7 +81,7 @@ WRITERS_EXTRA=4        # datum: 2026-09-02 stand-up — hand-derived budget for 
 
 # BIONIC_TEST_JOBS bounds. The floor keeps a 1-core machine from serializing to a crawl; the
 # ceiling is where added width stopped paying on the measured runs.
-TEST_JOBS_MIN=4        # datum: tests/run.sh:63-68 — 4 was "the width with headroom" on the
+TEST_JOBS_MIN=4        # datum: tests/run.sh:81-87 — 4 was "the width with headroom" on the
                        # 8 GB measurement, and is the documented pre-2026-08-22 default.
 TEST_JOBS_MAX=24       # datum: 2026-08-22 (ef23f75) raised the default to 8 with the note
                        # that BIONIC_TEST_JOBS exists "for a machine with less or more"; 24
@@ -109,7 +109,7 @@ HOLD_FREE_MB=1024      # datum: half MEM_RESERVE_GB — the reserve is the line 
 HOLD_LOAD_FACTOR=1.5   # datum: 2026-09-02 — load_1m above 1.5 × cores is sustained
                        # oversubscription rather than a burst; below it, queueing is normal
                        # for a machine running suites.
-EMERGENCY_FREE_MB=256  # datum: kill at ~188 MB (tests/run.sh:63-68) — the floor sits just
+EMERGENCY_FREE_MB=256  # datum: kill at ~188 MB (tests/run.sh:81-87) — the floor sits just
                        # above the measured kernel SIGKILL point, so the tick acts before
                        # the kernel does.
 

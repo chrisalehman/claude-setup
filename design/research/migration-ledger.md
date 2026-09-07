@@ -188,9 +188,9 @@ the remaining half.
 | B14 | tests/skill-dispatch-binding.test.sh | SKILL.md's two-row binding table (A22) agrees with the bundle | `bundle/`, SKILL.md | yes | adapter | falls with A22 |
 
 **Runner note.** The adapter brings two test infrastructures bionic's roster has no slot for:
-pytest (B7) and a live drill (B4). `tests/run.sh`'s hand-listed roster and its
-count-equals-glob invariant (`tests/run.sh:56-63`) are what any monorepo layout must either
-extend (a second roster for the adapter) or partition (the adapter runs its own).
+pytest (B7) and a live drill (B4). `tests/run.sh`'s directory-derived roster (fixit 1.5.1,
+D-1) is what any monorepo layout must either extend (a second directory for the adapter) or
+partition (the adapter runs its own).
 
 ---
 
@@ -238,7 +238,7 @@ before it invokes a skill.
 | AD2 | 13-23 | routing note: which channels measured to reach a dispatched subagent (rules file yes, role file yes-but-next-session, project CLAUDE.md absent, auto-memory unreliable) | repo (a harness measurement that explains this file) | (unsorted) | stays as CONTRIBUTING; the measurement itself is the evidence behind the map's fog entry |
 | AD3 | 25-28 | the globs are deliberately broad; pay-per-read | repo | (unsorted) | stays |
 | AD4 | 32-33 | **Mechanics:** re-read code after editing | **core** (implementor behaviour, harness-neutral) | repo — **refuted** | `agents-src/blocks/` (implementor + senior-implementor); not there today (0 hits for "re-read" in blocks/templates) |
-| AD5 | 35-41 | **Mechanics:** a refactor must discover ALL test suites; in this repo `tests/run.sh` hand-lists and discovers nothing | split: rule = **core**, example = repo | repo — **partly refuted** | rule → `agents-src/blocks/` (implementor); the hand-listing fact stays in `test-harness.md`. Not shipped today (0 hits) |
+| AD5 | 35-41 | **Mechanics:** a refactor must discover ALL test suites; in this repo `tests/run.sh` derives its roster from `tests/*.test.sh` at run time (fixit 1.5.1) | split: rule = **core**, example = repo | repo — **partly refuted** | rule → `agents-src/blocks/` (implementor); the derived-roster fact stays in `test-harness.md`. Not shipped today (0 hits) |
 | AD6 | 45-50 | **Discourse:** instruction files for Claude: failure-mode sentences are triggers, not elaboration | repo (authoring guide for skills/agents/rules in this repo) | core — **refuted** | stays; it governs how this repo's instruction files are written, which is contributor work |
 | AD7 | 52-57 | **Discourse:** on "is this idea good?", evaluate the literal proposal before reframing | **personal** (how Chris wants design conversation to go), orchestrator-facing | core — **refuted** | not the repo's; the auto-memory record already carries it (`plain-english-means-concrete`, `dont-reask-settled-direction`) |
 | AD8 | 59-65 | **Discourse:** agent "the docs explicitly state X" quotes are leads, not facts; verify against the primary source | **core**, orchestrator-facing | core — confirmed | **no shipped channel.** Closest surface: `SKILL.md` §Dispatch (0 hits for "primary source"/"leads"). This is the admission rule's "read from primary surfaces, never self-report" in orchestrator form; candidate for P1 |

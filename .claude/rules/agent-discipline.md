@@ -36,9 +36,9 @@ at session start, so AC-2 is unaffected. The cost is ~8 KB whenever a matching f
   a green run as a refactor's safety net — your own or a delegated skill's — confirm the
   discovery step actually enumerated every test entry point: `bash tests/run.sh`, plus any
   standalone `*.test.sh` it does not reach, plus any `package.json` scripts. In this repo
-  `tests/run.sh` hand-lists every suite by name — no discovery glob exists (epic-17 W4 S9
-  retired it with the hooks→tests move) — so a new suite is invisible until its `run` line
-  is added.
+  `tests/run.sh`'s roster is derived from `tests/*.test.sh` at run time (fixit 1.5.1, D-1) —
+  a new suite gates on the very next run, and the roster wall refuses anything the glob
+  matches that isn't shaped like a suite.
 
 ## Discourse and judgment
 

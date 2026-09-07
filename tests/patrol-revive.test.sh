@@ -448,15 +448,6 @@ fi
 
 section "Group 6: registration"
 
-# tests/*.test.sh is NOT globbed by the runner — an unregistered suite is a silent
-# false green, and this hook would then be a wall nothing drives.
-if grep -q 'run "patrol-revive.test.sh" bash tests/patrol-revive.test.sh' \
-     "${BIONIC_SCRIPTS_DIR}/tests/run.sh"; then
-  ok "27: tests/run.sh names patrol-revive.test.sh"
-else
-  no "27: tests/run.sh does not name this suite — it would never run"
-fi
-
 # A hook with a suite, a run line and no registration is installed, green in its
 # own suite, and never fired.
 #

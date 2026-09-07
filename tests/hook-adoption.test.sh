@@ -109,13 +109,7 @@ stop-check|open|no
 engage|open|no
 '
 
-section "0 — the carrier, the roster line, and non-vacuity"
-
-if grep -q '^run "hook-adoption.test.sh" bash tests/hook-adoption.test.sh$' "$RUNNER"; then
-  ok "tests/run.sh carries this suite's own run line"
-else
-  no "tests/run.sh carries this suite's own run line" "no matching run line in $RUNNER"
-fi
+section "0 — the carrier and non-vacuity"
 
 BLOCK="$SANDBOX/canonical-block.txt"
 ( . "$LOADER_LIB" && bionic_loader_pin ) > "$BLOCK" 2>"$SANDBOX/.pinerr"

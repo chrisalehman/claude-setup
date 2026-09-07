@@ -11,8 +11,8 @@
 # `lib_run` harness that sources a file and calls a function. This subject is an
 # EXECUTED script whose whole behavior is mutation of a real git repository, and
 # its fixture is a scratch repo rather than a fixture root plus a stubbed PATH.
-# Sharing a file would mean two fixture regimes under one header; a second
-# hand-listed `run` line in tests/run.sh is the cheaper half of that trade.
+# Sharing a file would mean two fixture regimes under one header, so a second
+# file of its own — free to add since fixit 1.5.1 — is the cheaper half of that trade.
 #
 # WHAT THE CONTRACT IS. D4 (ratified 2026-08-17 with Chris's universality
 # amendment): parallel writers work in worktrees a DISPATCHER created, creation
@@ -40,7 +40,6 @@
 # production file is never touched.
 #
 # Usage: bash tests/spawn-worktree.test.sh
-# Registered by name in tests/run.sh (tests/*.test.sh is NOT auto-globbed).
 
 set -uo pipefail
 
@@ -458,14 +457,6 @@ mutate_check "mutation: the legacy-link deletion removed is caught" \
 mutate_check "mutation: the cleanup on failed verification removed is caught" \
   's|^  cleanup_partial$|  :|' \
   verify_cleanup "residue"
-
-section "Group 11: the suite is registered in tests/run.sh by name"
-#
-# tests/*.test.sh is NOT globbed by the runner — an unregistered suite is a
-# silent false green (tests/run.sh records the last time that happened).
-
-expect_true "tests/run.sh names spawn-worktree.test.sh" \
-  grep -q 'run "spawn-worktree.test.sh" bash tests/spawn-worktree.test.sh' "${REPO}/tests/run.sh"
 
 # The old "Group 12: the shipped skill is the payload's own copy" banner (git
 # HEAD:490-492) named no subject and carried zero assertions — the

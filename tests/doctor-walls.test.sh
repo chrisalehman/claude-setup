@@ -171,8 +171,21 @@ expect_match "6: the evidence gate is named with the library it wanted" \
 expect_no_match "7: a wall whose library is intact is not named" \
   "*background-suite-guard*" "$ROWS2"
 
+# THE PARTY THIS LINE NAMES CHANGED AT 1.5.1, and the sentence is the reason. It
+# used to end `run /bionic:setup — repair`, and there is no `repair` verb in
+# setup's argv (`--all`, `--only`, `--list`): the line named a command that could
+# not have worked. A wall that cannot reach its library is a broken install, so
+# the party is the CLI, the same one a missing core dependency takes, and the
+# route is read from the wall's own row in lib/checks.sh rather than pinned as a
+# literal here — a pin that spelled the route again would be the second source
+# the table exists to remove.
+WALL_ROUTE="$( . "$PLUG/scripts/lib/checks.sh" >/dev/null 2>&1; bionic_check_hint wall-library )"
+expect_true "8: the wall's own table row names a repair route (the row below is not vacuous)" \
+  test -n "$WALL_ROUTE"
 expect_match "8: the FIX section carries the repair-phrased line" \
-  "*protect-main*cannot load*git-argv.sh*→ run /bionic:setup — repair*" "$OUT2"
+  "*protect-main*cannot load*git-argv.sh*→ ${WALL_ROUTE}*" "$OUT2"
+expect_no_match "8: …and never setup's phantom repair verb" \
+  "*/bionic:setup — repair*" "$OUT2"
 
 section "Section 3: the second library deleted — all four go red"
 
@@ -226,5 +239,192 @@ expect_match "13.3: …which answers the same row from the CLI instead (the pair
 _over="$(too_wide "$OUT_NOCLI")"
 if [ -z "$_over" ]; then ok "13.4: the CLI-absent page still fits 100 columns"
 else no "13.4: a line of the CLI-absent page exceeds 100 columns" "$_over"; fi
+
+
+section "Section 6: the page and the table's row read ONE wall verdict (Step-6 review B-2)"
+
+# TWO IMPLEMENTATIONS OF ONE FACT, until the 1.5.1 fix-up batch. doctor's wall
+# loop asked `is the file readable` and `does the loader answer` in its own
+# render loop, while `bionic_check_wall_missing` and `bionic_check_wall_unloadable`
+# in lib/checks.sh asked the same two questions for the row — and nothing ever
+# invoked those two, so the copy this page ran and the copy the row named were
+# free to drift with nothing going red. `bionic_check_wall_state` is the one
+# implementation now, and this section is where it is asked on the very fixture
+# the sections above rendered: both libraries are deleted at this point, so every
+# wall is unloadable and none is missing.
+wall_ask() {  # <expression> -> what checks.sh answers on THIS fixture's payload root
+  ( cd "$REPO" && HOME="$TMP" PATH="$BIN" BIONIC_SHELL_RC="$FIXTURE_RC" \
+      BIONIC_CLAUDE_HOME="$TMP/claude-home" BIONIC_PLUGIN_ROOT="$PLUG" \
+      BIONIC_PLUGINS_DIR="$EMPTY_PLUGINS" \
+      bash -c '. "$1" >/dev/null 2>&1 || exit 9; eval "$2"' _ \
+      "$PLUG/scripts/lib/checks.sh" "$1" 2>/dev/null )
+}
+
+expect_eq "14.1: the row's per-wall verdict names the same library the page named" \
+  "unloadable=git-argv.sh" "$(wall_ask 'bionic_check_wall_state protect-main')"
+expect_match "14.2: …and the page it was taken from said exactly that" \
+  "*protect-main*cannot load*git-argv.sh*" "$ROWS3"
+expect_match "14.3: the wanted basenames come from the hook itself, not from a list here" \
+  "*git-argv.sh*" "$(wall_ask "bionic_check_wall_want '$PLUG/hooks/protect-main.sh'")"
+expect_match "14.4: the loader probe answers with an empty library and names the one it wanted" \
+  "lib=|missing=git-argv.sh*" "$(wall_ask "bionic_check_wall_probe '$PLUG/hooks/protect-main.sh' git-argv.sh")"
+# THE TWO ROW DETECTORS, over the same root: no wall FILE is gone, so the
+# payload row is quiet, while every wall fails to load, so the library row fires.
+expect_eq "14.5: the wall-payload row is quiet — no wall hook is missing here" \
+  "no" "$(wall_ask 'bionic_check_fires wall-payload && echo yes || echo no')"
+expect_eq "14.6: …while the wall-library row fires, which is what the page reported" \
+  "yes" "$(wall_ask 'bionic_check_fires wall-library && echo yes || echo no')"
+# PAIRED POSITIVE: put the library back and the same answers move with it, so
+# none of the rows above is a constant.
+cp "${PAYLOAD}/scripts/lib/git-argv.sh" "$PLUG/scripts/lib/git-argv.sh"
+expect_eq "14.7: restoring the library flips that wall's verdict to ok" \
+  "ok" "$(wall_ask 'bionic_check_wall_state protect-main')"
+expect_match "14.8: …and doctor's page stops naming that wall on the same tree" \
+  "*background-suite-guard*" "$(walls_rows "$(run_doctor)")"
+expect_no_match "14.9: …while protect-main is no longer named at all" \
+  "*protect-main*" "$(walls_rows "$(run_doctor)")"
+# AND THE MISSING ARM, which the sections above never reach: take the hook file
+# itself away and the payload row is the one that fires.
+rm -f "$PLUG/hooks/protect-main.sh"
+expect_eq "14.10: with the hook file itself gone the verdict is missing, not unloadable" \
+  "missing" "$(wall_ask 'bionic_check_wall_state protect-main')"
+expect_eq "14.11: …and the wall-payload row is what fires for it" \
+  "yes" "$(wall_ask 'bionic_check_fires wall-payload && echo yes || echo no')"
+expect_match "14.12: …which is the line doctor prints for that state" \
+  "*protect-main*not in this payload*" "$(run_doctor)"
+
+section "Section 7: a payload missing a library doctor sources prints a route, not a shell trace (Walk-D3)"
+
+# THE DAMAGE SETUP ALREADY ANSWERS, PUT TO DOCTOR. setup.sh checks every library
+# it sources before it sources one, and a payload without lib/checks.sh gets a
+# named file and a reinstall route from it. Doctor sourced its nine with bare `.`
+# lines, so the same copy answered with three interpreter diagnostics, no report,
+# and status 1 — in a file whose header states that a diagnosis exits 0. The
+# Step-5 walk measured that (walk-doctor.md §4b), and this section is the wall.
+#
+# ITS OWN COPY, because the sections above have been deleting libraries and hooks
+# out of $PLUG since section 1 and a guard reading that tree would be answering
+# their damage instead of this one's.
+PLUG_INT="${TMP}/plug-integrity"
+mkdir -p "$PLUG_INT"
+cp -RL "${PAYLOAD}/." "$PLUG_INT/" 2>/dev/null
+
+INT_OUT="${TMP}/integrity-stdout.txt"
+INT_ERR="${TMP}/integrity-stderr.txt"
+# THE COPY'S OWN doctor.sh IS WHAT RUNS, not the repo's pointed at the copy:
+# `DOCTOR_LIB` is derived from `${BASH_SOURCE[0]}` and takes no env override, so
+# the only way to make a library missing to THIS script is to run the script that
+# lives beside the missing file. BIONIC_PLUGIN_ROOT still points at the copy so
+# every other root the page reads is the fixture's.
+run_copy_doctor() {  # -> the exit status; stdout in $INT_OUT, stderr in $INT_ERR
+  ( cd "$REPO" && HOME="$TMP" PATH="$BIN" BIONIC_SHELL_RC="$FIXTURE_RC" \
+      BIONIC_CLAUDE_HOME="$TMP/claude-home" BIONIC_PLUGIN_ROOT="$PLUG_INT" \
+      BIONIC_PLUGINS_DIR="$EMPTY_PLUGINS" BIONIC_DOCTOR_PROBE_SECONDS=3 \
+      bash "$PLUG_INT/scripts/doctor.sh" < /dev/null > "$INT_OUT" 2> "$INT_ERR" )
+  echo $?
+}
+
+# THE INTACT ARM FIRST, so nothing below can pass over a copy that was never able
+# to render at all. This is the same tree, one file later.
+INT_RC_OK="$(run_copy_doctor)"
+expect_status "17.1: an intact payload copy renders and exits 0" "0" "$INT_RC_OK"
+expect_match "17.2: …with the report on stdout" \
+  "*Bionic Doctor — payload*" "$(cat "$INT_OUT")"
+expect_no_regex "17.3: …and nothing shaped like an interpreter diagnostic on stderr" \
+  "line [0-9]+:" "$(cat "$INT_ERR")"
+
+# NOW THE DAMAGE. checks.sh is the library the walk deleted, and the one every
+# row's detector comes from.
+rm -f "$PLUG_INT/scripts/lib/checks.sh"
+INT_RC_BAD="$(run_copy_doctor)"
+INT_ERR_BAD="$(cat "$INT_ERR")"
+expect_ne "17.4: a payload copy without lib/checks.sh does not exit 0" "0" "$INT_RC_BAD"
+expect_match "17.5: …it names the file it could not find" \
+  "*scripts/lib/checks.sh — the payload looks incomplete.*" "$INT_ERR_BAD"
+expect_match "17.6: …and the reinstall route, the same one setup prints" \
+  "*claude plugin install bionic@bionic*" "$INT_ERR_BAD"
+# THE POINT OF THE WHOLE SECTION, and a negative paired with the two positives
+# directly above it: what the reader gets is the sentence, not the three
+# `doctor.sh: line NNN: …` lines the walk captured.
+expect_no_regex "17.7: …and no interpreter diagnostic anywhere in it" \
+  "line [0-9]+:" "$INT_ERR_BAD"
+expect_empty "17.8: …and no half-rendered page on stdout" "$(cat "$INT_OUT")"
+
+# A SECOND NAME, so 17.5 is not a guard that only knows one file. root.sh is
+# sourced from a different line and carries no detectors at all.
+cp "${PAYLOAD}/scripts/lib/checks.sh" "$PLUG_INT/scripts/lib/checks.sh"
+rm -f "$PLUG_INT/scripts/lib/root.sh"
+INT_RC_ROOT="$(run_copy_doctor)"
+INT_ERR_ROOT="$(cat "$INT_ERR")"
+expect_ne "17.9: a copy without lib/root.sh does not exit 0 either" "0" "$INT_RC_ROOT"
+expect_match "17.10: …and names that file, not the previous one" \
+  "*scripts/lib/root.sh — the payload looks incomplete.*" "$INT_ERR_ROOT"
+expect_no_regex "17.11: …with no interpreter diagnostic there either" \
+  "line [0-9]+:" "$INT_ERR_ROOT"
+
+# AND BACK TO INTACT, which is what makes every assertion above a difference the
+# deletion made rather than a property of the fixture.
+cp "${PAYLOAD}/scripts/lib/root.sh" "$PLUG_INT/scripts/lib/root.sh"
+INT_RC_BACK="$(run_copy_doctor)"
+expect_status "17.12: restoring the library brings the report and exit 0 back" "0" "$INT_RC_BACK"
+expect_match "17.13: …and the page is there again" \
+  "*Bionic Doctor — payload*" "$(cat "$INT_OUT")"
+
+
+section "Section 8: setup's own payload guard, over the same copy (Step-6 recheck A-1/R-1)"
+
+# THE OTHER HALF OF SECTION 7. setup.sh has carried this guard since 2ff47c7 and
+# `lib/checks.sh` was added to its list by the Step-6 review that found the hole
+# — but nothing went red if a future edit dropped the name again, which is the
+# one PARTIAL the recheck called a real gap (review-recheck.md part 1, row A-1).
+# Same payload copy, same deletion, the other script: what a reader gets from a
+# payload with no check table is the reinstall route and a non-zero status, never
+# an empty roster and exit 0. An empty roster is the shape a caller reads as
+# "this machine has nothing to set up", which is the lie the guard exists to stop.
+#
+# THE COPY'S OWN setup.sh RUNS, for the same reason doctor's does above: pointing
+# the repo's script at the copy through BIONIC_LIB_DIR would test the override,
+# not the payload, and the override is not what a broken install has.
+run_copy_setup_list() {  # -> the exit status; stdout in $INT_OUT, stderr in $INT_ERR
+  ( cd "$REPO" && HOME="$TMP" PATH="$BIN" BIONIC_SHELL_RC="$FIXTURE_RC" \
+      BIONIC_CLAUDE_HOME="$TMP/claude-home" BIONIC_PLUGIN_ROOT="$PLUG_INT" \
+      BIONIC_PLUGINS_DIR="$EMPTY_PLUGINS" \
+      bash "$PLUG_INT/scripts/setup.sh" --list < /dev/null > "$INT_OUT" 2> "$INT_ERR" )
+  echo $?
+}
+
+# INTACT FIRST — section 7 restored the copy at 17.12, and this re-establishes it
+# for the script that has not been run against it yet. Without these three, 18.4
+# could pass over a payload that was never able to list anything.
+SET_RC_OK="$(run_copy_setup_list)"
+SET_OUT_OK="$(cat "$INT_OUT")"
+expect_status "18.1: an intact payload copy lists its roster and exits 0" "0" "$SET_RC_OK"
+expect_match "18.2: …with the names on stdout, from the check table" \
+  "*legacy-hook-files*" "$SET_OUT_OK"
+expect_no_regex "18.3: …and nothing shaped like an interpreter diagnostic on stderr" \
+  "line [0-9]+:" "$(cat "$INT_ERR")"
+
+# NOW THE DAMAGE, the same file section 7 deleted.
+rm -f "$PLUG_INT/scripts/lib/checks.sh"
+SET_RC_BAD="$(run_copy_setup_list)"
+SET_ERR_BAD="$(cat "$INT_ERR")"
+expect_ne "18.4: a payload copy without lib/checks.sh does not exit 0" "0" "$SET_RC_BAD"
+expect_match "18.5: …it names the file it could not find" \
+  "*scripts/lib/checks.sh — the payload looks incomplete.*" "$SET_ERR_BAD"
+expect_match "18.6: …and the reinstall route, the same one doctor prints" \
+  "*claude plugin install bionic@bionic*" "$SET_ERR_BAD"
+# THE NEGATIVE THE WHOLE SECTION IS FOR, beside the two positives above it: what
+# the reader gets is the sentence, not `setup.sh: line NNN: …/lib/checks.sh: No
+# such file or directory` followed by `bionic_check_items: command not found`.
+expect_no_regex "18.7: …and no interpreter diagnostic anywhere in it" \
+  "line [0-9]+:" "$SET_ERR_BAD"
+expect_empty "18.8: …and no roster on stdout for a caller to believe" "$(cat "$INT_OUT")"
+
+# AND BACK TO INTACT, so every assertion above is a difference the deletion made.
+cp "${PAYLOAD}/scripts/lib/checks.sh" "$PLUG_INT/scripts/lib/checks.sh"
+SET_RC_BACK="$(run_copy_setup_list)"
+expect_status "18.9: restoring the library brings the roster and exit 0 back" "0" "$SET_RC_BACK"
+expect_match "18.10: …and the names are there again" \
+  "*legacy-hook-files*" "$(cat "$INT_OUT")"
 
 finish

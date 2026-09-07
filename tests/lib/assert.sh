@@ -43,7 +43,7 @@
 # DEFER: a suite that defines its own `ok()`/`no()` or resets its own counters at
 # column 0 is REFUSED by the runner's adoption wall (`_tf_adoption_refusal`,
 # below) and never runs — as is a suite that does not adopt this file at all.
-# All 55 suites on the roster are clients of it; the 49 that carried private
+# Every suite on the roster is a client of it; the ones that once carried private
 # definitions were migrated by S5–S9 and the wall closed the door behind them.
 #
 # ── THE GENERIC FAMILY: SEMANTICS, ARGUMENT ORDER, AND THE OLD SPELLINGS ─────
@@ -650,8 +650,8 @@ _tf_scan() {
 # suite to source this file or to call `finish`, so a suite spelling its helpers
 # `t_ok`/`t_no` and its counters `P`/`F`, printing its own tally, passed the
 # wall untouched — the exact state AC-12 exists to make impossible, while §13's
-# `0 refused` read as proof it already was. All 55 suites adopt today, but that
-# was a measurement (the migration slices' one-time greps), not a mechanism.
+# `0 refused` read as proof it already was. That every suite adopted was once only
+# a measurement (the migration slices' one-time greps), not a mechanism.
 # It is a mechanism now.
 
 # _tf_owned_names — the names this framework owns. READ FROM THIS FILE at call

@@ -39,7 +39,6 @@
 # prepended PATH so no arm asks the live CLI anything.
 #
 # Usage: bash tests/rc-item.test.sh
-# Registered by name in tests/run.sh (tests/*.test.sh is NOT auto-globbed).
 
 set -uo pipefail
 

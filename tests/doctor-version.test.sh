@@ -434,15 +434,6 @@ ROW8="$(version_row "$(run_doctor "$HOME8")")"
 expect_match "30: a dotted/dashed prerelease version is still reported" \
   "*9.9.9-rc.1 available*" "$ROW8"
 
-section "Section 7: registration"
-
-# THE SUITE IS REGISTERED. tests/*.test.sh is NOT globbed by the runner
-# (tests/run.sh hand-lists every suite by name) — see
-# tests/doctor-patrol.test.sh's own registration case for the prior instance
-# of this lesson.
-expect_true "31: tests/run.sh names doctor-version.test.sh" \
-  grep -q 'run "doctor-version.test.sh" bash tests/doctor-version.test.sh' "${BIONIC_SCRIPTS_DIR}/tests/run.sh"
-
 section "Section 8: feed kind is keyed on the installed plugin's own marketplace name (AC-18, L-DETECT/4.1)"
 
 # THE DEFECT. detect_marketplace_feed_kind used to key known_marketplaces.json

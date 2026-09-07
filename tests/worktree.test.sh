@@ -31,7 +31,6 @@
 # BOTH ARMS, ALWAYS. Every refusal is asserted against the matching acceptance.
 #
 # Usage: bash tests/worktree.test.sh
-# Registered by name in tests/run.sh (tests/*.test.sh is NOT auto-globbed).
 
 set -uo pipefail
 

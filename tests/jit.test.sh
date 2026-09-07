@@ -21,7 +21,6 @@
 # symlinked in, everything else a recorder stub).
 #
 # Usage: bash tests/jit.test.sh
-# Registered by name in tests/run.sh (tests/*.test.sh is NOT auto-globbed).
 
 set -uo pipefail
 
@@ -279,11 +278,6 @@ expect_match "jit_offer reaches the function literally named install_plugin_nati
 # deps.sh keeps its refusal: the shared installer is a SIBLING of install_dep,
 # not a way in through it. If this ever passed, the kludge D1 rejected would be
 # back and the refusal would be decoration.
-
-section "Group 10: the suite is registered in tests/run.sh by name"
-
-expect_true "tests/run.sh names jit.test.sh" \
-  grep -q 'run "jit.test.sh" bash tests/jit.test.sh' "${REPO}/tests/run.sh"
 
 section "Group 11: excalidraw-diagram route fixes (epic-17 w4 S10, AC-10)"
 #

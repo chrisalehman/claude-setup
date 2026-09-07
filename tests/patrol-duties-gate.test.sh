@@ -368,17 +368,6 @@ else
   no "23: the gate touched the project tree" "$_before -> $_after"
 fi
 
-# 24: THE SUITE IS REGISTERED. tests/*.test.sh is NOT globbed by the runner — an
-# unregistered suite is a silent false green, and this gate would then be a wall
-# nothing drives. (The pattern was tests/doctor.test.sh Group 11, deleted at
-# 8582861, epic-18 wave-03.)
-if grep -q 'run "patrol-duties-gate.test.sh" bash tests/patrol-duties-gate.test.sh' \
-     "${BIONIC_SCRIPTS_DIR}/tests/run.sh"; then
-  ok "24: tests/run.sh names patrol-duties-gate.test.sh"
-else
-  no "24: tests/run.sh does not name this suite — it would never run"
-fi
-
 # 25: THE GATE IS REGISTERED ON THE STOP CHANNEL. A hook with a suite, a run line
 # and no registration is the exact shape the landing sweep spent a wave being:
 # installed, syntactically fine, green in its own suite, and never fired.

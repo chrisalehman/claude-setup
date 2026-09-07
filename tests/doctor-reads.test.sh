@@ -590,10 +590,7 @@ PY
   else no "13: a fact is computed and never read" "$UNREAD"; fi
 fi
 
-section "Section 8: registration, and the column budget"
-
-expect_true "14: tests/run.sh names doctor-reads.test.sh" \
-  grep -q 'run "doctor-reads.test.sh" bash tests/doctor-reads.test.sh' "${REPO}/tests/run.sh"
+section "Section 8: the column budget"
 
 _over="$(too_wide "$OUT6")"
 if [ -z "$_over" ]; then ok "15: every line of the fullest run fits 100 columns"
@@ -620,5 +617,72 @@ expect_match "16.3: …which answers the same row from the CLI instead (the pair
 _over="$(too_wide "$OUT_NOCLI")"
 if [ -z "$_over" ]; then ok "16.4: the CLI-absent page still fits 100 columns"
 else no "16.4: a line of the CLI-absent page exceeds 100 columns" "$_over"; fi
+
+section "Section 10: the headline moves by the rows a collapse stands for (Walk-D1)"
+
+# THE WALK'S DRIVE 1e, TURNED INTO A WALL. The Step-5 walk rendered a machine
+# whose headline said 17 over 19 lines carrying ✗, wrote the three environment
+# names into settings.json, and watched three ✗ rows disappear while the headline
+# moved by ONE. Two collapsed lines on that page were swapped for the rows they
+# stood for and the third — `N of bionic's environment settings … → run
+# /bionic:setup` — was not, so it counted as one problem over three rendered
+# rows.
+#
+# WHY THIS IS A DELTA AND NOT A TOTAL. Section 6f already pins headline against
+# ✗ rows on its own fixture, and equality held there while this defect was live:
+# the same page carried two `presence is unknown` fix lines whose ✗ dependency
+# rows were counted a second time by the dependency tally, and +2 cancelled the
+# environment line's -2 exactly. A page-total assertion cannot see a pair of
+# errors that sum to zero. The DIFFERENCE between two renders of one machine
+# can: everything that is not the environment block is identical across the two,
+# so it subtracts out, and what is left is the question this section asks.
+_env_settings="${CHOME}/settings.json"
+D10_BEFORE="$(run_doctor "BIONIC_PNPM_STORE=${FULL_STORE}")"
+
+# The three names written with bionic's OWN values — `env_default`'s, which is
+# what `bionic_check_env_unwritten` compares against — merged into whatever
+# settings.json already holds, so the statusLine row above is untouched and the
+# environment block is the only difference between the two machines.
+jq '.env = ((.env // {}) + {
+      "CLAUDE_CODE_ENABLE_TODO_TOOLS": "1",
+      "BASH_MAX_TIMEOUT_MS": "1800000",
+      "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    })' "$_env_settings" > "${TMP}/settings-env.json" && mv "${TMP}/settings-env.json" "$_env_settings"
+D10_AFTER="$(run_doctor "BIONIC_PNPM_STORE=${FULL_STORE}")"
+
+d10_env_rows() {  # <doctor report> -> the count of ✗ rows for the three env names
+  grep -cE '^  ✗ (CLAUDE_CODE_ENABLE_TODO_TOOLS|BASH_MAX_TIMEOUT_MS|CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS) ' <<<"$1" || true
+}
+
+D10_ENV_BEFORE="$(d10_env_rows "$D10_BEFORE")"
+D10_ENV_AFTER="$(d10_env_rows "$D10_AFTER")"
+D10_ROWS_BEFORE="$(page_bad_rows "$D10_BEFORE")"
+D10_ROWS_AFTER="$(page_bad_rows "$D10_AFTER")"
+D10_N_BEFORE="$(d6f_problems "$D10_BEFORE")"
+D10_N_AFTER="$(d6f_problems "$D10_AFTER")"
+
+# ANTI-VACUITY, THREE WAYS: the environment rows really were ✗ before, really are
+# not after, and the whole-page ✗ count moved by exactly those three. Without
+# these the delta assertion below could be 0 = 0 over two identical pages.
+expect_eq "18.1: the three environment names render ✗ before they are written" \
+  "3" "$D10_ENV_BEFORE"
+expect_eq "18.2: …and none of them after" "0" "$D10_ENV_AFTER"
+expect_eq "18.3: …so the page carries exactly three fewer ✗ rows" \
+  "3" "$(( D10_ROWS_BEFORE - D10_ROWS_AFTER ))"
+expect_match "18.4: both renders report a problem count" \
+  "[0-9]*|[0-9]*" "${D10_N_BEFORE}|${D10_N_AFTER}"
+
+# THE ASSERTION. The environment line is a collapse like the dependency lines and
+# the dead-session line, so it is worth the rows it stands for and the headline
+# moves with them. Before the fix this read 1 against 3.
+expect_eq "18.5: the headline moves by the number of ✗ rows the collapse stands for" \
+  "$(( D10_ROWS_BEFORE - D10_ROWS_AFTER ))" "$(( D10_N_BEFORE - D10_N_AFTER ))"
+
+# AND THE TOTAL, ON A FIXTURE WHERE IT IS AN EQUALITY. Section 6f takes this over
+# a page whose two errors cancelled; here the same rule is asked of a page where
+# the environment block is the only collapse left with anything to collapse.
+expect_eq "18.6: the headline agrees with the ✗ rows it stands for, before" \
+  "$D10_ROWS_BEFORE" "$D10_N_BEFORE"
+expect_eq "18.7: …and after" "$D10_ROWS_AFTER" "$D10_N_AFTER"
 
 finish

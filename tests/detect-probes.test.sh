@@ -67,7 +67,6 @@
 # registry against a clean one.
 #
 # Usage: bash tests/detect-probes.test.sh
-# Registered by name in tests/run.sh (tests/*.test.sh is NOT auto-globbed).
 
 set -uo pipefail
 
@@ -489,13 +488,5 @@ AFTER="$(fingerprint "$FIX_HEALTHY" "$FIX_BROKEN" "$FIX_F12_HEALTHY" "$FIX_F12_B
 expect_eq "neither probe changed a byte of anything it read" "$BEFORE" "$AFTER"
 expect_eq "…and neither created a file beside the registry" \
   "installed_plugins.json" "$(ls "$CH_DIR/plugins")"
-
-section "Group 8: the suite is registered in tests/run.sh by name"
-#
-# tests/*.test.sh is NOT globbed. A suite nobody names never runs, and a probe
-# nobody runs is worse than no probe: it reads as coverage.
-
-expect_true "tests/run.sh names detect-probes.test.sh" \
-  /usr/bin/grep -q 'run "detect-probes.test.sh" bash tests/detect-probes.test.sh' "${REPO}/tests/run.sh"
 
 finish

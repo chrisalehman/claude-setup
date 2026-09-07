@@ -170,9 +170,4 @@ OUT4="$(run_doctor)"
 expect_no_match "8: a session naming a different cwd is not this project's row" \
   "*restart needed*" "$OUT4"
 
-section "Section 5: wiring"
-
-expect_true "9: tests/run.sh names doctor-restart.test.sh" \
-  grep -q 'run "doctor-restart.test.sh" bash tests/doctor-restart.test.sh' "${REPO}/tests/run.sh"
-
 finish
