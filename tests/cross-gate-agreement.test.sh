@@ -8484,14 +8484,17 @@ expect_eq "S19.2 …and the same sweep DOES fire on a copy with the idiom plante
 
 # --- §S19.3 POSITIVE: every doctoring site declares through `anchor` ---
 # The census: a doctoring site in docs-pins is a `DOCTORED…="$TMP/…"` assignment.
-# 29 since both epic-22 slices landed on the 23 baseline: K1 (plan slice 15, Section 12)
-# added three doctoring sites (DOCTORED_NO_GATES, DOCTORED_MATRIX_BACK,
-# DOCTORED_NO_INTEGRATION), 23 -> 26; K3 (plan slice 17, Section 6) added three more (the
-# order-reversed, Mechanisms-inherited-stripped and strategic-by-rule-stripped mutants),
-# 26 -> 29 — each of the six anchored, lifting both this row and the next by six, all told.
-expect_eq "S19.3 docs-pins holds 29 doctoring sites" "29" \
+# RE-POINTED at THIS merge (epic-22 K1 + K3 + K5, plan slices 15/17/19, landing together):
+# K1 (Section 12) added three doctoring sites and three anchor calls, 23->26/24->27; K3
+# (Section 6) added three more (order-reversed, Mechanisms-inherited-stripped,
+# strategic-by-rule-stripped mutants), 26->29/27->30; K5 (Section 13) added three more
+# again (DOCTORED_NO_REQ_LAYOUT, DOCTORED_NO_SENTENCE, DOCTORED_NO_ROW_CLAUSE), 29->32/
+# 30->33. RE-DERIVED BY DIRECT GREP over the merged docs-pins.test.sh, not carried
+# forward from either pre-merge side — both sides' own "29"/"30" were each only two of
+# the three slices.
+expect_eq "S19.3 docs-pins holds 32 doctoring sites" "32" \
   "$(/usr/bin/grep -cE '^DOCTORED[A-Z0-9_]*="\$TMP/' "$S19_DOCS_PINS")"
-expect_eq "S19.3 …declared by 30 anchor calls (Section 8's doctoring rewrites two sentences; Section 12 adds three, K1; Section 6 adds three, K3)" "30" \
+expect_eq "S19.3 …declared by 33 anchor calls (Section 8's doctoring rewrites two sentences; Section 12 adds three, K1; Section 6 adds three, K3; Section 13 adds three, K5)" "33" \
   "$(/usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]' "$S19_DOCS_PINS")"
 # 25 since Step 6: §S13.2 lifts the wall's own reduction out of the hook and
 # anchors both lines it lifts (review-b B-3). 26 at epic-21 wave-02 S12, when §V's
@@ -8521,23 +8524,33 @@ expect_eq "S19.3 …and landing-gate by three: the inverted-guard mutant, and th
 # 53 since the fold-in landings (A-44). F1 (item 17) and F2 (item 11) each added two
 # anchors — F1 in this suite, F2 in landing-gate — and each rewrote this total from 49
 # to 51 in BYTE-IDENTICAL text, so the merge was conflict-free and the pin was two short
-# of the tree. 60 once three epic-22 slices landed on the 53 baseline: K1 (plan slice 15)
-# gave docs-pins three more anchor calls (Section 12's anti-vacuity mutants); R6 (plan slice
-# 3) gave this suite one more through §V; K3 (plan slice 17, Section 6) gave docs-pins three
-# more again. 59 after N1 retired §R and the one anchor its awk mutant declared (see the
-# row above). 60 at epic-22 wave-01 slice 11, which gave this suite one more through
-# §Refuse. 30 + 26 + 1 + 3 = 60, RE-DERIVED BY
-# DIRECT GREP over the merged files — never carried forward from either side, which is the
-# whole reason this literal exists.
+# of the tree. Measured at the merged head, not predicted: 24 + 25 + 1 + 3 = 53.
+# 63 once five epic-22 slices landed on the 53 baseline, THIS merge included: K1 (plan
+# slice 15) gave docs-pins three more anchor CALLS (Section 12's anti-vacuity mutants);
+# R6 (plan slice 3) gave this suite one more through §V; K3 (plan slice 17, Section 6)
+# gave docs-pins three more again; K5 (plan slice 19, Section 13) gave docs-pins three
+# more again — 27 -> 33 across K1+K3+K5 (the first row above, which counts anchor CALLS
+# — one more than its 32 doctoring SITES, a pre-existing +1 offset Section 8's own
+# comment names: one doctoring site there is rewritten by two anchored sentences). N1
+# retired §R and the one anchor its awk mutant declared (25, down from 26). E1 (plan
+# slice 11) gave this suite one BACK through §Refuse, whose migration mutant anchors the
+# four BLOCKED lines it strips from a scratch protect-main.sh before stripping them —
+# so this suite is 26 again, for a different reason than it was before N1.
+#
+# 33 + 26 + 1 + 3 = 63 — RE-DERIVED BY DIRECT GREP over the merged files at THIS commit,
+# never carried forward from either pre-merge side, which is the whole reason this
+# literal exists. Both sides of this merge moved the total (E1 to 60, K5 to 62) and
+# NEITHER number is right for the merged tree: adding one side's claim to the other's
+# would have produced a pin that matched no file on disk.
 #
 # tests/refuse.test.sh IS NOT IN THIS CENSUS, and that is a Step-9 disposition rather
 # than an oversight. It carries ONE anchor call site, reached three times: its
 # `mutant()` helper calls `anchor` before every `sed`, so a mutant cannot be added
 # there without a precondition, and the census's per-file grep would count 1 whatever
-# the number of mutants. §S19.2's absence sweep already reads every
-# suite in tests/, including that one. What is missing is only this bookkeeping count,
-# and adding a fifth term to it is a change to a section slice 11 does not own.
-expect_eq "S19.3 …60 anchor call sites across the four doctoring suites, all told" "60" \
+# the number of mutants. §S19.2's absence sweep already reads every suite in tests/,
+# including that one. What is missing is only this bookkeeping count, and adding a
+# fifth term to it is a change to a section slice 11 does not own.
+expect_eq "S19.3 …63 anchor call sites across the four doctoring suites, all told" "63" \
   "$(cat "$S19_DOCS_PINS" "$S19_TESTS_DIR/cross-gate-agreement.test.sh" \
         "$S19_TESTS_DIR/agent-context-guard.test.sh" "$S19_TESTS_DIR/landing-gate.test.sh" \
      | /usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]')"

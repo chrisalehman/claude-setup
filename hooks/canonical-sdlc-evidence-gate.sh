@@ -1171,6 +1171,84 @@ while IFS= read -r _bline; do
   fi
 done <<< "$BLOCK"
 
+# ---------- K5 / AC-K5.2: Step-1 'requirements:' pointer (durable, current: 2+) ----------
+# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
+#
+# K5 fixes three artifacts to three steps (design ledger K5; ADR-001): Step 1 authors
+# the wave's `*.requirements.md`, and the Step-1 evidence line is where that artifact's
+# path is recorded — once, at Step 1, and never revisited. This arm reads THAT line (not
+# the current step's own line) at every commit from current: 2 onward, so a plan cannot
+# progress past Step 1 without a resolving pointer and cannot lose it later — the same
+# durable-prefix shape validate_walk_artifact uses for the Step-5 walk narration (A5).
+# Inert at current: 1 — Step 1 is still being written, and POINTER_STEPS below is what
+# governs Step 1's own commit.
+#
+# SCOPE: rigor:audited + multi_agent:true + scale wave|epic — the same guard
+# validate_dispatch_ledger uses (D7) to keep wave-lane machinery that predates a new
+# requirement out of the way of fixtures that are not about it. This suite's shared FM
+# (rigor: tested) and frontmatter() (no multi_agent: line, so MULTI_AGENT reads empty)
+# are both guaranteed no-ops under this guard by the same construction the D7 comment
+# documents; only a fixture that opts in — this wave's own plan among them (rigor:
+# audited, multi_agent: true) — exercises it. Judgment call recorded because AC-K5.2's
+# text names no such guard; the alternative (firing on every wave/epic plan regardless of
+# rigor) blocked 170/316 of this suite's pre-existing cases on first RED and is not what
+# "touch only your own span" can mean here.
+step1_evidence_block() {
+  local line raw cont
+  line=$(echo "$SECTION" | grep -E '^[[:space:]]*-?[[:space:]]*Step[[:space:]]+1[[:space:]]*:' | head -1)
+  [ -n "$line" ] || return 0
+  raw=$(echo "$line" | sed -E 's/^[[:space:]]*-?[[:space:]]*Step[[:space:]]+1[[:space:]]*:[[:space:]]*//')
+  cont=$(extract_continuation "$SECTION" "1")
+  printf '%s\n%s\n' "$raw" "$cont"
+}
+
+# Resolution mirrors resolve_walk_path: absolute stands, a `specs/` leader is
+# docs-root-relative (the form K5's layout names — requirements live beside the spec
+# under specs/epic-NN-<slug>/), anything else is project-relative.
+resolve_requirements_path() {  # $1 = raw requirements: value
+  case "$1" in
+    /*)      printf '%s\n' "$1" ;;
+    specs/*) printf '%s/%s\n' "$DOCS_ROOT" "$1" ;;
+    *)       printf '%s/%s\n' "$PROJECT_DIR" "$1" ;;
+  esac
+}
+
+validate_requirements_pointer() {
+  local current_num b1 raw abs
+  case "$SCALE" in wave|epic) : ;; *) return 0 ;; esac
+  [ "$RIGOR" = "audited" ] || return 0
+  [ "$MULTI_AGENT" = "true" ] || return 0
+  current_num=$(echo "$CURRENT" | sed -E 's/[ab]$//')
+  [ "$current_num" -ge 2 ] 2>/dev/null || return 0
+
+  b1=$(step1_evidence_block)
+  raw=$(echo "$b1" | grep -E '^[[:space:]]*requirements[[:space:]]*:' | head -1 \
+        | sed -E 's/^[[:space:]]*requirements[[:space:]]*:[[:space:]]*//' \
+        | sed -E 's/;.*$//' | sed -E 's/[[:space:]]+$//')
+  if [ -z "$raw" ]; then
+    echo "BLOCKED: canonical-sdlc step ${CURRENT} — the Step 1 evidence has no 'requirements:' field." >&2
+    echo "Plan: $PLAN" >&2
+    echo "Fix: add 'requirements: specs/<epic>/<wave>.requirements.md' to the Step 1 line, naming the Step-1 artifact (K5)." >&2
+    exit 2
+  fi
+
+  if echo "$raw" | grep -qE '(^|/)\.\.(/|$)'; then
+    echo "BLOCKED: canonical-sdlc step ${CURRENT} — Step 1 'requirements: ${raw}' climbs out with a '..' component." >&2
+    echo "Plan: $PLAN" >&2
+    echo "Fix: name the requirements file relative to the docs root, e.g. 'requirements: specs/<epic>/<wave>.requirements.md'." >&2
+    exit 2
+  fi
+  abs=$(resolve_requirements_path "$raw")
+  if [ ! -f "$abs" ]; then
+    echo "BLOCKED: canonical-sdlc step ${CURRENT} — Step 1 'requirements: ${raw}' does not resolve to a real file (resolved to ${abs})." >&2
+    echo "Plan: $PLAN" >&2
+    echo "Fix: write the requirements document at that path (K5 Step-1 artifact) before committing at step ${CURRENT}." >&2
+    exit 2
+  fi
+  return 0
+}
+
+validate_requirements_pointer
 
 # A pointer step records a link/path (not shaped fields); having passed the
 # presence + placeholder checks above, it needs no shape check, so allow the

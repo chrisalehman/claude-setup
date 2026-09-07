@@ -4,8 +4,14 @@
 # [WALL: tests/canonical-sdlc-governing-skill.test.sh]
 #
 # Scope: files under <project>/docs/bionic/{specs,plans,adrs}/ matching
-#   *.plan.md | *.spec.md | adr-*.md | continuation*.md
+#   *.plan.md | *.spec.md | *.requirements.md | adr-*.md | continuation*.md
 # (epic.plan.md and epic.spec.md are covered by *.plan.md / *.spec.md)
+#
+# K5: *.requirements.md gets the same frontmatter contract as *.spec.md — it
+# is the Step-1 artifact (design ledger K5; ADR-001) and lives beside the spec
+# under specs/epic-NN-<slug>/. It does NOT get the design three-way rule below
+# (that arm's own case statement keys on *.spec.md only, so a requirements
+# file never reaches it).
 #
 # Other files under those paths — README.md, images, supporting notes —
 # pass through unblocked. Rename-to-bypass is discoverable: the skill's
@@ -501,7 +507,7 @@ audit_path() {  # $1=project root → absolute audit-file path; rc 1 if no $HOME
 BASENAME=$(basename "$FILE_PATH")
 ENFORCE=0
 case "$BASENAME" in
-  *.plan.md|*.spec.md|continuation*.md) ENFORCE=1 ;;
+  *.plan.md|*.spec.md|*.requirements.md|continuation*.md) ENFORCE=1 ;;
   adr-*.md) ENFORCE=1 ;;
 esac
 
@@ -652,9 +658,9 @@ FRONTMATTER=$(echo "$CONTENT" | awk '
 if [ "$UNDER_DOCS_ROOT" -eq 0 ]; then
   if echo "$FRONTMATTER" | grep -qE '^[[:space:]]*(canonical_sdlc_version[[:space:]]*:|governing-skill[[:space:]]*:[[:space:]]*canonical-sdlc[[:space:]]*$)'; then
     case "$BASENAME" in
-      *.spec.md) MISPLACED_SUBDIR=specs ;;
-      adr-*.md)  MISPLACED_SUBDIR=adrs ;;
-      *)         MISPLACED_SUBDIR=plans ;;
+      *.spec.md|*.requirements.md) MISPLACED_SUBDIR=specs ;;
+      adr-*.md)                    MISPLACED_SUBDIR=adrs ;;
+      *)                           MISPLACED_SUBDIR=plans ;;
     esac
     echo "BLOCKED: canonical-sdlc artifact '$BASENAME' is misplaced." >&2
     echo "Path: $FILE_PATH" >&2

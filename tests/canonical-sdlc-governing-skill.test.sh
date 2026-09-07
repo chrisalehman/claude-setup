@@ -2157,4 +2157,66 @@ assert_contains "v3 a session bound to a closed plan is told, and never falls th
   "$HOOK_STDERR"
 assert_eq "v3 ...and still passes" 0 "$HOOK_EXIT"
 
+section "K5/AC-K5.1: *.requirements.md gets the frontmatter contract, minus the design rule"
+
+# K5: requirements.md is the Step-1 artifact (design ledger K5; ADR-001), living beside the
+# spec under specs/epic-NN-<slug>/. It gets the SAME frontmatter contract *.spec.md gets —
+# but never the three-way design rule (that arm's own case statement keys on *.spec.md only).
+k5_p=$(make_project)
+k5_req="$k5_p/.bionic/docs/specs/epic-01-demo/wave-01-x.requirements.md"
+
+echo "k5a: requirements.md with no frontmatter → block"
+run_write "$k5_req" '# Requirements body, no frontmatter'
+assert_eq "k5a exit 2" 2 "$HOOK_EXIT"
+assert_contains "k5a names the missing frontmatter block" "missing a YAML frontmatter block" "$HOOK_STDERR"
+
+echo "k5b: requirements.md with the full valid contract → allow"
+run_write "$k5_req" "$VALID_FRONTMATTER"
+assert_eq "k5b exit 0" 0 "$HOOK_EXIT"
+assert_eq "k5b silent" "" "$HOOK_STDERR"
+
+echo "k5c: the SAME frontmatter (no '## Design', no 'design:' pointer, no waiver) written to a" \
+     ".spec.md path would block on the design wall (proven in the design-wall section above)" \
+     "— written to .requirements.md instead it is allowed: the design rule never fires here"
+run_write "$k5_req" "$(build_plan)"
+assert_eq "k5c exit 0 (design rule not applied to a requirements file)" 0 "$HOOK_EXIT"
+assert_eq "k5c silent" "" "$HOOK_STDERR"
+
+# k5d: this wave's own requirements.md is the exemplar shape (design ledger K5; the brief
+# says "copy it into a fixture and assert that"). Frontmatter copied byte-for-byte from
+# .bionic/docs/specs/epic-22-plugin-only/wave-01-plugin-only.requirements.md (gitignored,
+# machine-local — not a path this hermetic suite can read live, so the fixture is a literal
+# copy rather than a dynamic read).
+K5_EXEMPLAR_FRONTMATTER='---
+governing-skill: agent-skills:idea-refine
+sdlc-step: 1
+intent: build
+rigor: audited
+scale: wave
+canonical_sdlc_version: 14
+surface_type: cli-plugin
+language: bash
+has_ui: false
+multi_agent: true
+deploy_target: n/a
+cleanup_on_finish: true
+use_worktree: false
+walk: required
+design-interview: true
+model_plan: orchestrator=claude-fable-5-1; implementor=sonnet-high; senior-implementor=opus-high; researcher=opus-high; test-runner=haiku-medium; auditor=opus-high; critic=opus-high
+created: 2026-09-07
+---
+
+# bionic 1.6.0 — plugin-only · requirements (epic-22 wave-01)
+
+## Requirements and acceptance criteria
+
+**REQ-K5 — Three artifacts, three steps.**
+- AC-K5.1 The governing-skill hook validates '"'"'*.requirements.md'"'"' frontmatter under '"'"'specs/'"'"'.'
+echo "k5d: this wave's own requirements.md is the exemplar shape and must pass the arm as-is"
+k5_real_target="$k5_p/.bionic/docs/specs/epic-01-demo/real.requirements.md"
+run_write "$k5_real_target" "$K5_EXEMPLAR_FRONTMATTER"
+assert_eq "k5d exit 0 on the real wave-01 requirements doc's frontmatter" 0 "$HOOK_EXIT"
+assert_eq "k5d silent" "" "$HOOK_STDERR"
+
 finish
