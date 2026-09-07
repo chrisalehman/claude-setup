@@ -431,7 +431,7 @@ patrol_interval() {  # <repo-root> -> "<seconds> <configured|default|last-resort
 patrol_window() {  # <repo-root> <sid> -> ISO instant on stdout, empty for "the whole transcript"
   local repo="${1:-}" sid="${2:-}" poker w
   [ -n "$repo" ] && [ -n "$sid" ] || { printf ''; return 0; }
-  poker="$(_detect_plugin_root 2>/dev/null)/hooks/session-poker.sh"
+  poker="$(plugin_root 2>/dev/null)/hooks/session-poker.sh"
   [ -f "$poker" ] || { printf ''; return 0; }
   w=$( cd "$repo" 2>/dev/null && CLAUDE_CODE_SESSION_ID="$sid" bash "$poker" window 2>/dev/null )
   case "$w" in
