@@ -1257,13 +1257,12 @@ validate_requirements_pointer
 # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
 POINTER_STEPS="1 2 3 4"  # Step 6 must reach dispatch for the matrix prefix check
 
-for _ps in $POINTER_STEPS; do
-  [ "$CURRENT" = "$_ps" ] || continue
-  if [ "$_ps" = "4" ] && [ "$USE_WORKTREE" = "true" ]; then
-    break  # fall through to the Step-4 worktree shape check below
-  fi
-  exit 0
-done
+# WHERE THE POINTER-STEP EXIT WENT (epic-22 K2). The loop that used to sit here now
+# runs a few hundred lines below, immediately after the two arms this wave added — and
+# the move is the whole reason those arms are reachable at all. Steps 1-4 take that
+# `exit 0`, so ANY wall written below it is dead at exactly the step it was written for:
+# `current: 4` is a pointer step. Everything between here and the new position is
+# function definitions and nothing else, so no other behaviour moved with it.
 
 # Extract a value for a key from the BLOCK ("key: value" lines or
 # "key: value" appearing on the Step line directly). Returns empty if
@@ -1493,6 +1492,120 @@ matrix_block() {
     /^[^[:space:]]/ {f=0}
     f'
 }
+
+# ================================================== THE TWO STEP-4 ARMS (epic-22 K2)
+#
+# They sit HERE, above the pointer-step exit and below the matrix extractors, because
+# that is the only place both facts are true: `matrix_section`/`matrix_block` are
+# defined, and `current: 4` has not yet taken the pointer step's `exit 0`.
+#
+# THE STEP NUMBER IS READ AS A NUMBER, ONCE. `CURRENT` reaches here as `4`, `8b` or
+# `10`; the task lane (`T<n>`) exited far above. A value whose digits cannot be read
+# leaves both arms unmeasured rather than refusing on a question they cannot ask — the
+# fail direction every start-side ambiguity in this tree takes.
+k2_step_num() {
+  local n="${CURRENT%%[!0-9]*}"
+  case "$n" in ''|*[!0-9]*) printf '' ;; *) printf '%s' "$n" ;; esac
+}
+
+# ---------- the approval arm (AC-K2.4, design decision 2) ----------
+#
+# WHAT `approved` BINDS. Step 3 ends at one approval checkpoint, and until this arm
+# existed the user's word left no trace: a run could be building at Step 4 with nobody
+# able to say whether the plan had ever been ratified, and the only backstop was the
+# Patrol's below-Step-4 fill refusal, which asks a different question. Decision 2 settled
+# the recording — on the user's LITERAL `approved` the orchestrator writes
+#
+#     approved-by: <user> <ISO-UTC> "<verbatim reply>"
+#
+# into `## SDLC State` — and this is the wall that makes its absence cost something.
+# Silence, a question, or a partial reply is never transcribed as approval, so PRESENCE
+# is the whole check: nothing here grades the quote, and nothing here can tell a
+# transcription from an invention. What it can tell is that nobody wrote one down.
+#
+# INERT BELOW STEP 4, by construction and not by accident. Steps 0-3 are where the plan
+# is authored, and the approval is asked for at the END of Step 3 — a wall there would
+# refuse the very commit that writes the plan the user is about to approve.
+#
+# DURABLE FROM 4 ONWARD, the same shape the matrix prefix check has: deleting the line at
+# Step 6 loses the same fact it would have lost at Step 4.
+# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
+validate_approved_by() {
+  local step approved
+  step=$(k2_step_num)
+  [ -n "$step" ] || return 0
+  [ "$step" -ge 4 ] || return 0
+
+  approved=$(echo "$SECTION" | grep -E '^[[:space:]]*approved-by[[:space:]]*:' | head -1 \
+    | sed -E 's/^[[:space:]]*approved-by[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
+  [ -n "$approved" ] && return 0
+
+  echo "BLOCKED: canonical-sdlc step ${CURRENT} — '## SDLC State' carries no 'approved-by:' line; the Step-3 approval is what admits Step 4." >&2
+  echo "Plan: $PLAN" >&2
+  echo "Fix: on the user's literal 'approved', record 'approved-by: <user> <ISO-UTC> \"<verbatim reply>\"' under '## SDLC State' — never on silence, a question, or a partial reply." >&2
+  exit 2
+}
+
+# ---------- the fails-when arm (AC-K2.3) ----------
+#
+# AN EVAL WITH NO NAMEABLE FAILURE IS NOT AN EVAL. A matrix row that cannot say what
+# planted defect it must go red on is a row that will be green whatever the code does,
+# and the gate cannot tell the two apart at discharge time — which is the whole reason
+# the column is authored at Step 2, in the spec's `## Eval design`, and merely RENDERED
+# into the plan's matrix at Step 3. By Step 4 every AC block has one, or a step was
+# skipped; so this arm is the receipt for that authoring order rather than a new demand.
+#
+# IT JUDGES BLOCKS, NOT ROWS. A matrix row with no AC block underneath it is not a
+# fails-when finding: there is no block to lack the key, and the per-tier evidence loop
+# at the Verify gate is what owns that gap. Nor does a plan with no `## Verification
+# Matrix` at all become one — a Step-4 plan may not have written the section yet, and
+# demanding it here would be the Verify gate's demand moved four steps early.
+# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
+validate_fails_when() {
+  local step rows line ac block_txt fw
+  step=$(k2_step_num)
+  [ -n "$step" ] || return 0
+  [ "$step" -ge 4 ] || return 0
+
+  MATRIX=$(matrix_section)
+  [ -n "$MATRIX" ] || return 0
+  rows=$(echo "$MATRIX" | grep -E '^[[:space:]]*\|')
+  [ -n "$rows" ] || return 0
+
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    echo "$line" | grep -qE '^[[:space:]]*\|[-|:[:space:]]*$' && continue
+    ac=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')
+    [ "$ac" = "AC" ] && continue
+    [ -n "$ac" ] || continue
+    block_txt=$(matrix_block "$ac")
+    [ -n "$block_txt" ] || continue
+    fw=$(echo "$block_txt" | grep -E '^[[:space:]]*fails-when[[:space:]]*:' | head -1 \
+      | sed -E 's/^[[:space:]]*fails-when[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
+    [ -n "$fw" ] && continue
+    echo "BLOCKED: canonical-sdlc step ${CURRENT} — matrix row '${ac}' names no 'fails-when:'; an eval with no nameable failure is not an eval." >&2
+    echo "Plan: $PLAN" >&2
+    echo "Fix: add 'fails-when: <the planted defect this eval must go red on>' to the '${ac}:' block — it is authored in the spec's '## Eval design' and rendered here." >&2
+    exit 2
+  done <<< "$rows"
+  return 0
+}
+
+validate_approved_by
+validate_fails_when
+
+# THE POINTER-STEP EXIT, relocated from above (epic-22 K2). A pointer step records a
+# link or a path rather than shaped fields; having passed the presence and placeholder
+# checks, and now the two arms above, it needs no shape check. Step 4 is the exception:
+# with use_worktree=true it carries worktree fields and falls through to the shape check.
+# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
+for _ps in $POINTER_STEPS; do
+  [ "$CURRENT" = "$_ps" ] || continue
+  if [ "$_ps" = "4" ] && [ "$USE_WORKTREE" = "true" ]; then
+    break  # fall through to the Step-4 worktree shape check below
+  fi
+  exit 0
+done
 
 # The `user-confirmed:` value out of an AC block (empty when absent).
 user_confirmed_value() {

@@ -269,6 +269,7 @@ h1=$(make_home)
 write_plan "$h1" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: TODO" > /dev/null
 
 expect_allow "ls command — not a commit" "$h1" "ls /tmp"
@@ -316,6 +317,7 @@ h3b=$(make_home)
 write_plan "$h3b" "$FM
 ## SDLC State
 current: 8b
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 8b: critic report attached in docs/review.md" > /dev/null
 expect_allow "valid step 8b evidence — allow" "$h3b" 'git commit -m "critic done"'
 
@@ -323,6 +325,7 @@ h3c=$(make_home)
 write_plan "$h3c" "$FM
 ## SDLC State
 current: 10
+approved-by: fixture 2026-09-07T00:00Z "approved"
 - Step 10: commit SHA abc123 body written" > /dev/null
 expect_allow "bulleted Step line — allow" "$h3c" 'git commit -m "x"'
 
@@ -344,6 +347,7 @@ h4b=$(make_home)
 write_plan "$h4b" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 1: done
 Step 2: done
 # no Step 5 line" > /dev/null
@@ -366,6 +370,7 @@ h5=$(make_home)
 write_plan "$h5" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5:   " > /dev/null
 expect_block "empty evidence line" "$h5" 'git commit -m "x"' "is empty"
 
@@ -374,6 +379,7 @@ for token in TODO pending "in progress" XXX TBD placeholder; do
   write_plan "$h" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: $token" > /dev/null
   expect_block "placeholder '$token'" "$h" 'git commit -m "x"' "placeholder"
 done
@@ -386,6 +392,7 @@ h5b=$(make_home)
 write_plan "$h5b" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: Todo" > /dev/null
 expect_block "placeholder 'Todo' (mixed case, bare token)" "$h5b" 'git commit -m "x"' "placeholder"
 
@@ -399,6 +406,7 @@ h5c=$(make_home)
 write_plan "$h5c" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: pending" > /dev/null
 expect_block "whole-line 'Step 5: pending' → block" "$h5c" 'git commit -m "x"' "placeholder"
 
@@ -408,6 +416,7 @@ h5d=$(make_home)
 write_plan "$h5d" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5:
   readback:   Pending  " > /dev/null
 expect_block "padded mixed-case 'readback:   Pending  ' → block" "$h5d" 'git commit -m "x"' "placeholder"
@@ -429,6 +438,7 @@ h5f=$(make_home)
 write_plan "$h5f" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5:
   stack-health: pending" > /dev/null
 expect_block "continuation 'stack-health: pending' (whole value) → block" \
@@ -444,6 +454,7 @@ h6=$(make_home)
 write_plan "$h6" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: TODO" > /dev/null
 expect_block "cd && git commit" "$h6" 'cd /tmp && git commit -m "x"' "placeholder"
 expect_block "git add && git commit" "$h6" 'git add . && git commit -m "x"' "placeholder"
@@ -454,6 +465,7 @@ h6b=$(make_home)
 write_plan "$h6b" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: TODO" > /dev/null
 expect_allow "echo only, no real commit" "$h6b" 'echo "we will git commit later"'
 
@@ -477,6 +489,7 @@ h7=$(make_home)
 write_plan "$h7" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: tests green" "old.md" > /dev/null
 # Make old.md older than now.
 touch -t 202001010000 "$h7/.bionic/docs/plans/old.md" 2>/dev/null || \
@@ -485,6 +498,7 @@ touch -t 202001010000 "$h7/.bionic/docs/plans/old.md" 2>/dev/null || \
 write_plan "$h7" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: TODO" "new.md" > /dev/null
 expect_block "newest plan rules — bad state blocks even with valid older plan" \
   "$h7" 'git commit -m "x"' "placeholder"
@@ -495,6 +509,7 @@ h7b=$(make_home)
 write_plan "$h7b" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: TODO" "old-bad.md" > /dev/null
 touch -t 202001010000 "$h7b/.bionic/docs/plans/old-bad.md" 2>/dev/null || \
   touch -d "2020-01-01" "$h7b/.bionic/docs/plans/old-bad.md" 2>/dev/null || true
@@ -539,6 +554,7 @@ h8a=$(make_home); p8a=$(make_project)
 write_project_plan "$p8a" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: TODO" > /dev/null
 expect_block_both "project-local plan (bad) blocks with no global plan" \
   "$h8a" "$p8a" 'git commit -m "x"' "placeholder"
@@ -567,6 +583,7 @@ h8c=$(make_home); p8c=$(make_project)
 write_global_note "$h8c" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: TODO" "global-canonical.md" > /dev/null
 
 # 8d — THE LIVE DEFECT. A project whose plan is correctly placed and whose
@@ -579,6 +596,7 @@ h8d=$(make_home); p8d=$(make_project)
 write_project_plan "$p8d" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: TODO" > /dev/null
 touch -t 202001010000 "$p8d/.bionic/docs/plans/active.md" 2>/dev/null || \
   touch -d "2020-01-01" "$p8d/.bionic/docs/plans/active.md" 2>/dev/null || true
@@ -595,6 +613,7 @@ h8e=$(make_home); p8e=$(make_project)
 write_project_plan "$p8e" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: TODO" "old-proj.md" > /dev/null
 touch -t 202001010000 "$p8e/.bionic/docs/plans/old-proj.md" 2>/dev/null || \
   touch -d "2020-01-01" "$p8e/.bionic/docs/plans/old-proj.md" 2>/dev/null || true
@@ -613,6 +632,7 @@ p8f=$(mktemp -d); cleanup_dirs+=("$p8f") # no .bionic/docs/plans/ inside
 write_global_note "$h8f" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: TODO" > /dev/null
 expect_allow_both "no project plan dir + global plan → no fallback, allow" \
   "$h8f" "$p8f" 'git commit -m "x"'
@@ -623,6 +643,7 @@ h8g=$(make_home)
 write_plan "$h8g" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: TODO" > /dev/null
 expect_block "CLAUDE_PROJECT_DIR unset: gates on the cwd project's own plan" \
   "$h8g" 'git commit -m "x"' "placeholder"
@@ -632,7 +653,7 @@ expect_block "CLAUDE_PROJECT_DIR unset: gates on the cwd project's own plan" \
 # a plan in it gated every commit in the project.
 h8h=$(make_home); p8h=$(mktemp -d); cleanup_dirs+=("$p8h")
 mkdir -p "$p8h/docs/superpowers/plans"
-printf '%s\n## SDLC State\ncurrent: 5\nStep 5: TODO\n' "$FM" > "$p8h/docs/superpowers/plans/active.md"
+printf '%s\n## SDLC State\ncurrent: 5\napproved-by: fixture 2026-09-07T00:00Z approved\nStep 5: TODO\n' "$FM" > "$p8h/docs/superpowers/plans/active.md"
 touch "$p8h/docs/superpowers/plans/active.md"
 expect_allow_both "docs/superpowers/plans/ plan does NOT gate the commit" \
   "$h8h" "$p8h" 'git commit -m "x"'
@@ -648,6 +669,7 @@ Step 3: commit abc123 tests green" > /dev/null
 write_global_note "$h8i" "$FM
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: TODO" "newer-global.md" > /dev/null
 expect_allow_both "good project plan allows regardless of the global directory" \
   "$h8i" "$p8i" 'git commit -m "x"'
@@ -704,7 +726,7 @@ step5_base="  cmd: bash test.sh
 # block) + a ## Verification Matrix section. $1 current, $2 Step-block
 # body (indented lines), $3 full matrix section text.
 plan() {
-  printf '%s\n## SDLC State\ncurrent: %s\nStep %s:\n%s\n\n%s\n' \
+  printf '%s\n## SDLC State\ncurrent: %s\napproved-by: fixture 2026-09-07T00:00Z "approved"\nStep %s:\n%s\n\n%s\n' \
     "$(matrix_frontmatter true)" "$1" "$1" "$2" "$3"
 }
 
@@ -726,12 +748,14 @@ stack-health: process restarts 0 → 0 across walk; no crash/OOM state change
 | AC-3 | T3 | waived | waiver: dana 2026-07-16 env stale | waived |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: https://app.example/panel — opened the panel
   fresh: origin A rebuilt token-9f3a; origin B cdn purged
   cold-client: fresh incognito profile, no SW cache
   contact: clicked open — panel closed → open
   readback: panel.visible === true via page eval
 AC-2:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash test.sh — unit suite
   readback: 332/332 asserted"
 
@@ -746,6 +770,7 @@ stack-health: n/a: no long-running serve
 | AC-2 | T1 | discharged | see AC-2 | CONFIRMED |
 
 AC-2:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash test.sh
   readback: 332/332 asserted"
 
@@ -759,6 +784,7 @@ stack-health: n/a: no long-running serve
 | AC-1 | T3 | discharged | see AC-1 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: https://app.example/panel — opened the panel
   fresh: origin A rebuilt token-9f3a
   cold-client: fresh incognito profile
@@ -775,6 +801,7 @@ stack-health: n/a: no long-running serve
 | AC-1 | T3 | discharged | see AC-1 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: https://app.example/panel — opened the panel
   fresh: origin A rebuilt token-9f3a
   cold-client: fresh incognito profile
@@ -792,6 +819,7 @@ stack-health: n/a: no long-running serve
 | AC-1 | T3 | discharged | see AC-1 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: suite: hermetic-x
   readback: 12/12 asserted"
 
@@ -807,12 +835,14 @@ stack-health: process restarts 0 → 0 across walk; no crash/OOM state change
 | AC-3 | T3 | waived | waiver: dana 2026-07-16 env stale | waived |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: https://app.example/panel — opened the panel
   fresh: origin A rebuilt token-9f3a; origin B cdn purged
   cold-client: fresh incognito profile, no SW cache
   contact: clicked open — panel closed → open
   readback: panel.visible === true via page eval
 AC-2:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash test.sh — unit suite
   readback: 332/332 asserted"
 
@@ -828,12 +858,14 @@ stack-health: process restarts 0 → 0 across walk; no crash/OOM state change
 | AC-3 | T3 | waived | waiver: dana 2026-07-16 env stale |  |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: https://app.example/panel — opened the panel
   fresh: origin A rebuilt token-9f3a; origin B cdn purged
   cold-client: fresh incognito profile, no SW cache
   contact: clicked open — panel closed → open
   readback: panel.visible === true via page eval
 AC-2:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash test.sh — unit suite
   readback: 332/332 asserted"
 
@@ -845,6 +877,7 @@ matrix_no_stackhealth="## Verification Matrix
 | AC-1 | T1 | discharged | see AC-1 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash test.sh
   readback: 40/40 asserted"
 
@@ -858,6 +891,7 @@ stack-health: n/a: no long-running serve
 | AC-1 | T1 | discharged | see AC-1 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash test.sh
   readback: 40/40 asserted"
 
@@ -873,13 +907,16 @@ stack-health: n/a: no long-running serve
 | AC-3 | T0 | discharged | see AC-3 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash test.sh — unit
   readback: 40/40 asserted
 AC-2:
+  fails-when: the planted defect this eval must go red on
   tier-run: playwright hermetic run
   readback: rendered rows === 5
   fixture-fidelity: derived from captured prod payload 2026-07-10
 AC-3:
+  fails-when: the planted defect this eval must go red on
   tier-run: pnpm build && tsc
   readback: 0 type errors"
 
@@ -893,6 +930,7 @@ stack-health: n/a: no long-running serve
 | AC-1 | T1 | discharged | see AC-1 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash test.sh
   readback: 40/40 asserted
 
@@ -908,6 +946,7 @@ stack-health: n/a: no long-running serve
 | AC-1 | T1 | discharged | see AC-1 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash test.sh
   readback: 40/40 asserted
 
@@ -924,6 +963,7 @@ stack-health: n/a: no long-running serve
 | AC-1 | T3 | discharged | see | AC-1 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: x
   fresh: x
   cold-client: x
@@ -962,6 +1002,7 @@ stack-health: n/a: no long-running serve
 | AC-1 | T1 | discharged | see AC-1 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash test.sh
   readback: status pending → done, 40/40 asserted"
 h17c2=$(make_home)
@@ -992,6 +1033,7 @@ stack-health: n/a: no long-running serve
 | AC-1 | T3 | discharged | see AC-1 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: https://app.example/panel — opened the panel
   fresh: origin A rebuilt token-9f3a
   cold-client: fresh incognito profile
@@ -1011,6 +1053,7 @@ stack-health: n/a: no long-running serve
 | AC-1 | T3 | discharged | see AC-1 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: https://app.example/panel — opened the panel
   fresh: origin A rebuilt token-9f3a
   cold-client: fresh incognito profile
@@ -1051,6 +1094,7 @@ h17g=$(make_home)
 write_plan "$h17g" "$(matrix_frontmatter true)
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5:
 $step5_base" > /dev/null
 expect_block "17g current 5 with no Verification Matrix section → block" \
@@ -1147,6 +1191,7 @@ stack-health: before: process restarts 0; walk in progress
 | AC-2 | T3 | pending | see AC-2 |  |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: https://app.example/panel — opened the panel
   fresh: origin A rebuilt token-9f3a; origin B cdn purged
   cold-client: fresh incognito profile, no SW cache
@@ -1164,6 +1209,7 @@ v101_matrix_bad_status="${v101_matrix_pending/| AC-2 | T3 | pending | see AC-2 |
 # the row flips to discharged or at the 6..9 prefix check).
 v101_matrix_pending_partial="$v101_matrix_pending
 AC-2:
+  fails-when: the planted defect this eval must go red on
   contact: n/a: staging origin down"
 
 # 17n — pending row, no AC block, current: 5 → allow (mid-walk commit home).
@@ -1243,12 +1289,14 @@ stack-health: process restarts 0 → 0 across walk; no crash/OOM state change
 | AC-2 | T0 | pending | see AC-2 |  |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: https://app.example/panel — opened the panel
   fresh: origin A rebuilt token-9f3a; origin B cdn purged
   cold-client: fresh incognito profile, no SW cache
   contact: clicked open — panel closed → open
   readback: panel.visible === true via page eval
 AC-2:
+  fails-when: the planted defect this eval must go red on
   provenance: spec §Close-out obligations
   slice: 9"
 
@@ -1378,6 +1426,7 @@ h18b=$(make_home)
 write_plan "$h18b" "$(matrix_frontmatter true)
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5:
 $step5_base
 
@@ -1403,6 +1452,7 @@ $v10_fence_block
 | AC-1 | T3 | discharged | see | AC-1 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: x
   fresh: x
   cold-client: x
@@ -1428,6 +1478,7 @@ $v10_fence_block
 | AC-1 | T1 | discharged | see AC-1 | CONFIRMED |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash test.sh
   readback: 40/40 asserted"
 
@@ -1572,7 +1623,7 @@ frontmatter() {
 # A wave plan: frontmatter + ## SDLC State (current + Step
 # block) + ## Verification Matrix. Reuses the Section-17 matrix fixtures.
 wave_plan() {
-  printf '%s\n## SDLC State\ncurrent: %s\nStep %s:\n%s\n\n%s\n' \
+  printf '%s\n## SDLC State\ncurrent: %s\napproved-by: fixture 2026-09-07T00:00Z "approved"\nStep %s:\n%s\n\n%s\n' \
     "$(frontmatter wave)" "$1" "$1" "$2" "$3"
 }
 
@@ -1580,7 +1631,7 @@ wave_plan() {
 # the merge-target check. $1 current, $2 step body, $3 matrix, $4 epic,
 # $5 integration-branch.
 wave_epic_plan() {
-  printf '%s\n## SDLC State\nintegration-branch: %s\ncurrent: %s\nStep %s:\n%s\n\n%s\n' \
+  printf '%s\n## SDLC State\nintegration-branch: %s\ncurrent: %s\napproved-by: fixture 2026-09-07T00:00Z "approved"\nStep %s:\n%s\n\n%s\n' \
     "$(frontmatter wave none false "$4")" "$5" "$1" "$1" "$2" "$3"
 }
 
@@ -1645,6 +1696,7 @@ h19c2=$(make_home)
 write_plan "$h19c2" "$(frontmatter wave)
 ## SDLC State
 current: 4
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 4: .bionic/docs/plans/wave.plan.md#step-4" > /dev/null
 expect_allow "19c2 wave plan Step 4 pointer → allow" \
   "$h19c2" 'git commit -m "x"'
@@ -1849,6 +1901,7 @@ $v11_fenced_sdlcstate_shadow
 
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5:
 $step5_base
 
@@ -1994,7 +2047,7 @@ r7_frontmatter() {
 # A wave plan with the given intent, at the given current/Step-5 body/
 # matrix. $1 intent, $2 current, $3 Step-block body, $4 matrix.
 r7_wave_plan() {
-  printf '%s\n## SDLC State\ncurrent: %s\nStep %s:\n%s\n\n%s\n' \
+  printf '%s\n## SDLC State\ncurrent: %s\napproved-by: fixture 2026-09-07T00:00Z "approved"\nStep %s:\n%s\n\n%s\n' \
     "$(r7_frontmatter "$1")" "$2" "$2" "$3" "$4"
 }
 
@@ -2223,7 +2276,7 @@ h21c=$(make_home)
 printf '%s\n' "$(r7_wave_plan tune 5 "$step5_base" "$matrix_complete")" \
   > "$ac10_main/.bionic/docs/plans/active.md"
 touch "$ac10_main/.bionic/docs/plans/active.md"
-printf -- '---\ngoverning-skill: canonical-sdlc\ncanonical_sdlc_version: 14\nintent: build\nrigor: tested\nscale: wave\n---\n## SDLC State\ncurrent: 5\nStep 5: TODO\n' \
+printf -- '---\ngoverning-skill: canonical-sdlc\ncanonical_sdlc_version: 14\nintent: build\nrigor: tested\nscale: wave\n---\n## SDLC State\ncurrent: 5\napproved-by: fixture 2026-09-07T00:00Z approved\nStep 5: TODO\n' \
   > "$ac10_wt/.bionic/docs/plans/decoy.md"
 touch "$ac10_wt/.bionic/docs/plans/decoy.md"
 run_hook_with_project "$h21c" "$ac10_wt" 'git commit -m "x"'
@@ -2689,11 +2742,12 @@ d7_wave_plan() {
   local tasks="$1" extra_state="$2" rigor="${3:-audited}" multi="${4:-true}"
   printf '%s\n' "$(d7_wave_frontmatter "$rigor" "$multi")"
   [ -n "$tasks" ] && printf '%s\n\n' "$tasks"
-  # K5/AC-K5.2 scope match (rigor:audited + multi_agent:true + wave) at current: 5 —
-  # this fixture's own subject is D7, not K5, so the pointer resolves to the plan file
-  # itself (project-relative; write_plan() always writes it there): a real file, not a
-  # real requirements document, is all the arm demands.
-  printf '## SDLC State\ncurrent: 5\nStep 1: requirements: .bionic/docs/plans/active.md\nStep 5:\n%s\n' "$step5_base"
+  # Both K5 (this slice) and K2 (slice 16) scope-match this fixture (rigor:audited +
+  # multi_agent:true + wave, at current: 5 >= 4): K5/AC-K5.2 needs the Step-1
+  # requirements: pointer (resolves to the plan file itself — project-relative; this
+  # fixture's own subject is D7, not K5, so a real file is all the arm demands, not a
+  # real requirements document); K2/AC-K2.4 needs approved-by: at current >= 4.
+  printf '## SDLC State\ncurrent: 5\nStep 1: requirements: .bionic/docs/plans/active.md\napproved-by: fixture 2026-09-07T00:00Z approved\nStep 5:\n%s\n' "$step5_base"
   [ -n "$extra_state" ] && printf '%s\n' "$extra_state"
   printf '\n%s\n' "$matrix_complete"
 }
@@ -3599,7 +3653,7 @@ s25_plan() {  # a canonical plan whose current step evidence is a placeholder
   printf -- '---\ngoverning-skill: canonical-sdlc\ncanonical_sdlc_version: 14\n'
   printf -- 'intent: build\nrigor: tested\nscale: wave\n'
   printf -- 'deploy_target: none\nuse_worktree: true\nhas_ui: false\n---\n'
-  printf -- '## SDLC State\ncurrent: 5\nStep 5: TODO\n'
+  printf -- '## SDLC State\ncurrent: 5\napproved-by: fixture 2026-09-07T00:00Z approved\nStep 5: TODO\n'
 }
 
 s25_tmp=$(cd "$(mktemp -d)" && pwd -P); cleanup_dirs+=("$s25_tmp")
@@ -3719,6 +3773,7 @@ stack-health: n/a: no long-running serve observed
 
 ## SDLC State
 current: 5
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 5: TODO
 '
 s25_run_write "$s25_wt/.bionic/docs/plans/epic-01-demo/both.plan.md" "$s25_artifact"
@@ -3831,14 +3886,14 @@ walk_frontmatter() {
 
 # $1 walk line · $2 Step-5 body (indented) · $3 matrix section.
 walk_plan5() {
-  printf '%s\n## SDLC State\ncurrent: 5\nStep 5:\n%s\n\n%s\n' \
+  printf '%s\n## SDLC State\ncurrent: 5\napproved-by: fixture 2026-09-07T00:00Z approved\nStep 5:\n%s\n\n%s\n' \
     "$(walk_frontmatter "$1")" "$2" "$3"
 }
 
 # Same, at current: 6 — the Step-5 block stays in the section so the durable
 # prefix arm has something to read.
 walk_plan6() {
-  printf '%s\n## SDLC State\ncurrent: 6\nStep 5:\n%s\nStep 6:\n%s\n\n%s\n' \
+  printf '%s\n## SDLC State\ncurrent: 6\napproved-by: fixture 2026-09-07T00:00Z approved\nStep 5:\n%s\nStep 6:\n%s\n\n%s\n' \
     "$(walk_frontmatter "$1")" "$2" "$step6_body" "$3"
 }
 
@@ -4076,7 +4131,7 @@ prov_matrix() {
     prov_line="
   provenance: $1"
   fi
-  printf '## Verification Matrix\n\nstack-health: n/a: no long-running serve\n\n| AC | tier | status | evidence | auditor |\n|---|---|---|---|---|\n| AC-1 | T1 | discharged | see AC-1 | CONFIRMED |\n\nAC-1:\n  tier-run: bash test.sh — unit suite\n  readback: 332/332 asserted%s\n' "$prov_line"
+  printf '## Verification Matrix\n\nstack-health: n/a: no long-running serve\n\n| AC | tier | status | evidence | auditor |\n|---|---|---|---|---|\n| AC-1 | T1 | discharged | see AC-1 | CONFIRMED |\n\nAC-1:\n  tier-run: bash test.sh — unit suite\n  fails-when: the planted defect this eval must go red on\n  readback: 332/332 asserted%s\n' "$prov_line"
 }
 
 # 27a — the literal value blocks.
@@ -4188,6 +4243,7 @@ section "Section 28: matrix_block list-leader tolerance"
 
 # T1's own evidence keys, satisfying the per-tier requirement.
 leader_t1_keys="  tier-run: bash test.sh — unit suite
+  fails-when: the planted defect this eval must go red on
   readback: 332/332 asserted"
 
 # $1 = block-header leader ("" flush-left, "- ", "* ", …)
@@ -4218,8 +4274,13 @@ write_plan "$h28b" "$(plan 6 "$step6_body" "$(leader_matrix '- ' "$leader_t1_key
 # the evidence cell), so reading the block is the only way to find it. With the
 # block visible the row is exempt from the per-tier keys and commits clean.
 h28c=$(make_home)
-write_plan "$h28c" "$(plan 5 "$step5_base" "$(leader_matrix '- ' "  waiver: dana 2026-08-01 env stale")")" > /dev/null
-expect_allow "28c '- AC-1:' block carrying only 'waiver:' → allow (block-side exemption found)" \
+write_plan "$h28c" "$(plan 5 "$step5_base" "$(leader_matrix '- ' "  waiver: dana 2026-08-01 env stale
+  fails-when: the planted defect this eval must go red on")")" > /dev/null
+# The `fails-when:` line is not part of 28c's subject — the block-side waiver is. It is here
+# because that key is unconditional from `current: 4` (epic-22 K2): a waiver dissolves the
+# obligation to RUN an eval, never the obligation to have designed one, so a waived row still
+# names its failure. 37l pins that reading directly.
+expect_allow "28c '- AC-1:' block whose only evidence entry is 'waiver:' → allow (block-side exemption found)" \
   "$h28c" 'git commit -m "x"'
 
 # 28d — post-Verify CONFIRMED check: complete keys, NO waiver anywhere, auditor
@@ -4254,9 +4315,11 @@ stack-health: n/a: no long-running serve
 | AC-11 | T1 | discharged | see AC-11 | CONFIRMED |
 
 - AC-11:
+  fails-when: the planted defect this eval must go red on
 $leader_t1_keys
   provenance: implementation
 - AC-1:
+  fails-when: the planted defect this eval must go red on
 $leader_t1_keys
   provenance: spec §3")" > /dev/null
 expect_block "28f '- AC-11:' before '- AC-1:' → AC-1 keeps its own block (AC-11 is the row that blocks)" \
@@ -4304,7 +4367,7 @@ section "Section 29: Step 9 close-out contract (v14)"
 # Reuses Section 17's matrix_complete, since current: 9 revalidates the matrix
 # as a prefix check before the step shape is ever reached.
 ship_plan() {
-  printf '%s\n## SDLC State\ncurrent: 9\nStep 9:\n%s\n\n%s\n' \
+  printf '%s\n## SDLC State\ncurrent: 9\napproved-by: fixture 2026-09-07T00:00Z approved\nStep 9:\n%s\n\n%s\n' \
     "$(frontmatter wave "$1")" "$2" "$matrix_complete"
 }
 
@@ -4357,6 +4420,7 @@ walk: exempt
 
 ## SDLC State
 current: 9
+approved-by: fixture 2026-09-07T00:00Z "approved"
 Step 9:
 $ship_delivered
 
@@ -4423,6 +4487,7 @@ stack-health: n/a: no long-running serve
 | AC-1 | %s | discharged | see AC-1 | %s |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   user-confirmed: %s
   tier-run: rendered the wall in the live client
   fresh: rebuilt from the deployed payload
@@ -4664,7 +4729,7 @@ plan_rigor() {  # $1 rigor (empty = key absent)  $2 current  $3 step body  $4 ma
   printf -- 'has_ui: true\n'
   printf -- 'walk: exempt\n'
   printf -- '---\n'
-  printf -- '## SDLC State\ncurrent: %s\nStep %s:\n%s\n\n%s\n' "$2" "$2" "$3" "$4"
+  printf -- '## SDLC State\ncurrent: %s\napproved-by: fixture 2026-09-07T00:00Z approved\nStep %s:\n%s\n\n%s\n' "$2" "$2" "$3" "$4"
 }
 
 # Every row discharged, every per-tier key present, EVERY AUDITOR CELL EMPTY.
@@ -4680,9 +4745,11 @@ stack-health: process restarts 0 → 0 across walk; no crash/OOM state change
 | AC-2 | T1 | discharged | see AC-2 |  |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash tests/canonical-sdlc-evidence-gate.test.sh
   readback: 120/120 asserted
 AC-2:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash test.sh — unit suite
   readback: 332/332 asserted"
 
@@ -4870,9 +4937,11 @@ stack-health: n/a: no long-running serve
 | AC-2 | T1 | waived | waiver: dana 2026-08-30 criterion dropped | waived |
 
 AC-1:
+  fails-when: the planted defect this eval must go red on
   tier-run: bash test.sh — unit suite
   readback: 332/332 asserted
 AC-2:
+  fails-when: the planted defect this eval must go red on
   slice: 9"
 
 # The same row with the waiver taken away: pending, no token anywhere.
@@ -4908,7 +4977,9 @@ expect_allow "33c the waiver as an AC-block line (not the evidence cell) → all
 # `provenance: implementation` still blocks — the provenance arm sits above
 # both, deliberately, and this fix did not move it.
 m33_waived_prov="${m33_waived/AC-2:
+  fails-when: the planted defect this eval must go red on
   slice: 9/AC-2:
+  fails-when: the planted defect this eval must go red on
   slice: 9
   provenance: implementation}"
 h33d=$(make_home)
@@ -5199,7 +5270,7 @@ s35_assert "35c control: a BOUND session announces no fallback" 0 - "newest-plan
 r35d=$(s35_root)
 s35_two_plans "$r35d" a            # B is newest, open, and carries no evidence
 S35_D="$r35d/.bionic/docs/plans/wave-delivered.plan.md"
-printf '%s\n## SDLC State\ncurrent: 9\n- Step 9: delivered: .bionic/docs/record/x.md\n\n%s\n' \
+printf '%s\n## SDLC State\ncurrent: 9\napproved-by: fixture 2026-09-07T00:00Z approved\n- Step 9: delivered: .bionic/docs/record/x.md\n\n%s\n' \
   "$(matrix_frontmatter true)" "$matrix_complete" > "$S35_D"
 touch -t 202609040030 "$S35_D"
 s35_bind "$r35d" "$S35_SID_A" "$S35_D"
@@ -5227,7 +5298,7 @@ r35f=$(s35_root)
 S35_FO="$r35f/.bionic/docs/plans/wave-open.plan.md"
 S35_FD="$r35f/.bionic/docs/plans/wave-shipped.plan.md"
 printf '%s\n' "$(plan 6 "" "$matrix_complete")" > "$S35_FO"
-printf '%s\n## SDLC State\ncurrent: 9\n- Step 9: delivered: .bionic/docs/record/x.md\n\n%s\n' \
+printf '%s\n## SDLC State\ncurrent: 9\napproved-by: fixture 2026-09-07T00:00Z approved\n- Step 9: delivered: .bionic/docs/record/x.md\n\n%s\n' \
   "$(matrix_frontmatter true)" "$matrix_complete" > "$S35_FD"
 touch -t 202609040000 "$S35_FO"
 touch -t 202609040100 "$S35_FD"
@@ -5350,14 +5421,14 @@ env_frontmatter() {
 
 # $1 environments line · $2 Step-5 body (indented) · $3 matrix section.
 env_plan5() {
-  printf '%s\n## SDLC State\ncurrent: 5\nStep 5:\n%s\n\n%s\n' \
+  printf '%s\n## SDLC State\ncurrent: 5\napproved-by: fixture 2026-09-07T00:00Z approved\nStep 5:\n%s\n\n%s\n' \
     "$(env_frontmatter "$1")" "$2" "$3"
 }
 
 # Same, at current: 6 — the Step-5 block stays in the section so the durable
 # prefix arm has something to read, mirroring walk_plan6.
 env_plan6() {
-  printf '%s\n## SDLC State\ncurrent: 6\nStep 5:\n%s\nStep 6:\n%s\n\n%s\n' \
+  printf '%s\n## SDLC State\ncurrent: 6\napproved-by: fixture 2026-09-07T00:00Z approved\nStep 5:\n%s\nStep 6:\n%s\n\n%s\n' \
     "$(env_frontmatter "$1")" "$2" "$step6_body" "$3"
 }
 
@@ -5561,5 +5632,196 @@ Step 2: .bionic/docs/specs/epic-01-demo/wave-01-x.spec.md"
 write_project_plan "$k5g_p" "$k5g_tested" > /dev/null
 expect_allow_p "37g rigor: tested → allow (scope guard makes the arm inert)" \
   "$k5g_h" "$k5g_p" 'git commit -m "x"'
+
+
+# ============================================================
+# Section 37: the approval arm and the fails-when arm (epic-22 K2)
+# ============================================================
+#
+# TWO ARMS, ONE STEP BOUNDARY. Both fire from `current: 4` — the step where the plan
+# stops being authored and starts being built — and both are silent below it.
+#
+#   approved-by:  AC-K2.4, design decision 2. Step 3 ends at one approval checkpoint,
+#                 and until this arm existed the user's `approved` left no trace: a run
+#                 could be at Step 4 with nobody able to say whether the plan had ever
+#                 been ratified. The orchestrator now writes
+#                 `approved-by: <user> <ISO-UTC> "<verbatim reply>"` into `## SDLC State`
+#                 on the literal word, and this is what makes its absence cost something.
+#   fails-when:   AC-K2.3. An eval with no nameable failure is not an eval — a row that
+#                 cannot say what planted defect it must go red on is a row that will be
+#                 green whatever the code does. The column is authored at Step 2 in the
+#                 spec's `## Eval design` and rendered into the matrix at Step 3, so by
+#                 Step 4 every AC block already has one or the plan skipped a step.
+#
+# WHY THE ARMS ARE NOT MUTUAL. 37f/37g drive each one with the OTHER condition satisfied,
+# so neither refusal can be credited to the wrong wall.
+#
+# INERT CONDITIONS, pinned rather than assumed (37h..37k): below current 4 both are
+# silent; a matrix with no AC block for a row leaves the fails-when arm with nothing to
+# judge; and a plan with no `## Verification Matrix` at all is not a fails-when finding.
+# The last two matter because the arms run at Step 4, where a plan is legitimately
+# mid-authoring and half its matrix may not exist yet.
+
+section "Section 37: the approval arm and the fails-when arm (epic-22 K2)"
+
+# A Step-4 body the shape checks accept: Step 4 is a pointer step for this gate.
+k2_step4="  plan-doc: .bionic/docs/plans/wave-01.plan.md#step-4"
+
+# k2_plan <current> <approved-by line, or ""> <matrix section, or ""> -> a whole plan
+k2_plan() {
+  local approved_line=""
+  [ -n "$2" ] && approved_line="$2
+"
+  printf '%s\n## SDLC State\ncurrent: %s\n%sStep %s:\n%s\n\n%s\n' \
+    "$(matrix_frontmatter true)" "$1" "$approved_line" "$1" "$k2_step4" "${3:-}"
+}
+
+K2_APPROVED='approved-by: dana 2026-09-07T19:05Z "Ok, amazing! Approved."'
+
+# k2_matrix <AC-2 fails-when line, or ""> -> a two-row matrix whose AC-1 block always
+# names a fails-when and whose AC-2 block carries whatever the caller passes.
+k2_matrix() {
+  local ac2_fw=""
+  [ -n "$1" ] && ac2_fw="
+  $1"
+  cat <<EOF
+## Verification Matrix
+
+stack-health: n/a: no long-running serve
+
+| AC | tier | status | evidence | auditor |
+|---|---|---|---|---|
+| AC-1 | T0 | pending | see AC-1 | |
+| AC-2 | T0 | pending | see AC-2 | |
+
+AC-1:
+  criterion: the card carries every ratified row
+  provenance: user 2026-09-07 "approved"
+  fails-when: a card is missing
+AC-2:
+  criterion: the arm refuses a block that names no failure
+  provenance: user 2026-09-07 "approved"${ac2_fw}
+EOF
+}
+
+k2_matrix_full="$(k2_matrix 'fails-when: the gate passes it')"
+k2_matrix_missing="$(k2_matrix '')"
+k2_matrix_empty="$(k2_matrix 'fails-when:')"
+
+# --- 37a/37b: the approval arm ---------------------------------------------
+
+h37a=$(make_home)
+write_plan "$h37a" "$(k2_plan 4 "" "$k2_matrix_full")" > /dev/null
+expect_block "37a current: 4 with no approved-by: → block" \
+  "$h37a" 'git commit -m "x"' "approved-by"
+
+h37b=$(make_home)
+write_plan "$h37b" "$(k2_plan 4 "$K2_APPROVED" "$k2_matrix_full")" > /dev/null
+expect_allow "37b current: 4 with the approved-by line → allow" \
+  "$h37b" 'git commit -m "x"'
+
+# 37c — the line has to SAY something. An `approved-by:` with an empty value records no
+# approval, and reading it as one would make the wall satisfiable by typing its key.
+h37c=$(make_home)
+write_plan "$h37c" "$(k2_plan 4 "approved-by:" "$k2_matrix_full")" > /dev/null
+expect_block "37c an empty approved-by: value is not an approval → block" \
+  "$h37c" 'git commit -m "x"' "approved-by"
+
+# 37d — the durable prefix: the approval does not stop mattering once Step 4 is behind
+# you. A plan that reaches Verify with the line deleted has lost the same fact.
+h37d=$(make_home)
+write_plan "$h37d" "$(k2_plan 6 "" "$k2_matrix_full")" > /dev/null
+expect_block "37d current: 6 with no approved-by: → still blocked (durable prefix)" \
+  "$h37d" 'git commit -m "x"' "approved-by"
+
+# --- 37e/37f: the fails-when arm -------------------------------------------
+
+h37e=$(make_home)
+write_plan "$h37e" "$(k2_plan 4 "$K2_APPROVED" "$k2_matrix_missing")" > /dev/null
+expect_block "37e an AC block with no fails-when: → block, naming the AC" \
+  "$h37e" 'git commit -m "x"' "AC-2"
+
+h37e2=$(make_home)
+write_plan "$h37e2" "$(k2_plan 4 "$K2_APPROVED" "$k2_matrix_missing")" > /dev/null
+expect_block "37e2 …and the refusal names the missing key" \
+  "$h37e2" 'git commit -m "x"' "fails-when"
+
+h37f=$(make_home)
+write_plan "$h37f" "$(k2_plan 4 "$K2_APPROVED" "$k2_matrix_empty")" > /dev/null
+expect_block "37f an empty fails-when: value → block" \
+  "$h37f" 'git commit -m "x"' "fails-when"
+
+# 37g — THE CONTROL 37e and 37f need. The same plan with both keys present allows, so
+# the two refusals above are the missing key and not the fixture.
+h37g=$(make_home)
+write_plan "$h37g" "$(k2_plan 4 "$K2_APPROVED" "$k2_matrix_full")" > /dev/null
+expect_allow "37g control: every AC block names a fails-when → allow" \
+  "$h37g" 'git commit -m "x"'
+
+# --- 37h..37k: the inert conditions ----------------------------------------
+
+# 37h — below Step 4 the plan is still being authored: the approval has not been asked
+# for and the matrix is still being written. Neither arm may fire.
+h37h=$(make_home)
+write_plan "$h37h" "$(k2_plan 3 "" "$k2_matrix_missing")" > /dev/null
+expect_allow "37h current: 3 with neither approved-by nor fails-when → allow (both arms inert)" \
+  "$h37h" 'git commit -m "x"'
+
+# 37i — a row with no AC block at all is not a fails-when finding: there is no block to
+# lack the key, and the per-tier evidence loop at Verify is what owns that gap.
+k2_matrix_noblock="## Verification Matrix
+
+stack-health: n/a: no long-running serve
+
+| AC | tier | status | evidence | auditor |
+|---|---|---|---|---|
+| AC-1 | T0 | pending | see AC-1 | |
+| AC-9 | T0 | pending | see AC-9 | |
+
+AC-1:
+  criterion: the card carries every ratified row
+  fails-when: a card is missing"
+h37i=$(make_home)
+write_plan "$h37i" "$(k2_plan 4 "$K2_APPROVED" "$k2_matrix_noblock")" > /dev/null
+expect_allow "37i a matrix row with no AC block is not a fails-when finding → allow" \
+  "$h37i" 'git commit -m "x"'
+
+# 37j — no matrix section at all: a Step-4 plan may not have written one yet, and a wall
+# that demanded one here would be the Verify gate's demand moved four steps early.
+h37j=$(make_home)
+write_plan "$h37j" "$(k2_plan 4 "$K2_APPROVED" "")" > /dev/null
+expect_allow "37j a Step-4 plan with no '## Verification Matrix' → allow (fails-when arm inert)" \
+  "$h37j" 'git commit -m "x"'
+
+# 37l — A WAIVER DOES NOT EXCUSE THE COLUMN. Everywhere else in this loop a waiver
+# dissolves a row's demands: the per-tier evidence keys, the CONFIRMED verdict, the
+# `slice: 9` tier refusal all yield to one. This arm does not, and the distinction is the
+# reason: those are demands for EVIDENCE, and a waiver is precisely the decision not to
+# gather it. `fails-when:` is not evidence — it is the design of the eval, authored at
+# Step 2 before any waiver exists, and a row that never named a failure was never
+# evaluable in the first place. Waiving it waives the question, not the answer.
+h37l=$(make_home)
+k2_matrix_waived="## Verification Matrix
+
+stack-health: n/a: no long-running serve
+
+| AC | tier | status | evidence | auditor |
+|---|---|---|---|---|
+| AC-1 | T0 | waived | waiver: dana 2026-09-07 criterion dropped | waived |
+
+AC-1:
+  waiver: dana 2026-09-07 criterion dropped"
+write_plan "$h37l" "$(k2_plan 4 "$K2_APPROVED" "$k2_matrix_waived")" > /dev/null
+expect_block "37l a WAIVED row still has to name its fails-when → block" \
+  "$h37l" 'git commit -m "x"' "fails-when"
+
+# THE PLAN THAT SPECIFIED THESE WALLS is the first artifact they judge, and a wall its own
+# specification cannot satisfy is a wall that gets turned off within the hour. That check is
+# NOT a fixture here: `.bionic/` is machine-local by decision and absent from a fresh clone
+# and from every worktree, so an arm reading it would degrade to a vacuous pass on exactly
+# the machines the suite is meant to protect. It is a recorded drive instead —
+# record/wave-01-plugin-only/s16-step-cards.log, "the real plan" — run against the live
+# plan with the live hook, with its command and output.
+
 
 finish
