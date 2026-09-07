@@ -154,7 +154,7 @@ HOOK_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)"
 # FAIL OPEN, deliberately. The poker is not a wall: it prints one decision line and holds no
 # authority (ADR-003), so the cost of a missing library is a tick that cannot answer, not an
 # irreversible action taken blind. It says so in one line and steps aside.
-BIONIC_LIB_WANT="root.sh session.sh run.sh binding.sh patrol.sh resources.sh worktree.sh agents.sh roster.sh"
+BIONIC_LIB_WANT="roots.sh root.sh session.sh run.sh binding.sh patrol.sh resources.sh worktree.sh agents.sh roster.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -283,6 +283,7 @@ BIONIC_LOADER_REFUSE
 }
 # --- bionic-loader/v2 END
 [ -n "$BIONIC_LIB" ] || loader_fail_open "session-poker"
+. "$BIONIC_LIB/roots.sh"
 . "$BIONIC_LIB/root.sh"
 . "$BIONIC_LIB/session.sh"
 . "$BIONIC_LIB/run.sh"

@@ -57,7 +57,7 @@ fi
 # FAIL-CLOSED (design ledger S4, Chris D1 2026-08-30): this is a wall over an
 # IRREVERSIBLE action, so it refuses rather than waving a command through it cannot
 # read — after permitting the four repair commands by whole-string match.
-BIONIC_LIB_WANT="git-argv.sh root.sh run.sh session.sh"
+BIONIC_LIB_WANT="roots.sh git-argv.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -246,6 +246,7 @@ fi
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/git-argv.sh"
 # shellcheck source=/dev/null
+. "$BIONIC_LIB/roots.sh"
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"
@@ -339,36 +340,17 @@ PROJECT_DIR=$(project_root "$PROJECT_DIR")
 EG_SID=$(session_id "$(echo "$INPUT" | jq -r '.session_id // empty')" 2>/dev/null) || EG_SID=""
 engaged_session "$PROJECT_DIR" "$EG_SID" || exit 0
 
-# Resolve the per-project docs root: <project>/.bionic/config.yaml's
-# `docs-root:` if set, else default <project>/.bionic/docs. See
-# canonical-sdlc-dispatch-gate.sh for the same helper.
-resolve_docs_root() {
-  local proj="$1"
-  local config="$proj/.bionic/config.yaml"
-  if [ -f "$config" ]; then
-    local override
-    override=$(grep -E '^[[:space:]]*docs-root[[:space:]]*:' "$config" 2>/dev/null \
-      | head -1 \
-      | sed -E 's/^[[:space:]]*docs-root[[:space:]]*:[[:space:]]*//' \
-      | sed -E "s/^['\"]//;s/['\"]\$//" \
-      | sed -E 's/[[:space:]]+$//')
-    if [ -n "$override" ]; then
-      case "$override" in
-        /*) echo "$override" ;;
-        *)  echo "$proj/$override" ;;
-      esac
-      return
-    fi
-  fi
-  echo "$proj/.bionic/docs"
-}
-
+# THE DOCS ROOT, FROM THE LIBRARY. This hook carried `resolve_docs_root()` and was the
+# designated ORIGIN of the four hook copies cross-gate §R held body-for-body. There are no
+# copies now: lib/roots.sh's `docs_root` is the one definition and every former carrier is
+# a caller, held by cross-gate §Roots (epic-22 wave-01, N1).
+#
 # Read unconditionally, next to the other globals: this hook runs `set -u`, and
 # a variable bound on only some code paths crashes the others. See
 # `.claude/rules/hook-authoring.md` § "`set -u` and conditionally-bound variables".
 # The misplacement sweep below is this value's only remaining consumer — plan
 # SELECTION moved to the library.
-DOCS_ROOT=$(resolve_docs_root "$PROJECT_DIR")
+DOCS_ROOT=$(docs_root "$PROJECT_DIR")
 
 # THE PLAN, from the library (lib/run.sh's `active_plan`). This used to be a private
 # `has_sdlc_state()` plus a newest-.md walk — one of five copies of one question

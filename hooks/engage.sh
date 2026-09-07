@@ -78,7 +78,7 @@ fi
 # invocation it exists to record would be worse than one that misses it. A missed
 # engagement leaves the session unwalled, which is exactly the state it was in a moment
 # ago; a refused `/canonical-sdlc` is a broken front door.
-BIONIC_LIB_WANT="root.sh run.sh session.sh binding.sh"
+BIONIC_LIB_WANT="roots.sh root.sh run.sh session.sh binding.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -208,6 +208,7 @@ BIONIC_LOADER_REFUSE
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "engage"; fi
 # shellcheck source=/dev/null
+. "$BIONIC_LIB/roots.sh"
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"

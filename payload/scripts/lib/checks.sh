@@ -97,7 +97,7 @@ bionic_check_route() {  # <setup|cli|user>
 # is here, and doctor reads it.
 BIONIC_WALL_HOOKS="protect-main canonical-sdlc-evidence-gate farm-out-reminder background-suite-guard"
 
-bionic_check_payload_root() { _detect_plugin_root; }
+bionic_check_payload_root() { plugin_root; }
 
 # THE WANTED BASENAMES COME FROM THE HOOK, not from a list kept here. A hook that
 # adopts the loader idiom declares them on a `BIONIC_LIB_WANT=` line above the
@@ -369,7 +369,7 @@ bionic_check_wall_unloadable() {  # <row id>
 # cannot read must not turn its own state into a row telling it to sweep itself.
 bionic_check_dead_session_state() {  # <row id>
   local root
-  root="$(_patrol_repo_root "$PWD" 2>/dev/null)" || root=""
+  root="$(project_root "$PWD" 2>/dev/null)" || root=""
   [ -n "$root" ] || root="$PWD"
   [ -n "$(patrol_dead_sessions "$root" "${CLAUDE_CODE_SESSION_ID:-}")" ]
 }

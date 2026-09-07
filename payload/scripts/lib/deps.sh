@@ -100,35 +100,37 @@
 # Read at CALL time, not source time: a caller may source once and probe
 # several roots (the suite does exactly that).
 
-_dep_claude_home()      { echo "${BIONIC_CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"; }
+# THE CLI's CONFIG DIRECTORY is `claude_home` in lib/roots.sh — one definition for the
+# whole tree (epic-22 wave-01, N1). This file carried the third of three byte-identical
+# copies of that override chain; lib/worktree.sh and lib/patrol.sh carried the other two,
+# and no pin held any of them to each other.
+_dep_claude_home()      { claude_home; }
 _dep_settings_file()    { echo "${BIONIC_SETTINGS_FILE:-$(_dep_claude_home)/settings.json}"; }
 _dep_installed_json()   { echo "${BIONIC_INSTALLED_PLUGINS_FILE:-$(_dep_claude_home)/plugins/installed_plugins.json}"; }
 
-# THE PAYLOAD ROOT, one more root this file now reads FROM rather than only
-# writes to (epic-18 T1). Every other consumer of "where is the plugin"
-# (detect.sh's `_detect_plugin_root`)
-# carries its own byte-identical copy of this same three-step resolution for
-# the reason `bionic_link_target` already gives above: each file is sourced on
-# its own by something, so none may assume a sibling came first. No
-# `dirname`/`basename` here either — the self-locator has to survive the
-# half-broken machine it is most needed on.
+# THE PAYLOAD ROOT, one more root this file reads FROM rather than only writes to
+# (epic-18 T1), and `plugin_root` in lib/roots.sh is its one definition. This file and
+# lib/detect.sh each carried a byte-identical copy of the same three-step resolution — the
+# note here used to explain the duplication by saying each file is sourced on its own by
+# something, so none may assume a sibling came first. That is still true, and the soft
+# source below is what makes it survivable without a second copy (epic-22 wave-01, N1). No
+# `dirname`/`basename` in the self-locator either — it has to survive the half-broken
+# machine it is most needed on.
 _dep_self_dir() {
   local self="${BASH_SOURCE[0]}"
   case "$self" in */*) echo "${self%/*}" ;; *) echo "." ;; esac
 }
-_dep_plugin_root() {
-  if [ -n "${BIONIC_PLUGIN_ROOT:-}" ]; then echo "$BIONIC_PLUGIN_ROOT"; return; fi
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then echo "$CLAUDE_PLUGIN_ROOT"; return; fi
-  # lib -> scripts -> payload root
-  ( cd "$(_dep_self_dir)/../.." && pwd -P )
-}
+if ! declare -F plugin_root >/dev/null 2>&1; then
+  # shellcheck source=/dev/null
+  . "$(cd "$(_dep_self_dir)" && pwd -P)/roots.sh"
+fi
 
 # ccstatusline ships TWO halves (epic-18-w1 handoff §3.1): the `.statusLine`
 # command that RENDERS the line, and the layout file that command reads. The
 # source is always the payload's own copy; the target defaults to the bare
 # path claude-bootstrap.sh always used, `~/.config/ccstatusline/settings.json`
 # — overridable for the same reason every other root here is.
-_dep_ccstatusline_config_source() { echo "$(_dep_plugin_root)/ccstatusline/settings.json"; }
+_dep_ccstatusline_config_source() { echo "$(plugin_root)/ccstatusline/settings.json"; }
 _dep_ccstatusline_config_target() { echo "${BIONIC_CCSTATUSLINE_CONFIG:-$HOME/.config/ccstatusline/settings.json}"; }
 _dep_ccstatusline_config_dir() {
   local t; t="$(_dep_ccstatusline_config_target)"
@@ -184,7 +186,7 @@ _dep_excalidraw_refs() {
   if [ -n "${BIONIC_EXCALIDRAW_REFS:-}" ]; then echo "$BIONIC_EXCALIDRAW_REFS"; return; fi
   # Self-locating like every other root here (Chris 2026-08-22: doctor reported
   # "no presence surface" for a directory that was sitting in the plugin).
-  local root; root="$(_dep_plugin_root)"
+  local root; root="$(plugin_root)"
   [ -n "$root" ] || { echo ""; return; }
   echo "${root}/skills/excalidraw-diagram/references"
 }

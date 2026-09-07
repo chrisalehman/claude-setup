@@ -218,7 +218,7 @@ TARGET_BASE="${TARGET%@*}"
 # One loader idiom, byte-identical in every hook (spec AC-16). FAIL OPEN: this script
 # reports, it does not refuse, and a diagnosis that died with the thing being diagnosed
 # would be worth nothing.
-BIONIC_LIB_WANT="root.sh session.sh agents.sh"
+BIONIC_LIB_WANT="roots.sh root.sh session.sh agents.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -348,6 +348,7 @@ BIONIC_LOADER_REFUSE
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "stop-check"; fi
 # shellcheck source=/dev/null
+. "$BIONIC_LIB/roots.sh"
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/session.sh"
@@ -381,10 +382,12 @@ fi
 # the observer happened to be standing in, so a present progress file read `absent` and a
 # landed deliverable read `ABSENT` — an observation that decides nothing, deciding wrongly.
 #
-# THE RULE IS THE EVIDENCE GATE'S, and so is the body of both functions below: they are
-# `resolve_docs_root()` and `resolve_walk_path()` copied whole, held to one text by
-# tests/cross-gate-agreement.test.sh. `PROJECT_DIR` and `DOCS_ROOT` carry the gate's names
-# for the same reason. The VALUE of PROJECT_DIR is this command's own — the repo it was run
+# THE RULE IS ONE FUNCTION NOW. The docs root comes from lib/roots.sh's `docs_root` — this
+# command used to carry a copy of the evidence gate's `resolve_docs_root()`, held to the
+# gate's text by a body-for-body comparison; cross-gate §Roots holds the single definition
+# instead (epic-22 wave-01, N1). `abs_path` below is still a copy of the gate's
+# `resolve_walk_path()` under another name, deliberately out of that scope.
+# `PROJECT_DIR` and `DOCS_ROOT` carry the gate's names for the same reason. The VALUE of PROJECT_DIR is this command's own — the repo it was run
 # from, falling back to the cwd when that is not a repository, which is the root every
 # other path in this file is already read against.
 #
@@ -392,29 +395,9 @@ fi
 # resolves and is reported like any other: §4's rule is that this command decides nothing,
 # and refusing a contract here would be deciding. The landing gate is where a deliverable
 # is judged, and hooks/session-sweeper.sh refuses `..` there.
-resolve_docs_root() {
-  local proj="$1"
-  local config="$proj/.bionic/config.yaml"
-  if [ -f "$config" ]; then
-    local override
-    override=$(grep -E '^[[:space:]]*docs-root[[:space:]]*:' "$config" 2>/dev/null \
-      | head -1 \
-      | sed -E 's/^[[:space:]]*docs-root[[:space:]]*:[[:space:]]*//' \
-      | sed -E "s/^['\"]//;s/['\"]\$//" \
-      | sed -E 's/[[:space:]]+$//')
-    if [ -n "$override" ]; then
-      case "$override" in
-        /*) echo "$override" ;;
-        *)  echo "$proj/$override" ;;
-      esac
-      return
-    fi
-  fi
-  echo "$proj/.bionic/docs"
-}
 
 PROJECT_DIR="${REPO_ROOT:-$CWD}"
-DOCS_ROOT="$(resolve_docs_root "$PROJECT_DIR")"
+DOCS_ROOT="$(docs_root "$PROJECT_DIR")"
 
 abs_path() {  # <path, as the roster spells it> -> absolute
   case "$1" in

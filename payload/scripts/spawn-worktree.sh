@@ -76,6 +76,16 @@ PROG="spawn-worktree"
 # actually used rather than at the top of the file.
 LIB_WORKTREE="$(cd "$(dirname "$0")" 2>/dev/null && pwd)/lib/worktree.sh"
 
+# THE ROOTS LIBRARY, WHICH ALL THREE VERBS NEED. `worktree_root` is the one resolver for
+# "the main checkout from anywhere inside this repository" (epic-22 wave-01, N1); this
+# script carried the third copy of it as `resolve_main_root`, beside lib/worktree.sh's
+# `_wt_main_root` and lib/patrol.sh's own root question, none of them held together by any
+# test. Sourced at the top rather than per-verb because every verb resolves that root, and a
+# script that cannot find it can do nothing at all — which is what the refusal below says.
+LIB_ROOTS="$(cd "$(dirname "$0")" 2>/dev/null && pwd)/lib/roots.sh"
+# shellcheck source=/dev/null
+. "$LIB_ROOTS" 2>/dev/null || { printf '%s: FAIL reason=roots-library-missing path=%s\n' "spawn-worktree" "$LIB_ROOTS"; exit 1; }
+
 # Contract lines go to STDOUT — all three of them. OK, FAIL and REMOVED are not
 # log output; they are this script's product. Splitting them across two channels
 # would leave a caller that captured stdout with an attestation on success and
@@ -131,21 +141,6 @@ abort_created() {
   exit 1
 }
 
-# The MAIN checkout's root, from anywhere inside the repository — including
-# from inside a linked worktree, where --show-toplevel would answer with the
-# linked tree instead. --git-common-dir is the shared .git of the whole
-# repository; its parent is the main working tree.
-resolve_main_root() {
-  local common
-  common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
-  if [ -z "$common" ]; then
-    # git < 2.31 has no --path-format; the answer is then relative to cwd.
-    common="$(git rev-parse --git-common-dir 2>/dev/null)"
-  fi
-  [ -n "$common" ] || return 1
-  ( cd "${common}/.." 2>/dev/null && pwd -P )
-}
-
 cmd_create() {
   local base="${1:-}" parent="${3:-}"
   branch="${2:-}"
@@ -153,13 +148,13 @@ cmd_create() {
   [ -n "$base" ] && [ -n "$branch" ] || { usage >&2; refuse usage; }
 
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || refuse not-a-git-repo
-  main_root="$(resolve_main_root)" || refuse repo-root-unresolvable
+  main_root="$(worktree_root)" || refuse repo-root-unresolvable
   [ -n "$main_root" ] || refuse repo-root-unresolvable
 
   # The state directory has to be there BEFORE anything is created: planting a
   # link to a directory that does not exist would produce an attestation whose
   # last field names nothing, which is worse than no worktree.
-  [ -d "${main_root}/.bionic" ] || refuse no-bionic-dir
+  [ -d "$(bionic_root "$main_root")" ] || refuse no-bionic-dir
 
   local base_sha
   base_sha="$(git -C "$main_root" rev-parse --verify --quiet "${base}^{commit}" 2>/dev/null)"
@@ -224,7 +219,7 @@ cmd_remove() {
   local wt_branch; wt_branch="$(git -C "$wt_abs" rev-parse --abbrev-ref HEAD 2>/dev/null)"
   [ -n "$wt_branch" ] || refuse worktree-head-unreadable
 
-  local root; root="$( cd "$wt_abs" && resolve_main_root )"
+  local root; root="$(worktree_root "$wt_abs")"
   [ -n "$root" ] || refuse repo-root-unresolvable
 
   # A LEGACY link (C2) — one an older bionic planted, since nothing plants one

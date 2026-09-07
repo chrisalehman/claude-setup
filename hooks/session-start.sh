@@ -53,7 +53,7 @@
 
 set -u
 
-BIONIC_LIB_WANT="root.sh session.sh patrol.sh run.sh"
+BIONIC_LIB_WANT="roots.sh root.sh session.sh patrol.sh run.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -185,9 +185,10 @@ BIONIC_LOADER_REFUSE
 # The library, or nothing. `loader_fail_open` prints one stderr line and exits 0 —
 # a detector that cannot read the disk reports nothing rather than guessing.
 [ -n "$BIONIC_LIB" ] || loader_fail_open "session-start"
+. "$BIONIC_LIB/roots.sh"    || exit 0   # every root resolver, and config_value
 . "$BIONIC_LIB/root.sh"    || exit 0   # project_root
 . "$BIONIC_LIB/session.sh" || exit 0   # session_id, and its one divergence warning
-. "$BIONIC_LIB/patrol.sh"  || exit 0   # PATROL_STALE_MULTIPLIER, _patrol_claude_home
+. "$BIONIC_LIB/patrol.sh"  || exit 0   # PATROL_STALE_MULTIPLIER
 . "$BIONIC_LIB/run.sh"     || exit 0   # active_run, engaged_session
 
 # The tree this hook was launched from — printed absolute in the re-arm line, and
@@ -229,7 +230,7 @@ TMP="$ROOT/.bionic/tmp"
 # build, not a guarantee.
 ENV_SID="${CLAUDE_CODE_SESSION_ID:-}"
 PID_SID=""
-PIDFILE="$(_patrol_claude_home)/sessions/$PPID.json"
+PIDFILE="$(claude_home)/sessions/$PPID.json"
 if [ -f "$PIDFILE" ] && [ ! -L "$PIDFILE" ] && command -v jq >/dev/null 2>&1; then
   PID_SID="$(jq -r '.sessionId // empty' "$PIDFILE" 2>/dev/null)"
 fi

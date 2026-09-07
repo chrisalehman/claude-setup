@@ -21,7 +21,7 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 # missing would arm this wall in exactly the sessions Chris's ruling takes it out of.
 # The direction is chosen by the cost of the mistake: a destructive command that slips
 # through a broken plugin is one command, and the plugin being broken is loud.
-BIONIC_LIB_WANT="root.sh run.sh session.sh"
+BIONIC_LIB_WANT="roots.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -151,6 +151,7 @@ BIONIC_LOADER_REFUSE
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "protect-database"; fi
 # shellcheck source=/dev/null
+. "$BIONIC_LIB/roots.sh"
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"

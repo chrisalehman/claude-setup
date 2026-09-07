@@ -658,7 +658,7 @@ STATUSLINE_NPX_STATE="${STATUSLINE_NPX_FACT##*present=}"
 DOCTOR_INSTALL_PATH="$(detect_plugin_install_path bionic 2>/dev/null)" || DOCTOR_INSTALL_PATH=""
 _doctor_is_repo() { ( cd "${1:-/nonexistent}" 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1 ); }
 if [ -z "$DOCTOR_INSTALL_PATH" ] || ! _doctor_is_repo "$DOCTOR_INSTALL_PATH"; then
-  _doctor_root_alt="$(_detect_plugin_root)"
+  _doctor_root_alt="$(plugin_root)"
   if _doctor_is_repo "$_doctor_root_alt"; then DOCTOR_INSTALL_PATH="$_doctor_root_alt"; fi
   [ -n "$DOCTOR_INSTALL_PATH" ] || DOCTOR_INSTALL_PATH="$_doctor_root_alt"
 fi
@@ -726,7 +726,7 @@ HOOK_RESOLVING="${HOOK_WIRING_FACT##*resolving=}"
 # This is a directory listing, not a schema parse — there is no second reading of
 # a format that could drift away from a first one, which is what the RV-7 rule
 # against re-deriving facts in this file is protecting against.
-_doctor_payload_root="$(_detect_plugin_root)"
+_doctor_payload_root="$(plugin_root)"
 SKILLS_TOTAL=0; SKILLS_OK=0; SKILL_NAMES=""
 for _sk in "$_doctor_payload_root"/skills/*/; do
   [ -d "$_sk" ] || continue
@@ -1606,7 +1606,7 @@ if [ -n "$_doctor_hooks_mtime" ]; then
     _rs_cwd="$(_doctor_pfield "$_rs_line" cwd)"
     _doctor_session_here "$_rs_cwd" || continue
     _rs_pid="$(_doctor_pfield "$_rs_line" pid)"
-    _rs_sf="$(_patrol_claude_home)/sessions/${_rs_pid}.json"
+    _rs_sf="$(claude_home)/sessions/${_rs_pid}.json"
     _rs_started_ms="$(command -v jq >/dev/null 2>&1 && jq -r '.startedAt // empty' "$_rs_sf" 2>/dev/null)"
     case "$_rs_started_ms" in ''|*[!0-9]*) continue ;; esac
     _rs_started_sec=$(( _rs_started_ms / 1000 ))

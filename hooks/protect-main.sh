@@ -23,7 +23,7 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command')
 # command must not wave it through. `loader_fail_closed` permits exactly four repair
 # commands by whole-string match first, so a broken publish can still be repaired —
 # the lockout R-1 §(5) measured and this wave is named for.
-BIONIC_LIB_WANT="git-argv.sh root.sh run.sh session.sh"
+BIONIC_LIB_WANT="roots.sh git-argv.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -155,6 +155,7 @@ if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_closed "protect-main" "$COMMAN
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/git-argv.sh"
 # shellcheck source=/dev/null
+. "$BIONIC_LIB/roots.sh"
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"
