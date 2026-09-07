@@ -19,7 +19,7 @@
 #   sdlc-step: 3
 #   epic: epic-02-checkout
 #   wave: wave-01-checkout-refactor
-#   canonical_sdlc_version: 14
+#   canonical_sdlc_version: <SUPPORTED_SDLC_VERSION, bound near the top of this file>
 #   intent: build
 #   rigor: audited
 #   scale: wave
@@ -38,6 +38,13 @@
 # which was `active_run` until wave-session-bound-run made run identity per-session).
 
 set -u
+
+# ONE supported version. Anything else — an older number, a typo, an empty value, garbage —
+# blocks. Bound here, before the first place that quotes it (the missing-frontmatter hint
+# below), so every echo of "the" supported version is this one variable and never a second,
+# independently-typed literal (review-duplication D-2).
+# [WALL: tests/canonical-sdlc-governing-skill.test.sh]
+SUPPORTED_SDLC_VERSION=14
 
 INPUT=$(cat)
 TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
@@ -711,7 +718,7 @@ if [ -z "$FRONTMATTER" ]; then
   echo "  sdlc-step: <step number>" >&2
   echo "  epic: epic-NN-<slug>" >&2
   echo "  wave: wave-NN-<slug>   # omit for epic-level and continuation" >&2
-  echo "  canonical_sdlc_version: 14" >&2
+  echo "  canonical_sdlc_version: ${SUPPORTED_SDLC_VERSION}" >&2
   echo "  intent: <build|bugfix|refactor|tune|spike|incident-response>" >&2
   echo "  rigor: <tested|peer-reviewed|audited>" >&2
   echo "  scale: <task|wave|epic>" >&2
@@ -753,12 +760,10 @@ yaml_get() {
 
 SDLC_VERSION=$(yaml_get canonical_sdlc_version)
 
-# ONE supported version. Anything else — an older number, a typo, an empty
-# value, garbage — blocks. There is no version dispatch below this line and
-# no path that reaches `exit 0` without passing the whole contract.
+# SUPPORTED_SDLC_VERSION is bound once, near the top of the file (before the
+# missing-frontmatter hint that also quotes it). There is no version dispatch below this
+# line and no path that reaches `exit 0` without passing the whole contract.
 # [WALL: tests/canonical-sdlc-governing-skill.test.sh]
-SUPPORTED_SDLC_VERSION=14
-
 if [ "$SDLC_VERSION" != "$SUPPORTED_SDLC_VERSION" ]; then
   echo "BLOCKED: canonical-sdlc artifact '$BASENAME' declares canonical_sdlc_version: '$SDLC_VERSION'." >&2
   echo "Path: $FILE_PATH" >&2
@@ -1187,6 +1192,80 @@ case "$BASENAME" in
       elif ! echo "$CONTENT" | strip_fences | grep -qE "$DESIGN_HEADING"; then
         block_design "no design. It carries no '## Design' section, no 'design:' pointer and no waiver."
       fi
+    fi
+    ;;
+esac
+
+# ---------- adrs: pointer arm (K3 F4 / D6) ----------
+# [WALL: tests/canonical-sdlc-governing-skill.test.sh]
+#
+# D6: a momentous decision gets its ADR drafted at Step 2, filed under
+# `<docs-root>/adrs/…`, and named from the spec's `adrs:` frontmatter — one
+# path, or several joined by ` · ` (the separator env_split_entries in
+# canonical-sdlc-evidence-gate.sh and agents.sh's peer-session parser already
+# use for a multi-value line; reused here rather than reinvented). Resolution
+# copies `resolve_design_path` above one clause up: an absolute path stands,
+# a docs-root artifact-directory leader (`specs/`, `plans/`, `adrs/`,
+# `incidents/`, `record/`) resolves against the docs root, everything else
+# resolves project-relative, and a `..` component is refused outright. Its
+# own function (`resolve_adrs_path`) rather than a call into the design arm's
+# — that function is defined conditionally, inside the design arm's own `if`,
+# and this arm must not assume it ran.
+#
+# SCOPED to `sdlc-step >= 3` only. Below that — Step 2, where the spec first
+# names the ADR it is drafting alongside itself — a dangling path is not yet
+# a defect: the pointer and the file it names are authored in the same
+# design pass, and the file may not exist on the turn the pointer is typed.
+# PRESENCE-ONLY, like `design:`'s pointer check for the target file: unlike
+# `design:`, this arm does not also require a fixed heading inside the
+# target — an ADR has no equivalent section name to grep for, and D6 asks
+# only that the file the pointer names is real.
+#
+# Absence of `adrs:` is never blocked: a wave that ratified no momentous
+# decision cites none, and the arm has nothing to validate.
+case "$BASENAME" in
+  *.spec.md)
+    if [ "$TOOL" = "Write" ] && { [ "$SCALE" = "wave" ] || [ "$SCALE" = "epic" ]; }; then
+      ADRS_STEP=$(yaml_get sdlc-step)
+      case "$ADRS_STEP" in
+        ''|*[!0-9]*) ;;  # non-numeric or empty sdlc-step -> not in scope
+        *)
+          if [ "$ADRS_STEP" -ge 3 ] 2>/dev/null; then
+            ADRS_RAW=$(yaml_get adrs)
+            if [ -n "$ADRS_RAW" ]; then
+              resolve_adrs_path() {  # $1 = one raw adrs: path
+                case "$1" in
+                  /*) printf '%s\n' "$1" ;;
+                  specs/*|plans/*|adrs/*|incidents/*|record/*) printf '%s/%s\n' "$DOCS_ROOT" "$1" ;;
+                  *)  printf '%s/%s\n' "$PROJECT_ROOT_FROM_PATH" "$1" ;;
+                esac
+              }
+              while IFS= read -r ADR_ONE; do
+                [ -n "$ADR_ONE" ] || continue
+                if echo "$ADR_ONE" | grep -qE '(^|/)\.\.(/|$)'; then
+                  echo "BLOCKED: canonical-sdlc spec '$BASENAME' (sdlc-step ${ADRS_STEP}): adrs: '$ADR_ONE' climbs out with a '..' component and is refused." >&2
+                  echo "Path: $FILE_PATH" >&2
+                  exit 2
+                fi
+                ADR_ABS=$(resolve_adrs_path "$ADR_ONE")
+                if [ ! -f "$ADR_ABS" ]; then
+                  echo "BLOCKED: canonical-sdlc spec '$BASENAME' (sdlc-step ${ADRS_STEP}): adrs: '$ADR_ONE' names no file (resolved to $ADR_ABS)." >&2
+                  echo "Path: $FILE_PATH" >&2
+                  echo "Fix: draft the ADR at that path, or correct the adrs: pointer." >&2
+                  exit 2
+                fi
+              done < <(printf '%s\n' "$ADRS_RAW" | awk '{
+                n = split($0, parts, /[ \t]*·[ \t]*/)
+                for (i = 1; i <= n; i++) {
+                  e = parts[i]
+                  gsub(/^[ \t]+|[ \t]+$/, "", e)
+                  if (e != "") print e
+                }
+              }')
+            fi
+          fi
+          ;;
+      esac
     fi
     ;;
 esac

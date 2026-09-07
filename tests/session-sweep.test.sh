@@ -436,4 +436,190 @@ expect_eq "6.12 a sweep with no session key completes (exit 0)" "0" "$RC"
 expect_false "6.13 …and sweeps the dead session" test -e "$(f_of "$R6C" roster "$SID_DEAD")"
 expect_contains "6.14 …reporting no session of its own" "|session=none|" "$OUT"
 
+# =============================================================================
+section "7. session-start.sh's own silent auto-sweep (R2, ticket-30, AC-R2.1/2.2/2.3)"
+# =============================================================================
+#
+# EVERYTHING ABOVE THIS SECTION drives `sweep` itself, directly, and stays exactly
+# as it was (A-5: the verb is wired here, never rewritten). This section drives
+# THE CALLER — hooks/session-start.sh — which is what actually decides WHETHER
+# `sweep` runs at every session start, and adds one thing the verb itself does
+# not have: an age gate, so a session dead one instant ago is not swept before
+# anyone could read the predecessor report this same run just printed.
+#
+# NO wrap.sh / PPID DANCE (unlike tests/session-start.test.sh). This session's
+# own liveness, for the sweep decision, is CLAUDE_CODE_SESSION_ID alone — the
+# hook's wiring passes it to `patrol_dead_sessions` as an explicit also-live id,
+# the same way `session-poker.sh sweep` protects its own caller — so a claude-home
+# with no pid entry for it is enough; only the classes under test (a genuinely
+# DEAD or LIVE *other* session) need the pid-file machinery `live_home` builds.
+HOOK_SESSION_START="${BIONIC_HOOKS_DIR}/session-start.sh"
+expect_true "hooks/session-start.sh exists" test -f "$HOOK_SESSION_START"
+
+CUR_SELF="$SID_SELF"
+
+ss_make_project() {  # <label> [poker-interval, default 1s] -> project dir
+  local r="$TMPROOT/$1" interval="${2:-1s}"
+  mkdir -p "$r/.bionic/tmp"
+  ( cd "$r" && git init -q . 2>/dev/null )
+  printf 'poker-interval: %s\n' "$interval" > "$r/.bionic/config.yaml"
+  printf '%s' "$r"
+}
+
+# THE SAME BACKDATING IDIOM tests/dispatch-preflight.test.sh's `s21_backdate` and
+# tests/cross-gate-agreement.test.sh's `s_backdate` use — portable across BSD and
+# GNU `date`, and nothing here sleeps.
+ss_backdate() {  # <file> <seconds ago>
+  local ts
+  ts="$(date -v-"$2"S +%Y%m%d%H%M.%S 2>/dev/null || date -d "-$2 seconds" +%Y%m%d%H%M.%S)"
+  touch -t "$ts" "$1"
+}
+
+# Drive the REAL hook (or a stubbed tree — see ss_plant_hook_tree below), against
+# a chosen claude-home, as the named current session. Sets $OUT and $RC.
+ss_drive_start() {  # <hook path> <repo> <claude-home> <cur sid> [extra env NAME=VALUE ...]
+  local hook="$1" r="$2" h="$3" cur="$4"; shift 4
+  OUT="$( cd "$r" \
+          && printf '{"session_id":"%s","cwd":"%s","source":"startup"}' "$cur" "$r" \
+          | env "$@" CLAUDE_CODE_SESSION_ID="$cur" BIONIC_CLAUDE_HOME="$h" \
+                BIONIC_PLUGINS_DIR="$TMPROOT/no-plugins" \
+                bash "$hook" 2>&1 )"
+  RC=$?
+}
+
+section "7a. AC-R2.1 — a dead session, aged past the interval, is fully swept"
+
+R7A="$(ss_make_project r7a 1s)"
+H7A="$TMPROOT/home-r7a"; mkdir -p "$H7A/sessions"
+plant_session "$R7A" "$SID_DEAD"
+for f7a in "$R7A/.bionic/tmp/"*"-$SID_DEAD.state"*; do ss_backdate "$f7a" 5; done
+
+ss_drive_start "$HOOK_SESSION_START" "$R7A" "$H7A" "$CUR_SELF"
+expect_eq "7a.1 session-start still exits 0" "0" "$RC"
+expect_false "7a.2 …its roster is gone"    test -e "$(f_of "$R7A" roster "$SID_DEAD")"
+expect_false "7a.3 …its preflight is gone" test -e "$(f_of "$R7A" preflight "$SID_DEAD")"
+expect_false "7a.4 …its engaged marker is gone" test -e "$(f_of "$R7A" engaged "$SID_DEAD")"
+expect_false "7a.5 …its sweeper ledger is gone"  test -e "$(f_of "$R7A" sweeper "$SID_DEAD")"
+expect_false "7a.6 …its patrol stamp is gone"    test -e "$(f_of "$R7A" patrol "$SID_DEAD")"
+expect_false "7a.7 …and no sweep-failure marker was left behind" \
+  test -e "$R7A/.bionic/tmp/sweep-failed.state"
+
+section "7b. AC-R2.2 — a LIVE session's files survive a session start"
+
+R7B="$(ss_make_project r7b 1s)"
+live_home 7b "$SID_LIVE"; H7B="$CLAUDE_HOME"
+plant_session "$R7B" "$SID_LIVE"
+for f7b in "$R7B/.bionic/tmp/"*"-$SID_LIVE.state"*; do ss_backdate "$f7b" 5; done
+
+ss_drive_start "$HOOK_SESSION_START" "$R7B" "$H7B" "$CUR_SELF"
+expect_eq "7b.1 session-start exits 0" "0" "$RC"
+expect_true "7b.2 the live session's roster survives"    test -f "$(f_of "$R7B" roster "$SID_LIVE")"
+expect_true "7b.3 …its preflight survives"                test -f "$(f_of "$R7B" preflight "$SID_LIVE")"
+expect_true "7b.4 …its patrol stamp survives"             test -f "$(f_of "$R7B" patrol "$SID_LIVE")"
+
+section "7c. AC-R2.3 — files younger than one Patrol interval survive, even though the session is dead"
+
+R7C="$(ss_make_project r7c 3600s)"
+H7C="$TMPROOT/home-r7c"; mkdir -p "$H7C/sessions"
+plant_session "$R7C" "$SID_DEAD"
+# NOT backdated: fresh mtimes, well inside the (deliberately huge) 3600s interval.
+
+ss_drive_start "$HOOK_SESSION_START" "$R7C" "$H7C" "$CUR_SELF"
+expect_eq "7c.1 session-start exits 0" "0" "$RC"
+expect_true "7c.2 a fresh dead session's roster survives (deferred, not swept)" \
+  test -f "$(f_of "$R7C" roster "$SID_DEAD")"
+expect_true "7c.3 …its preflight survives too"           test -f "$(f_of "$R7C" preflight "$SID_DEAD")"
+expect_true "7c.4 …its patrol stamp survives too"        test -f "$(f_of "$R7C" patrol "$SID_DEAD")"
+expect_false "7c.5 …and no sweep-failure marker either — nothing FAILED, it was deferred" \
+  test -e "$R7C/.bionic/tmp/sweep-failed.state"
+
+# THE PAIRED POSITIVE (anti-vacuity): the SAME dead session, backdated past the
+# SAME interval, on a fresh copy of the fixture, is swept — so 7c above is
+# proven to be the age gate and not a hook that never sweeps anything.
+R7C2="$(ss_make_project r7c2 1s)"
+H7C2="$TMPROOT/home-r7c2"; mkdir -p "$H7C2/sessions"
+plant_session "$R7C2" "$SID_DEAD"
+for f7c2 in "$R7C2/.bionic/tmp/"*"-$SID_DEAD.state"*; do ss_backdate "$f7c2" 5; done
+ss_drive_start "$HOOK_SESSION_START" "$R7C2" "$H7C2" "$CUR_SELF"
+expect_false "7c.6 …the paired positive: aged past a SHORT interval, it IS swept" \
+  test -e "$(f_of "$R7C2" roster "$SID_DEAD")"
+
+section "7d. the failure path — a marker is written, one line prints, and it clears on the next success"
+
+# A STUBBED HOOK TREE, so `session-poker.sh sweep` answers something other than
+# 0 or 1 — deterministically, without constructing a real refusal (sweep's own
+# rc=2 causes — a symlinked .bionic/tmp, an unresolvable cwd — are either
+# pre-empted by this hook's own guard before it would ever call sweep, or too
+# machine-fragile to plant reliably). The stub is asked ONLY for `sweep`; every
+# other verb this hook calls (`interval`, `interval-default`) gets a real,
+# trivial answer so the age gate and the report above still behave normally.
+ss_plant_hook_tree() {  # <root> <sweep-exit-code|"hang"> -> echoes <root>/hooks
+  local root="$1" mode="$2" lib_src
+  lib_src="${BIONIC_HOOKS_DIR}/../payload/scripts/lib"
+  [ -d "$lib_src" ] || lib_src="${BIONIC_HOOKS_DIR}/../scripts/lib"
+  mkdir -p "$root/hooks" "$root/scripts/lib"
+  cp "$HOOK_SESSION_START" "$root/hooks/session-start.sh"
+  cp "$lib_src"/*.sh "$root/scripts/lib/" 2>/dev/null
+  {
+    printf '#!/bin/bash\ncase "$1" in\n'
+    printf '  interval|interval-default) echo 1; exit 0 ;;\n'
+    if [ "$mode" = hang ]; then
+      printf '  sweep) sleep 999 ;;\n'
+    else
+      printf '  sweep) exit %s ;;\n' "$mode"
+    fi
+    printf '  *) exit 0 ;;\nesac\n'
+  } > "$root/hooks/session-poker.sh"
+  chmod +x "$root/hooks/session-poker.sh"
+  printf '%s' "$root/hooks"
+}
+
+# ---------- a genuine refusal (rc=2): marker written, one line, once ----------
+R7D="$(ss_make_project r7d 1s)"
+H7D="$TMPROOT/home-r7d"; mkdir -p "$H7D/sessions"
+plant_session "$R7D" "$SID_DEAD" roster
+ss_backdate "$(f_of "$R7D" roster "$SID_DEAD")" 5
+HOOKS_R7D="$(ss_plant_hook_tree "$TMPROOT/tree-r7d" 2)"
+
+ss_drive_start "$HOOKS_R7D/session-start.sh" "$R7D" "$H7D" "$CUR_SELF"
+expect_eq "7d.1 session-start still exits 0 — a sweep failure never blocks a start" "0" "$RC"
+expect_contains "7d.2 the one line names the failure and the rc" \
+  "automatic dead-session sweep failed (rc=2)" "$OUT"
+D7D_HITS="$(printf '%s\n' "$OUT" | grep -c 'automatic dead-session sweep failed')"
+expect_eq "7d.3 …exactly once" "1" "$D7D_HITS"
+expect_true "7d.4 a marker is left under .bionic/tmp" test -f "$R7D/.bionic/tmp/sweep-failed.state"
+expect_contains "7d.5 …carrying the schema and the rc" "sweep-failed/v1" \
+  "$(cat "$R7D/.bionic/tmp/sweep-failed.state")"
+expect_contains "7d.6 …the rc field itself" "rc=2" "$(cat "$R7D/.bionic/tmp/sweep-failed.state")"
+
+# ---------- bounded: a hung sweep is killed within its bound, not left to hang ----------
+R7E="$(ss_make_project r7e 1s)"
+H7E="$TMPROOT/home-r7e"; mkdir -p "$H7E/sessions"
+plant_session "$R7E" "$SID_DEAD" roster
+ss_backdate "$(f_of "$R7E" roster "$SID_DEAD")" 5
+HOOKS_R7E="$(ss_plant_hook_tree "$TMPROOT/tree-r7e" hang)"
+
+SS_T0="$(date -u +%s)"
+ss_drive_start "$HOOKS_R7E/session-start.sh" "$R7E" "$H7E" "$CUR_SELF" BIONIC_SWEEP_BOUND_SECONDS=2
+SS_T1="$(date -u +%s)"
+SS_ELAPSED=$(( SS_T1 - SS_T0 ))
+expect_eq "7e.1 session-start exits 0 even after killing a hung sweep" "0" "$RC"
+expect_true "7e.2 the bound actually bound it — well under the sweep's own 999s sleep" \
+  test "$SS_ELAPSED" -lt 30
+expect_contains "7e.3 the failure line prints (a bounded timeout counts as a failure)" \
+  "automatic dead-session sweep failed (rc=124)" "$OUT"
+expect_true "7e.4 a marker is left" test -f "$R7E/.bionic/tmp/sweep-failed.state"
+
+# ---------- success clears a marker a PAST failure left ----------
+R7F="$(ss_make_project r7f 1s)"
+H7F="$TMPROOT/home-r7f"; mkdir -p "$H7F/sessions"
+printf 'sweep-failed/v1|at=2026-01-01T00:00:00Z|rc=2\n' > "$R7F/.bionic/tmp/sweep-failed.state"
+# No dead session at all this time — the real, unstubbed hook, a clean sweep.
+ss_drive_start "$HOOK_SESSION_START" "$R7F" "$H7F" "$CUR_SELF"
+expect_eq "7f.1 session-start exits 0" "0" "$RC"
+expect_false "7f.2 a stale failure marker is cleared the next time sweeping works" \
+  test -e "$R7F/.bionic/tmp/sweep-failed.state"
+expect_no_match "7f.3 …and nothing about a failure prints" \
+  "*automatic dead-session sweep failed*" "$OUT"
+
 finish

@@ -4,7 +4,7 @@
     canonical-sdlc — lifecycle diagram.
 
     THIS FILE IS THE SOURCE. There is no .excalidraw beside it and no export step:
-    the picture is composed text, which is what lets tests/diagrams.test.sh read it.
+    the picture is composed text, which is what lets tests/cross-gate-agreement.test.sh §V read it.
     Pinned there against the doctrine it draws:
       * the title's version rendering  == hooks' SUPPORTED_SDLC_VERSION
       * the ten class="step" elements  == the ## Steps table in ../SKILL.md
@@ -211,5 +211,5 @@
   <text x="342" y="886" font-size="10.5" fill="#3a424c">red = approval checkpoint, and the walk-away boundary it opens</text>
   <rect x="716" y="876" width="18" height="12" rx="3" fill="#f6f7f9" stroke="#dde1e6" stroke-width="1.2"/>
   <text x="742" y="886" font-size="10.5" fill="#3a424c">grey = context that shapes the row rather than sitting in it</text>
-  <text x="1360" y="904" font-size="10" text-anchor="end" fill="#626b76">composed SVG — this file is the source · pinned by tests/diagrams.test.sh</text>
+  <text x="1360" y="904" font-size="10" text-anchor="end" fill="#626b76">composed SVG — this file is the source · pinned by tests/cross-gate-agreement.test.sh §V</text>
 </svg>

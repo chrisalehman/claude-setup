@@ -337,8 +337,16 @@ expect_true "canonical-sdlc SKILL.md: model_plan derivation is never invented or
   grep -q 'never invented or recalled from memory' "$CANONICAL_SKILL"
 expect_true "canonical-sdlc SKILL.md: model_plan derivation names the rendered role files as the source" \
   grep -q 'rendered role files' "$CANONICAL_SKILL"
-expect_eq "canonical-sdlc SKILL.md: all 6 dispatched-role lines in the confirmation display cite a role-file source" \
-  "6" "$(grep -c 'role-file default: agents/' "$CANONICAL_SKILL")"
+# RE-POINTED (epic-22 K1, plan slice 15, A-7). K1's Step-0 settings card drops per-line
+# inference rationale — the six "role-file default: agents/<role>.md" annotations that used
+# to sit beside each model value are gone; that string no longer appears anywhere in
+# SKILL.md, so the old grep -c over the whole file now finds 0 by design, not by defect. The
+# provenance sentence stays put (still pinned two assertions above, "rendered role files")
+# and is stated ONCE rather than six times; what this assertion re-points to is the fact the
+# AC actually cares about — that all six dispatched-role tiers are still named, one per line,
+# in the card's Models section (record/wave-01-plugin-only/design-ledger.md §D1).
+expect_eq "canonical-sdlc SKILL.md: the Step-0 card's Models section names all 6 dispatched roles (K1 — source is the one-line prose above, not a per-line citation)" \
+  "6" "$(sed -n '/^  Models$/,/^$/p' "$CANONICAL_SKILL" | grep -cE '^    (implementor|senior-implementor|researcher|auditor|critic|test-runner)([[:space:]]|$)')"
 
 section "Group 13: README roster table agrees with agents/*.md frontmatter (epic-19 F9)"
 #
