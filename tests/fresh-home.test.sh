@@ -1988,6 +1988,18 @@ g15_fires() {  # -> yes|no
                echo yes; else echo no; fi' _ "${FH_PAYLOAD:-$PAYLOAD}/scripts/lib/checks.sh" 2>/dev/null
 }
 
+# The lines of a doctor report that name this state. Counted, not matched: the
+# claim AC-S0.3 makes is that there is exactly ONE, and a glob cannot say that.
+g15_doctor_lines() {  # <report file> -> the count
+  # NO `|| echo 0` FALLBACK. `grep -c` already prints `0` when it matches nothing
+  # and merely exits 1 for it, so an `||` arm appends a SECOND zero and the value
+  # becomes two lines — which reads as a failure against `0` and would have been
+  # mistaken for a red row (it was, once, during this slice's own red run).
+  local n
+  n="$(grep -c "impeccable lost its entry but its files are still on disk" "$1" 2>/dev/null)"
+  printf '%s' "${n:-0}"
+}
+
 g15_row_in_registry() {  # -> the recorded version, or <absent>
   jq -r '.plugins["impeccable@bionic"][0].version // "<absent>"' "$G15_REG" 2>/dev/null \
     || echo "<unreadable>"
@@ -2003,6 +2015,10 @@ expect_no_match "15A: …and setup attempts no install for it" \
   '*plugin install impeccable@bionic*' "$(cat "$CALLS")"
 expect_eq "15A: …and the entry is the one that was already there" \
   "4.1.1" "$(g15_row_in_registry)"
+G15A_DOC="$TMP/g15-present-doctor.txt"
+run_payload "$DOCTOR_SH" > "$G15A_DOC" 2>&1
+expect_eq "15A: …and doctor says nothing about a lost entry" \
+  "0" "$(g15_doctor_lines "$G15A_DOC")"
 
 # ── Arm B: the entry is gone and the files are not. The state under test. ────
 g15_plant no yes
@@ -2010,6 +2026,23 @@ expect_eq "15B: with the entry gone and the cache present the check fires" \
   "yes" "$(g15_fires)"
 expect_eq "15B: …and the entry really is absent before the run (the rows below are not vacuous)" \
   "<absent>" "$(g15_row_in_registry)"
+
+# DOCTOR FIRST, because a report is a diagnosis and the repair has not run yet.
+# One line, and exactly one: the state is named once, with the plugin, with the
+# fact that the files are still there, and with the route. Arm A above ran the
+# same extractor over the same fixture with the entry present and counted zero,
+# so a count of one here is the difference between two machines rather than a
+# string that happens to be on every page.
+G15B_DOC="$TMP/g15-restore-doctor.txt"
+run_payload "$DOCTOR_SH" > "$G15B_DOC" 2>&1
+expect_eq "15B: doctor names the lost entry and the files on disk, on exactly one line" \
+  "1" "$(g15_doctor_lines "$G15B_DOC")"
+# AND THE LINE IS WHOLE. It carries a problem and then a command, and doctor's
+# first format rule is that the command survives the cut — a line that stated the
+# problem and lost the route would pass the count above and help nobody.
+expect_match "15B: …and that line ends with the route that clears it" \
+  '*impeccable lost its entry but its files are still on disk → /bionic:setup restores it, no download' \
+  "$(grep -F 'impeccable lost its entry' "$G15B_DOC" | head -1)"
 
 G15B="$TMP/g15-restore.txt"
 printf 'y\ny\ny\n' | run_payload "$SETUP_SH" --only tool:impeccable > "$G15B" 2>&1
@@ -2041,6 +2074,10 @@ expect_no_match "15B: …and no install was ever attempted through the CLI" \
 # `setup-restores`) and reported with its before-picture beside it.
 expect_eq "15B: …and the check stops firing once the entry is back" \
   "no" "$(g15_fires)"
+G15B_DOC2="$TMP/g15-restored-doctor.txt"
+run_payload "$DOCTOR_SH" > "$G15B_DOC2" 2>&1
+expect_eq "15B: …and doctor stops naming it once the entry is back" \
+  "0" "$(g15_doctor_lines "$G15B_DOC2")"
 
 # ── Arm D: two builds in the cache, and the newer one is the CLI's leftover. ─
 #
