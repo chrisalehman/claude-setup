@@ -356,6 +356,14 @@ mutate_check() {  # <label> <sed-expr> <verifier-fn> <expected-mutant-verdict>
   local label="$1" expr="$2" fn="$3" want="$4"
   local copy="$TMP/mutant.sh"
   cp "$SPAWN" "$copy"
+  # THE LIBRARY SHIPS BESIDE THE SCRIPT, so the copy gets it too (epic-22 wave-01, N1).
+  # spawn-worktree.sh resolves the main checkout through lib/roots.sh's `worktree_root`
+  # now — one resolver for a question three files used to answer separately — and it
+  # refuses at the top when it cannot load it. A mutant alone in a temp directory would
+  # take that refusal on every verb, and all three arms below would go green against a
+  # failure the mutation did not cause.
+  mkdir -p "$TMP/lib"
+  cp "$(dirname "$SPAWN")/lib"/*.sh "$TMP/lib/" 2>/dev/null
   sed -i.bak "$expr" "$copy" && rm -f "${copy}.bak"
   if cmp -s "$SPAWN" "$copy"; then
     no "$label" "the sed expression changed nothing — the mutation is vacuous"

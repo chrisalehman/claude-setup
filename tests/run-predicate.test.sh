@@ -997,14 +997,21 @@ expect_eq "config_value: any key, not just this wave's" ".bionic/other-docs" \
 expect_eq "config_value: …and the other one from the same file" "2d" \
   "$(call_config_value "$R9" "live-window" "7d")"
 
-# --- R9h: the two readers of one file agree, edge for edge ---
+# --- R9h: docs_root reads its key THROUGH this function (epic-22 wave-01, N1) ---
 #
-# `docs_root` reads `docs-root:` inline and this function reads every other key; the spec
-# keeps them apart for one wave ("only this key uses it in this wave"), so what holds them
-# together until then is agreement on the same input. The row below is the sharpest case:
-# the quote-strip runs BEFORE the trailing-space trim in BOTH, so a quoted value with a
-# trailing space keeps its closing quote. That is a shared WART, and pinning it is what makes
-# a future slice that fixes one reader and not the other fail here rather than in a hook.
+# WHAT THIS ROW USED TO SAY, AND WHY IT STILL EARNS ITS LINE. `docs_root` read `docs-root:`
+# with six inline lines of its own and this function read every other key; the spec kept
+# them apart for one wave ("only this key uses it in this wave"), so what held them together
+# was agreement on the same input. The sharpest case was the quote-strip running BEFORE the
+# trailing-space trim in BOTH, so a quoted value with a trailing space keeps its closing
+# quote — a shared WART, pinned so that a slice fixing one reader and not the other failed
+# here rather than in a hook.
+#
+# There is one reader now: `docs_root` and `config_value` both live in lib/roots.sh and
+# `docs_root` is a caller. So the pair cannot drift, and the row below is no longer an
+# agreement check — it is the wart itself, pinned once, plus the fact that the general
+# reader is what `docs-root:` goes through. tests/roots.test.sh §1a pins the same wart from
+# the docs_root side.
 printf 'docs-root: "d1" \nlive-window: "3d" \n' > "$R9/.bionic/config.yaml"
 expect_eq "config_value: a quoted value with a trailing space keeps its closing quote" '3d"' \
   "$(call_config_value "$R9" "live-window" "7d")"
