@@ -160,6 +160,13 @@ build_plan() {
   local intent=build rigor=audited scale=wave step=3 version=14 mode="OMIT" omit=" " matrix=yes
   local skill="superpowers:writing-plans"
   local walk="OMIT" override="OMIT" waived="OMIT"
+  # goal: yes (default) | no | empty — K5.4. "yes" injects a real '## Goal' paragraph as
+  # the body's first section, so every PRE-EXISTING call site (none of which is about
+  # K5.4) keeps satisfying the new arm without being touched, the same precedent
+  # SPEC_DESIGN_WAIVER set when the design wall (wave-02) landed. "no" omits the section
+  # entirely (first-section fails-when); "empty" leaves the heading with no paragraph
+  # (empty-section fails-when) — the K5.4 section below is the only caller of either.
+  local goal=yes
   local arg
   for arg in "$@"; do
     case "$arg" in
@@ -175,6 +182,7 @@ build_plan() {
       walk=*)    walk="${arg#walk=}" ;;
       override=*) override="${arg#override=}" ;;
       waived=*)  waived="${arg#waived=}" ;;
+      goal=*)    goal="${arg#goal=}" ;;
     esac
   done
 
@@ -205,6 +213,17 @@ wave: wave-01-x
   done
   out+='---
 '
+  case "$goal" in
+    yes)   out+='
+## Goal
+
+A concise paragraph describing this fixture'"'"'s goal.
+' ;;
+    empty) out+='
+## Goal
+' ;;
+    no)    : ;;
+  esac
   if [ "$matrix" = yes ]; then
     out+='
 ## Verification Matrix
@@ -1220,9 +1239,12 @@ expect_empty "ac14_b no shipped surface instructs a context.md write" "$ac14_hit
 #
 # Knobs: scale (default wave) · section=yes|no (the in-place `## Design`,
 # default yes, as in the real artifact) · design=<value> injects a
-# `design:` line · waived=<full line> injects it verbatim.
+# `design:` line · waived=<full line> injects it verbatim · goal=yes|no|empty
+# (K5.4, default yes — same reasoning as build_plan()'s own goal= knob: a real
+# '## Goal' paragraph opens the body by default so pre-existing design-wall cases keep
+# passing the new K5.4 arm untouched; "no"/"empty" are for K5.4's own negative cases).
 build_spec() {
-  local scale=wave section=yes design="OMIT" waived="OMIT" step=2 adrs="OMIT"
+  local scale=wave section=yes design="OMIT" waived="OMIT" step=2 adrs="OMIT" goal=yes
   local arg
   for arg in "$@"; do
     case "$arg" in
@@ -1232,6 +1254,7 @@ build_spec() {
       waived=*)  waived="${arg#waived=}" ;;
       step=*)    step="${arg#step=}" ;;
       adrs=*)    adrs="${arg#adrs=}" ;;
+      goal=*)    goal="${arg#goal=}" ;;
     esac
   done
 
@@ -1261,7 +1284,19 @@ created: 2026-08-02
 # wave-01-demo — spec
 
 Source of requirements: the demo report.
+'
+  case "$goal" in
+    yes)   out+='
+## Goal
 
+A concise paragraph describing this fixture'"'"'s goal.
+' ;;
+    empty) out+='
+## Goal
+' ;;
+    no)    : ;;
+  esac
+  out+='
 ## Requirements
 
 - **R1 — A requirement.** Body text.
@@ -2186,7 +2221,11 @@ assert_eq "k5c silent" "" "$HOOK_STDERR"
 # says "copy it into a fixture and assert that"). Frontmatter copied byte-for-byte from
 # .bionic/docs/specs/epic-22-plugin-only/wave-01-plugin-only.requirements.md (gitignored,
 # machine-local — not a path this hermetic suite can read live, so the fixture is a literal
-# copy rather than a dynamic read).
+# copy rather than a dynamic read). K5.4 (mid-wave, landed after k5d was first written):
+# the real file's own opening picked up a '## Goal' section between the title and
+# "## Requirements and acceptance criteria" — this fixture is updated to match, so k5d
+# keeps proving "the real artifact passes the arm as-is" against the ARM'S CURRENT SHAPE,
+# K5.4's included, rather than a shape the real file no longer has.
 K5_EXEMPLAR_FRONTMATTER='---
 governing-skill: agent-skills:idea-refine
 sdlc-step: 1
@@ -2209,6 +2248,13 @@ created: 2026-09-07
 
 # bionic 1.6.0 — plugin-only · requirements (epic-22 wave-01)
 
+## Goal
+
+Ship bionic 1.6.0 as a plugin a stranger can install and trust: one source renders every skill
+and canon passage, the version lives in one place, dependent plugins stop falling out of the
+registry, known doctor and setup bugs are fixed, walls print one line, and the lifecycle shows the
+user settings at Step 0, the contract at Step 3, and the premise before the build.
+
 ## Requirements and acceptance criteria
 
 **REQ-K5 — Three artifacts, three steps.**
@@ -2218,5 +2264,187 @@ k5_real_target="$k5_p/.bionic/docs/specs/epic-01-demo/real.requirements.md"
 run_write "$k5_real_target" "$K5_EXEMPLAR_FRONTMATTER"
 assert_eq "k5d exit 0 on the real wave-01 requirements doc's frontmatter" 0 "$HOOK_EXIT"
 assert_eq "k5d silent" "" "$HOOK_STDERR"
+
+# ============================================================
+# K5.4/AC-K5.4: the goal-paragraph rule (design ledger K5.4)
+# ============================================================
+#
+# Chris 2026-09-07 ~14:45 PT, "Option 2 - but make it: opens with a CONCISE goal
+# description in one paragraph": each of requirements.md, spec.md and plan.md opens with
+# a '## Goal' section — one concise paragraph — first after the title.
+#
+# SCALE DECISION (recorded here and in the hook's own comment): the arm is wave|epic
+# only, matching the design wall and the Verification Matrix wall in this same hook —
+# at `scale: task` there is no three-artifact shape to hold open (Step 1-3 collapse into
+# ONE session plan with a '## Tasks' ledger), so a task-scale plan is untouched (k54-4).
+echo
+section "K5.4/AC-K5.4: the goal-paragraph rule"
+
+k54_p=$(make_project)
+
+echo "k54-1: plan.md, wave scale, no '## Goal' at all → block, naming Goal and the file"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/w1.plan.md" "$(build_plan goal=no)"
+assert_eq "k54_plan_no_goal exit 2" 2 "$HOOK_EXIT"
+assert_contains "k54_plan_no_goal names Goal" "'## Goal'" "$HOOK_STDERR"
+assert_contains "k54_plan_no_goal names the file" "w1.plan.md" "$HOOK_STDERR"
+
+echo "k54-2: plan.md, wave scale, '## Goal' present with a real paragraph → allow"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/w2.plan.md" "$(build_plan goal=yes)"
+assert_eq "k54_plan_with_goal exit 0" 0 "$HOOK_EXIT"
+assert_eq "k54_plan_with_goal silent" "" "$HOOK_STDERR"
+
+echo "k54-3: plan.md, wave scale, '## Goal' present but EMPTY (heading, no paragraph) → block"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/w3.plan.md" "$(build_plan goal=empty)"
+assert_eq "k54_plan_empty_goal exit 2" 2 "$HOOK_EXIT"
+assert_contains "k54_plan_empty_goal names the empty section" "'Goal' section is empty" "$HOOK_STDERR"
+
+echo "k54-4: plan.md, TASK scale, no Goal at all → allow (arm inert — no three-artifact shape at task scale)"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/w4.plan.md" "$(build_plan goal=no scale=task matrix=no)"
+assert_eq "k54_plan_task_untouched exit 0" 0 "$HOOK_EXIT"
+assert_eq "k54_plan_task_untouched silent" "" "$HOOK_STDERR"
+
+echo "k54-5: plan.md, EPIC scale, no Goal → block (epic gets the arm too, not just wave)"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/w5.plan.md" "$(build_plan goal=no scale=epic)"
+assert_eq "k54_plan_epic_scoped exit 2" 2 "$HOOK_EXIT"
+
+echo "k54-6: spec.md, wave scale, no Goal (Design present) → block on Goal — proven independent of the design wall"
+run_write "$k54_p/.bionic/docs/specs/epic-01-demo/w6.spec.md" "$(build_spec goal=no section=yes)"
+assert_eq "k54_spec_no_goal exit 2" 2 "$HOOK_EXIT"
+assert_contains "k54_spec_no_goal names Goal" "'## Goal'" "$HOOK_STDERR"
+
+echo "k54-7: spec.md, wave scale, Goal present + Design present → allow (both walls satisfied)"
+run_write "$k54_p/.bionic/docs/specs/epic-01-demo/w7.spec.md" "$(build_spec goal=yes section=yes)"
+assert_eq "k54_spec_with_goal exit 0" 0 "$HOOK_EXIT"
+assert_eq "k54_spec_with_goal silent" "" "$HOOK_STDERR"
+
+echo "k54-8: spec.md, wave scale, Goal EMPTY + Design present → block on the empty Goal, not the design wall"
+run_write "$k54_p/.bionic/docs/specs/epic-01-demo/w8.spec.md" "$(build_spec goal=empty section=yes)"
+assert_eq "k54_spec_empty_goal exit 2" 2 "$HOOK_EXIT"
+assert_contains "k54_spec_empty_goal names the empty section" "'Goal' section is empty" "$HOOK_STDERR"
+
+echo "k54-9: requirements.md, wave scale, no Goal → block (requirements gets the arm too)"
+run_write "$k54_p/.bionic/docs/specs/epic-01-demo/w9.requirements.md" "$(build_plan goal=no)"
+assert_eq "k54_req_no_goal exit 2" 2 "$HOOK_EXIT"
+
+echo "k54-10: requirements.md, wave scale, Goal present → allow"
+run_write "$k54_p/.bionic/docs/specs/epic-01-demo/w10.requirements.md" "$(build_plan goal=yes)"
+assert_eq "k54_req_with_goal exit 0" 0 "$HOOK_EXIT"
+
+echo "k54-11: continuation.md, no Goal → allow (untouched — never one of the three artifacts)"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/continuation.md" "$(build_plan goal=no)"
+assert_eq "k54_continuation_untouched exit 0" 0 "$HOOK_EXIT"
+
+echo "k54-12: adr-*.md, no Goal → allow (untouched — an ADR has no three-artifact shape)"
+run_write "$k54_p/.bionic/docs/adrs/epic-01-demo/adr-099-x.md" "$(build_plan goal=no)"
+assert_eq "k54_adr_untouched exit 0" 0 "$HOOK_EXIT"
+
+echo "k54-13: a write to record/ (operational, never enforced), no Goal, no frontmatter at all → allow untouched"
+run_write "$k54_p/.bionic/docs/record/k54-note.md" '# an operational note, no canonical-sdlc frontmatter at all'
+assert_eq "k54_record_untouched exit 0" 0 "$HOOK_EXIT"
+
+# --- exemplar fixtures: this wave's own three artifacts, as-shipped ---
+#
+# The brief: "This wave's three artifacts already comply — each opens with `## Goal` —
+# and are your exemplar fixtures ... copy each into a fixture and assert the arm accepts
+# them." k5d above already covers requirements.md (K5_EXEMPLAR_FRONTMATTER, updated for
+# K5.4). The two below cover spec.md and plan.md. All three real files open with the
+# SAME Goal paragraph, word for word — copied here once and reused, rather than retyped
+# three times where a copy-paste slip could quietly diverge.
+K54_GOAL_PARA='Ship bionic 1.6.0 as a plugin a stranger can install and trust: one source renders every skill
+and canon passage, the version lives in one place, dependent plugins stop falling out of the
+registry, known doctor and setup bugs are fixed, walls print one line, and the lifecycle shows the
+user settings at Step 0, the contract at Step 3, and the premise before the build.'
+
+# spec.md exemplar: frontmatter + title + Goal copied from
+# .bionic/docs/specs/epic-22-plugin-only/wave-01-plugin-only.spec.md (gitignored,
+# machine-local, same reason k5d's copy is literal). The real file's design wall is
+# satisfied by an in-place '## Design' section (not reproduced here — this fixture is
+# about the Goal arm, not the design wall, which slices 16/17/18 already cover in depth);
+# a waiver substitutes, the same pattern SPEC_DESIGN_WAIVER already uses above for
+# fixtures that are not about design.
+K54_SPEC_EXEMPLAR='---
+governing-skill: agent-skills:spec-driven-development
+sdlc-step: 2
+intent: build
+rigor: audited
+scale: wave
+canonical_sdlc_version: 14
+surface_type: cli-plugin
+language: bash
+has_ui: false
+multi_agent: true
+deploy_target: n/a
+cleanup_on_finish: true
+use_worktree: false
+walk: required
+design-interview: true
+model_plan: orchestrator=claude-fable-5-1; implementor=sonnet-high; senior-implementor=opus-high; researcher=opus-high; test-runner=haiku-medium; auditor=opus-high; critic=opus-high
+requirements: specs/epic-22-plugin-only/wave-01-plugin-only.requirements.md
+'"$SPEC_DESIGN_WAIVER"'
+created: 2026-09-07
+---
+
+# bionic 1.6.0 — plugin-only · specification (epic-22 wave-01)
+
+## Goal
+
+'"$K54_GOAL_PARA"'
+
+## Context and Problem
+
+As ratified in the requirements document (§Context, §Problem); they travel into the PR body at Step 8.
+'
+
+echo "k54-14: this wave's own spec.md opening (title + '## Goal' + the shared paragraph) → allow"
+run_write "$k54_p/.bionic/docs/specs/epic-01-demo/real.spec.md" "$K54_SPEC_EXEMPLAR"
+assert_eq "k54_spec_exemplar exit 0" 0 "$HOOK_EXIT"
+assert_eq "k54_spec_exemplar silent" "" "$HOOK_STDERR"
+
+# plan.md exemplar: frontmatter + title + Goal copied from
+# .bionic/docs/plans/epic-22-plugin-only/wave-01-plugin-only.plan.md (same gitignored-copy
+# reasoning). sdlc-step 3 needs a '## Verification Matrix' section (the wall above this
+# one) — a minimal stub stands in for the real 60-row matrix, which is not this fixture's
+# subject.
+K54_PLAN_EXEMPLAR='---
+governing-skill: superpowers:writing-plans
+sdlc-step: 3
+intent: build
+rigor: audited
+scale: wave
+canonical_sdlc_version: 14
+surface_type: cli-plugin
+language: bash
+has_ui: false
+multi_agent: true
+deploy_target: n/a
+cleanup_on_finish: true
+use_worktree: false
+walk: required
+design-interview: true
+model_plan: orchestrator=claude-fable-5-1; implementor=sonnet-high; senior-implementor=opus-high; researcher=opus-high; test-runner=haiku-medium; auditor=opus-high; critic=opus-high
+requirements: specs/epic-22-plugin-only/wave-01-plugin-only.requirements.md
+spec: specs/epic-22-plugin-only/wave-01-plugin-only.spec.md
+created: 2026-09-07
+---
+
+# bionic 1.6.0 — plugin-only · implementation plan (epic-22 wave-01)
+
+## Goal
+
+'"$K54_GOAL_PARA"'
+
+## Verification Matrix
+
+stack-health: n/a: no long-running serve observed
+
+| AC | tier | status | evidence | auditor |
+|---|---|---|---|---|
+| AC-1 | T1 | discharged | see AC-1 | CONFIRMED |
+'
+
+echo "k54-15: this wave's own plan.md opening (title + '## Goal' + the shared paragraph) → allow"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/real.plan.md" "$K54_PLAN_EXEMPLAR"
+assert_eq "k54_plan_exemplar exit 0" 0 "$HOOK_EXIT"
+assert_eq "k54_plan_exemplar silent" "" "$HOOK_STDERR"
 
 finish

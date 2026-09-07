@@ -1256,6 +1256,80 @@ case "$BASENAME" in
     ;;
 esac
 
+# ---------- K5.4: the goal-paragraph rule (design ledger K5.4) ----------
+# [WALL: tests/canonical-sdlc-governing-skill.test.sh]
+#
+# Chris 2026-09-07 ~14:45 PT, "Option 2 - but make it: opens with a CONCISE goal
+# description in one paragraph": each of the three artifacts (requirements, spec, plan)
+# opens with a `## Goal` section — one concise paragraph — first after the title. This
+# arm is the wall half; the skill's "Three artifacts, three steps" text is the prose half,
+# pinned by docs-pins.
+#
+# SCOPE: *.requirements.md | *.spec.md | *.plan.md, same as ENFORCE above, minus
+# adr-*.md and continuation*.md — an ADR has no "three artifacts" shape to open with a
+# goal, and a continuation doc is a Step-9 close-out record, not one of the three.
+#
+# SCALE: wave|epic only — the same carve-out the design wall (three-way rule) and the
+# Verification Matrix wall above already make, and for the same reason: at `scale: task`
+# there IS no three-artifact pattern to hold open — Step 1-3 collapse into ONE session
+# plan carrying a `## Tasks` ledger (SKILL.md's Scale table), so "the first of the three
+# artifacts" is not a shape that exists to check. This is a DECISION, not a default:
+# AC-K5.4's criterion text ("each of the three artifacts") does not itself carve out task
+# scale, but the sibling walls in this hook already draw the line at wave|epic for
+# exactly the artifact-shape reason above (see the design wall's and adrs arm's own
+# comments), and a fourth structural arm drawing a different line on the same hook would
+# be its own inconsistency to defend. A task-scale session plan is untouched.
+#
+# WRITE ONLY, same reasoning as the design wall immediately above: CONTENT on Edit is the
+# PRE-edit body, so an Edit arm would judge a question nobody asked.
+case "$BASENAME" in
+  *.plan.md|*.spec.md|*.requirements.md)
+    if [ "$TOOL" = "Write" ] && { [ "$SCALE" = "wave" ] || [ "$SCALE" = "epic" ]; }; then
+
+      # Fence-aware, matching the design wall's strip_fences rationale immediately above:
+      # an artifact that EXPLAINS this contract (this very hook's own doc comment, or the
+      # skill text) may show `## Goal` inside a fenced example, and an example is
+      # documentation, not the artifact's own first section. CONTENT already carries the
+      # frontmatter block (parsed above), but the frontmatter is YAML `key: value` lines —
+      # none of which begin with `## ` — so scanning the whole normalized CONTENT for the
+      # first `^## ` line finds the first heading in the BODY without needing a second
+      # frontmatter-stripping pass.
+      GOAL_FIRST_HEADING=$(printf '%s\n' "$CONTENT" | awk '
+        /^[[:space:]]*```/ { fence = !fence; next }
+        fence { next }
+        /^## / { print; exit }
+      ')
+
+      case "$GOAL_FIRST_HEADING" in
+        '## Goal'|'## Goal '*)
+          # Present and first. AC-K5.4's second fails-when: an empty section (the
+          # heading with nothing but blank lines before the next heading, or EOF) is
+          # refused too — a heading is not a paragraph.
+          GOAL_SECTION_BODY=$(printf '%s\n' "$CONTENT" | awk '
+            /^[[:space:]]*```/ { fence = !fence; next }
+            fence { next }
+            /^## Goal([[:space:]]|$)/ { ingoal = 1; next }
+            ingoal && /^## / { exit }
+            ingoal { print }
+          ')
+          if ! printf '%s\n' "$GOAL_SECTION_BODY" | grep -qE '[^[:space:]]'; then
+            echo "BLOCKED: canonical-sdlc artifact '$BASENAME' (scale: $SCALE): the 'Goal' section is empty." >&2
+            echo "Path: $FILE_PATH" >&2
+            echo "Fix: write one concise paragraph describing the goal under '## Goal'." >&2
+            exit 2
+          fi
+          ;;
+        *)
+          echo "BLOCKED: canonical-sdlc artifact '$BASENAME' (scale: $SCALE): the first section after the title is not '## Goal'." >&2
+          echo "Path: $FILE_PATH" >&2
+          echo "Fix: open with a '## Goal' section — one concise paragraph — immediately after the title." >&2
+          exit 2
+          ;;
+      esac
+    fi
+    ;;
+esac
+
 # ---------- AC-11 / AC-12: tree creation on first lifecycle use ----------
 # [WALL: tests/canonical-sdlc-governing-skill.test.sh]
 #
