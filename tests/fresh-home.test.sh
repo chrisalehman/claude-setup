@@ -2042,6 +2042,37 @@ expect_no_match "15B: …and no install was ever attempted through the CLI" \
 expect_eq "15B: …and the check stops firing once the entry is back" \
   "no" "$(g15_fires)"
 
+# ── Arm D: two builds in the cache, and the newer one is the CLI's leftover. ─
+#
+# THE CASE THE LIVE RIG FOUND, brought back here so it is asked on every run.
+# `claude plugin install bionic@bionic` — setup's own first step — writes a
+# bare-sha directory for every sha-pinned plugin in the catalog and registers
+# none of them, so by the time the extras step reaches a dropped row the cache
+# holds two builds and the NEWER one is the CLI's leftover rather than the build
+# the machine was running. A restore that took the newest named a directory that
+# had not existed ten seconds earlier; the version directory, whose name agrees
+# with the version its own manifest declares, is the one the lost row named.
+#
+# THE LEFTOVER IS PLANTED WITH A MANIFEST, not as an empty directory, so the rule
+# under test is the agreement between the name and the declared version and not
+# merely "has a plugin.json".
+g15_plant no yes
+mkdir -p "${G15_CACHE}/5a149f3fdb1b/.claude-plugin"
+printf '%s\n' '{"name":"impeccable","version":"4.1.1"}' \
+  > "${G15_CACHE}/5a149f3fdb1b/.claude-plugin/plugin.json"
+touch "${G15_CACHE}/5a149f3fdb1b"
+expect_eq "15D: the planted leftover really is the newest build (the row below is not vacuous)" \
+  "5a149f3fdb1b" "$(ls -1t "$G15_CACHE" | head -1)"
+G15D="$TMP/g15-two-builds.txt"
+printf 'y\ny\ny\n' | run_payload "$SETUP_SH" --only tool:impeccable > "$G15D" 2>&1
+expect_eq "15D: the restore names the build whose name matches its own declared version" \
+  "${G15_CACHE}/4.1.1" \
+  "$(jq -r '.plugins["impeccable@bionic"][0].installPath // "<absent>"' "$G15_REG")"
+expect_eq "15D: …and records that build's version, not the leftover's directory name" \
+  "4.1.1" "$(g15_row_in_registry)"
+expect_no_match "15D: …and still attempts no install" \
+  '*plugin install impeccable@bionic*' "$(cat "$CALLS")"
+
 # ── Arm C: neither entry nor cache. A real install, and it must be attempted. ─
 #
 # This is what makes 15B's silence a finding rather than an artefact: the same

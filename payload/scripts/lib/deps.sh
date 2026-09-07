@@ -1595,27 +1595,50 @@ _dep_plugin_cache_dir() {  # <name> -> the cache directory for this row
   printf '%s/plugins/cache/%s/%s\n' "$(_dep_claude_home)" "$marketplace" "$name"
 }
 
-# NEWEST FIRST, AND THE BASENAME IS THE VERSION. Every row this machine's
-# registry carries records a `version` equal to the basename of its
-# `installPath` — `1.5.1` where the catalog pins a version, `41bbe19d1a1a` where
-# it pins a commit — so the directory name is not a guess at the version, it is
-# where the CLI keeps the version. A cache can hold several builds: a repeat
-# install of a sha-pinned source leaves a bare-sha directory beside the version
-# one (ruling §4), and an update leaves the build it replaced. The newest is the
-# one the CLI was last using, so it is the one a restore names. `ls -1t` and not
-# `stat`: the ordering is the same on BSD and GNU and costs one process rather
-# than one per entry.
-dep_cached_build() {  # <name> -> the newest cached build directory, or nothing
-  local name="${1:-}" dir entry
+# THE BASENAME IS THE VERSION, AND THAT IS THE RULE FOR PICKING ONE. Every row
+# this machine's registry carries records a `version` equal to the basename of
+# its `installPath` — `4.1.1` where the catalog pins a version, `41bbe19d1a1a`
+# where it pins a commit — so a directory name is not a guess at the version, it
+# is where the CLI keeps it. A cache holds SEVERAL builds more often than not:
+# an update leaves the build it replaced, and `claude plugin install bionic@bionic`
+# materialises a bare-sha directory for every sha-pinned plugin in the catalog
+# without registering any of them (measured directly — the sha directory appears
+# on a machine whose row stays absent across that command; see the probe in this
+# slice's report). Newest-first alone therefore picks the CLI's leftover over the
+# build the machine was actually running, which is how the first cut of this
+# function restored a row naming a directory that had not existed ten seconds
+# earlier.
+#
+# SO SELF-CONSISTENCY DECIDES, AND RECENCY ONLY BREAKS THE TIE. A build whose
+# directory name equals the version its own `plugin.json` declares is a build
+# installed under that version — the shape a version-pinned install leaves, and
+# the shape the lost row named. A catalog that pins commits ships no such
+# agreement (the two anthropic packs carry no `plugin.json` in the cache at all),
+# and there the newest is both the only available answer and the right one: it is
+# what the registry records for those rows today.
+#
+# `ls -1t` and not `stat`: the ordering is the same on BSD and GNU and costs one
+# process rather than one per entry.
+dep_cached_build() {  # <name> -> the cached build a restore should name
+  local name="${1:-}" dir entry newest="" manifest declared
   dir="$(_dep_plugin_cache_dir "$name")" || return 1
   [ -d "$dir" ] || return 1
   while IFS= read -r entry; do
     [ -n "$entry" ] || continue
     [ -d "${dir}/${entry}" ] || continue
-    printf '%s/%s\n' "$dir" "$entry"
-    return 0
+    [ -n "$newest" ] || newest="${dir}/${entry}"
+    manifest="${dir}/${entry}/.claude-plugin/plugin.json"
+    [ -f "$manifest" ] || continue
+    _dep_have jq || continue
+    declared="$(jq -r '.version // empty' "$manifest" 2>/dev/null)"
+    if [ -n "$declared" ] && [ "$declared" = "$entry" ]; then
+      printf '%s/%s\n' "$dir" "$entry"
+      return 0
+    fi
   done <<< "$(ls -1t "$dir" 2>/dev/null)"
-  return 1
+  [ -n "$newest" ] || return 1
+  printf '%s\n' "$newest"
+  return 0
 }
 
 # THE STATE THE FIELD REPORT DESCRIBES, as one question rather than two facts

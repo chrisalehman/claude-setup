@@ -299,10 +299,49 @@ arm_setup_restores() {
   echo "| setup.sh --all with impeccable's row absent | $(rows_line a2-row-deleted) | $(rows_line a3-after-setup) | ${restored} |"
   echo
   echo "impeccable cache after : ${after_mtime:-(none)}"
-  if [ "$before_mtime" = "$after_mtime" ]; then
-    echo "CACHE VERDICT: unchanged — the cache directory was not rewritten by this run."
+
+  # THE VERDICT ASKS ABOUT THE BUILDS THAT WERE THERE, not about the listing.
+  #
+  # Comparing the two listings whole was the first cut, and it answered the wrong
+  # question. `setup --all` opens by asking the CLI to install bionic, and that
+  # command MATERIALISES a bare-sha directory for every sha-pinned plugin in the
+  # catalog while registering none of them — measured on its own, with impeccable's
+  # row absent before and still absent after (slice 9's report, the sha-directory
+  # probe). A new directory therefore appears on every run of this arm no matter
+  # what bionic does about the row, and a whole-listing comparison reported that as
+  # "re-downloaded" and could never have flipped.
+  #
+  # What AC-S0.3 is about is whether the plugin bionic already had was fetched
+  # again, so the question is asked of the builds that were on disk BEFORE: is each
+  # one still there, and does it still carry the mtime it had. A directory that
+  # merely appeared is reported on its own line, attributed, and is not the verdict.
+  local reused="yes" line ts path now
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    ts="${line%% *}"; path="${line#* }"
+    now="$(stat -f '%m' "$path" 2>/dev/null)" || now=""
+    if [ "$now" != "$ts" ]; then
+      reused="no"
+      echo "REWRITTEN: ${path} (${ts} -> ${now:-gone})"
+    fi
+  done <<< "$before_mtime"
+
+  local added=""
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    path="${line#* }"
+    case $'\n'"$before_mtime"$'\n' in
+      *" ${path}"$'\n'*) ;;
+      *) added="${added}${added:+, }${path##*/}" ;;
+    esac
+  done <<< "$after_mtime"
+  [ -n "$added" ] && echo "ADDED (not by the restore): ${added} — the CLI writes a bare-sha directory for every sha-pinned plugin in the catalog when it is asked to install bionic, and registers none of them"
+
+  echo "RESTORED ROW POINTS AT: $(jq -r '.plugins["impeccable@bionic"][0].installPath // "<no row>"' "$reg" 2>/dev/null)"
+  if [ "$reused" = "yes" ]; then
+    echo "CACHE VERDICT: unchanged — every build that was on disk before this run is still there, byte-for-byte untouched."
   else
-    echo "CACHE VERDICT: CHANGED — the cache directory was rewritten, i.e. re-downloaded."
+    echo "CACHE VERDICT: CHANGED — a build that was already on disk was rewritten, i.e. re-downloaded."
   fi
   echo "network-capable calls the stubs intercepted: $(wc -l < "$FH_CALLS" | tr -d ' ')"
 }
