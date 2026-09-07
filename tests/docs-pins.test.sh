@@ -305,10 +305,12 @@ expect_nonempty "22: …and the disagreement filter reports it as a disagreement
 #   (c) the `BIONIC_TEST_JOBS=<test_jobs>` sentence in `agents-src/blocks/survival.md`,
 #       which must reach every dispatched writer — so it is asserted in the BLOCK and
 #       again in all six rendered `agents/*.md`, which is what proves the render ran.
-#   (d) the `/clear` paragraph, which lives in TWO channels by design (a rules file
-#       lands on the next read, a role file on the next session — CLAUDE.md §Path-scoped
-#       rules). Two copies of a paragraph is exactly the drift a pin exists for, so the
-#       two are compared BYTE FOR BYTE rather than each being spot-checked.
+#   (d) the `/clear` paragraph, which lives in ONE canonical copy — `agents-src/blocks/
+#       survival.md`, rendered into all six `agents/*.md` — since S7 (AC-13) retired the
+#       second copy that used to live in `.claude/rules/agent-discipline.md`. Two copies
+#       of a paragraph is exactly the drift a pin used to exist for; now the pin is over
+#       the SINGLE home instead: the block carries it, the six role files match it
+#       byte-for-byte, and the rules file is asserted to carry it no longer.
 #
 # ANTI-VACUITY, same discriminate-a-doctored-copy pattern §1 uses: every extractor here
 # is re-run against a mutated copy and must report the mutation.
@@ -402,13 +404,19 @@ else
   no "13: agents-src/blocks/survival.md carries the '/clear does not kill agents' paragraph" \
      "file: $SURVIVAL_BLOCK"
 fi
-if [ -n "$CLEAR_RULES" ]; then
-  ok "14: .claude/rules/agent-discipline.md carries the same paragraph"
+
+# 14: ONE COPY (S7, AC-13) — the second copy that used to live in the rules file is
+# retired, not re-homed a third time (r1 §Table 3, AD18: "delete the rules copy. Do not
+# port it to the orchestrator role — that would make a fourth"). A bare absence check is
+# a vacuous-negative risk (tests/lib/assert.sh's own docblock on `expect_empty`); it is
+# paired here with assertion 13's POSITIVE result from the very same `clear_paragraph`
+# extractor, on the sibling file, moments above — proof the extractor itself works.
+if [ -z "$CLEAR_RULES" ]; then
+  ok "14: .claude/rules/agent-discipline.md no longer carries a '/clear' paragraph copy (one copy only)"
 else
-  no "14: .claude/rules/agent-discipline.md carries the same paragraph" "file: $AGENT_RULES"
+  no "14: .claude/rules/agent-discipline.md no longer carries a '/clear' paragraph copy (one copy only)" \
+     "file: $AGENT_RULES still matches the extractor — a second copy survived the move"
 fi
-expect_eq "15: the two copies of the '/clear' paragraph are byte-identical" \
-  "$CLEAR_BLOCK" "$CLEAR_RULES"
 
 PINS_CLEAR_MISSING=""
 for role in auditor critic implementor researcher senior-implementor test-runner; do
@@ -416,11 +424,22 @@ for role in auditor critic implementor researcher senior-implementor test-runner
     || PINS_CLEAR_MISSING="${PINS_CLEAR_MISSING} ${role}"
 done
 if [ -z "$PINS_CLEAR_MISSING" ]; then
-  ok "16: all six rendered agents/*.md carry that paragraph byte-identically"
+  ok "15: all six rendered agents/*.md carry that paragraph byte-identically"
 else
-  no "16: all six rendered agents/*.md carry that paragraph byte-identically" \
+  no "15: all six rendered agents/*.md carry that paragraph byte-identically" \
      "differs or missing in:${PINS_CLEAR_MISSING} — run 'bash agents-src/render.sh'"
 fi
+
+# 16: CENSUS — no THIRD home exists anywhere in the tree. Assertion 14 proves the one
+# named former home is clean; this proves nothing else picked the paragraph up either,
+# the same construction-guarded-vs-enforcement-guarded distinction r3 §Part 2 item 18
+# draws for AD18's other two copies.
+CLEAR_MARKER='`/clear` does not kill agents.'
+CLEAR_HOMES_EXPECTED="agents-src/blocks/survival.md agents/auditor.md agents/critic.md agents/implementor.md agents/researcher.md agents/senior-implementor.md agents/test-runner.md"
+CLEAR_HOMES_ACTUAL="$(cd "$REPO" && /usr/bin/grep -rl -F -- "$CLEAR_MARKER" \
+  agents-src agents .claude payload skills 2>/dev/null | sort | tr '\n' ' ' | sed 's/ $//')"
+expect_eq "16: the '/clear' marker exists ONLY at its seven expected homes (no third copy anywhere)" \
+  "$(printf '%s\n' $CLEAR_HOMES_EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')" "$CLEAR_HOMES_ACTUAL"
 
 # --- Anti-vacuity: the same extractors must report a mutation ---
 
@@ -445,11 +464,14 @@ else
   ok "18: a doctored survival.md fails the BIONIC_TEST_JOBS pin (pin discriminates)"
 fi
 
-anchor "$AGENT_RULES" 'the address that survives' 1
-DOCTORED_RULES="$TMP/rules-mutated.md"
-sed 's/the address that survives/the address that dies/' "$AGENT_RULES" > "$DOCTORED_RULES"
-expect_ne "19: a doctored agent-discipline.md reads as a different paragraph (pin discriminates)" \
-  "$CLEAR_BLOCK" "$(clear_paragraph "$DOCTORED_RULES")"
+# 19: mutation target moved to the canonical copy (S7, AC-13) — the rules file no
+# longer carries this paragraph at all, so mutating it would anchor on nothing (the
+# "anchor MOVED" failure `anchor()`'s own docblock warns against) and prove nothing.
+anchor "$SURVIVAL_BLOCK" 'the address that survives' 1
+DOCTORED_BLOCK2="$TMP/survival-clear-mutated.md"
+sed 's/the address that survives/the address that dies/' "$SURVIVAL_BLOCK" > "$DOCTORED_BLOCK2"
+expect_ne "19: a doctored survival.md reads as a different '/clear' paragraph (pin discriminates)" \
+  "$CLEAR_BLOCK" "$(clear_paragraph "$DOCTORED_BLOCK2")"
 
 # ── SECTION 3 — SCHED (spec AC-29/AC-30/AC-31/AC-38, `.bionic/docs/plans/wave-bionic-1.4.0-update/`).
 #

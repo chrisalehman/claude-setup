@@ -89,6 +89,8 @@ This outputs a PNG next to the `.excalidraw` file. Then use the **Read tool** on
 
 **6. Repeat** — keep cycling until the diagram passes both the vision check (2) and the defect check (3). Typically 2-4 iterations. Don't stop after one pass just because there are no critical bugs — if the composition could be better, improve it.
 
+**Multi-iteration authoring should be dispatched, not done on the main thread.** This render → Read PNG → fix-JSON → re-render loop (typically 2–4 iterations per diagram) adds a multi-hundred-KB PNG read to context on every pass plus a JSON edit cycle. Dispatching keeps the main thread clean and returns a single completion notification. Validated 2026-05-03: two diagrams dispatched in parallel, ~7 and ~12 minutes each, returned final paths + judgment-call summaries. *(2026-07-15 amendment: a FRESH `model: opus` agent with a fully self-contained brief — target files, content spec, render-loop instruction, known CDN-drift fix — is a validated, cheaper alternative to a fork; a two-diagram regen delivered in 1–2 iterations per diagram this way. Prefer fresh-with-brief under a Fable orchestrator, where forks cost ~2× Opus and re-pay the whole main context.)* The pattern generalizes to any visual-validation work where the "did the rendered output match my intent" judgment requires reading the rendered artifact.
+
 ### When to Stop
 
 The loop is done when the rendered diagram matches the conceptual design; no text is clipped, overlapping, or unreadable; arrows route cleanly and connect to the right elements; spacing is consistent and the composition balanced; and you'd be comfortable showing it to someone without caveats.
