@@ -1898,4 +1898,253 @@ expect_match "14: …and it names the same route, with the dependency that is mi
   "*reinstall bionic's dependencies: claude plugin install bionic@bionic (superpowers is missing)*" \
   "$G14_DEP"
 
+
+# ---------------------------------------------------------------------------
+# Group 15 — the registry row that was dropped while the plugin's files stayed
+# (REQ-S0, AC-S0.3; slice-0 ruling §4 and §8).
+#
+# THE STATE, AND WHY IT NEEDED A NEW PROBE. `/bionic:remove` followed by a
+# reinstall restores the two plugins bionic DECLARES and leaves the one it does
+# not — `impeccable` is class `extra`, installed when a route asks for it, and no
+# `plugin.json` dependency brings it back. What the machine is left with is a
+# plugin whose files are all still in the CLI's cache and whose entry in
+# `installed_plugins.json` is gone. Every probe bionic had read the registry
+# alone, so that machine and a machine that never had the plugin were the same
+# answer — `absent` — and setup re-downloaded bytes that were already correct
+# (ruling §4: `CACHE VERDICT: CHANGED`).
+#
+# THREE MACHINES, ONE FIXTURE BUILDER, AND THE THIRD IS THE POINT. The arm that
+# matters is the middle one — entry gone, cache present — but on its own an
+# assertion that no download was attempted is a claim any broken run would
+# satisfy, including one where setup crashed before it reached the row. So the
+# same builder makes the two machines either side of it: one with the entry
+# present, where nothing may happen at all, and one with neither the entry nor
+# the cache, where a real `claude plugin install` MUST be attempted. The third is
+# what makes the second's silence mean something: the same code path, the same
+# fixture, the same extractor, and the opposite answer.
+#
+# WHY THE FIXTURE IS WRITTEN BY HAND RATHER THAN BY THE SHIM. The `claude` shim
+# above records an install with an `installPath` under `$BIONIC_TEST_STATE`,
+# because nothing until now cared where a plugin's files were. This group cares
+# about exactly that: the cache directory under the fixture HOME is the fact
+# being detected, so the registry and the cache are both written here, in the
+# shape this machine's own registry carries (`"version": 2`, each key holding an
+# ARRAY of entries — ruling §3).
+# ---------------------------------------------------------------------------
+
+section "Group 15: a dropped registry row is restored from the cache, not re-downloaded"
+
+G15_REG="${HOME_FIX}/.claude/plugins/installed_plugins.json"
+G15_CACHE="${HOME_FIX}/.claude/plugins/cache/bionic/impeccable"
+G15_KNOWN="${HOME_FIX}/.claude/plugins/known_marketplaces.json"
+
+# <row present: yes|no> <cache present: yes|no>
+g15_plant() {
+  local want_row="$1" want_cache="$2" extra=""
+  fresh_home
+  mkdir -p "${HOME_FIX}/.claude/plugins"
+  printf '%s\n' '{}' > "${HOME_FIX}/.claude/settings.json"
+
+  # THE CATALOG'S OWN CLONE, which is where the pinned commit is read from. A
+  # `directory` feed's `installLocation` IS the checkout, so this points at the
+  # tree under test and the sha the restore writes is the one this repo's
+  # manifest declares — nothing is fetched to learn it.
+  jq -n --arg p "$REPO" \
+    '{bionic: {source: {source: "directory", path: $p}, installLocation: $p}}' > "$G15_KNOWN"
+
+  [ "$want_row" = "yes" ] && extra=',
+    "impeccable@bionic": [{"scope":"user","installPath":"'"${G15_CACHE}/4.1.1"'","version":"4.1.1"}]'
+  cat > "$G15_REG" <<REG
+{
+  "version": 2,
+  "plugins": {
+    "bionic@bionic":       [{"scope":"user","installPath":"${STATE}/installed/bionic","version":"1.5.1"}],
+    "superpowers@bionic":  [{"scope":"user","installPath":"${STATE}/installed/superpowers","version":"6.3.0","auto":true}],
+    "agent-skills@bionic": [{"scope":"user","installPath":"${STATE}/installed/agent-skills","version":"0.6.7","auto":true}]${extra}
+  }
+}
+REG
+
+  if [ "$want_cache" = "yes" ]; then
+    mkdir -p "${G15_CACHE}/4.1.1/.claude-plugin"
+    printf '%s\n' '{"name":"impeccable","version":"4.1.1"}' \
+      > "${G15_CACHE}/4.1.1/.claude-plugin/plugin.json"
+  fi
+
+  # The shim's own view, so steps 1 and 2 see a healthy machine and this group
+  # measures the extras step alone.
+  printf 'bionic@bionic true\nsuperpowers@bionic true\nagent-skills@bionic true\n' > "${STATE}/plugins"
+  [ "$want_row" = "yes" ] && printf 'impeccable@bionic true\n' >> "${STATE}/plugins"
+  return 0
+}
+
+# The library's own answer, asked in one process under the fixture's environment
+# — the same way doctor and setup ask it.
+g15_fires() {  # -> yes|no
+  env -i HOME="$HOME_FIX" PATH="$BIN" SHELL=/bin/zsh TMPDIR="$TMPDIR_FIX" \
+    BIONIC_PLUGIN_ROOT="${FH_PAYLOAD:-$PAYLOAD}" CLAUDE_PLUGIN_ROOT="${FH_PAYLOAD:-$PAYLOAD}" \
+    bash -c '. "$1" >/dev/null 2>&1 || exit 1
+             if bionic_check_registry_row_dropped "registry-row:impeccable" 2>/dev/null; then
+               echo yes; else echo no; fi' _ "${FH_PAYLOAD:-$PAYLOAD}/scripts/lib/checks.sh" 2>/dev/null
+}
+
+# The lines of a doctor report that name this state. Counted, not matched: the
+# claim AC-S0.3 makes is that there is exactly ONE, and a glob cannot say that.
+g15_doctor_lines() {  # <report file> -> the count
+  # NO `|| echo 0` FALLBACK. `grep -c` already prints `0` when it matches nothing
+  # and merely exits 1 for it, so an `||` arm appends a SECOND zero and the value
+  # becomes two lines — which reads as a failure against `0` and would have been
+  # mistaken for a red row (it was, once, during this slice's own red run).
+  local n
+  n="$(grep -c "impeccable lost its entry but its files are still on disk" "$1" 2>/dev/null)"
+  printf '%s' "${n:-0}"
+}
+
+# The consent page's bullet for one item. `--all` prints the plan and then asks
+# ONE question over it; with the answer channel closed the question goes
+# unanswered, the run declines, and nothing on the fixture is written — which is
+# how the page is read without consenting to anything.
+g15_plan_bullet() {  # <report file> -> the bullet naming impeccable, or nothing
+  grep -F '• ' "$1" 2>/dev/null | grep -F 'impeccable' | head -1
+}
+
+g15_row_in_registry() {  # -> the recorded version, or <absent>
+  jq -r '.plugins["impeccable@bionic"][0].version // "<absent>"' "$G15_REG" 2>/dev/null \
+    || echo "<unreadable>"
+}
+
+# ── Arm A: the entry is there. Nothing to detect, nothing to do. ─────────────
+g15_plant yes yes
+expect_eq "15A: with the entry present the dropped-row check does not fire" \
+  "no" "$(g15_fires)"
+G15A="$TMP/g15-present.txt"
+printf 'y\ny\ny\n' | run_payload "$SETUP_SH" --only tool:impeccable > "$G15A" 2>&1
+expect_no_match "15A: …and setup attempts no install for it" \
+  '*plugin install impeccable@bionic*' "$(cat "$CALLS")"
+expect_eq "15A: …and the entry is the one that was already there" \
+  "4.1.1" "$(g15_row_in_registry)"
+G15A_DOC="$TMP/g15-present-doctor.txt"
+run_payload "$DOCTOR_SH" > "$G15A_DOC" 2>&1
+expect_eq "15A: …and doctor says nothing about a lost entry" \
+  "0" "$(g15_doctor_lines "$G15A_DOC")"
+
+# ── Arm B: the entry is gone and the files are not. The state under test. ────
+g15_plant no yes
+expect_eq "15B: with the entry gone and the cache present the check fires" \
+  "yes" "$(g15_fires)"
+expect_eq "15B: …and the entry really is absent before the run (the rows below are not vacuous)" \
+  "<absent>" "$(g15_row_in_registry)"
+
+# DOCTOR FIRST, because a report is a diagnosis and the repair has not run yet.
+# One line, and exactly one: the state is named once, with the plugin, with the
+# fact that the files are still there, and with the route. Arm A above ran the
+# same extractor over the same fixture with the entry present and counted zero,
+# so a count of one here is the difference between two machines rather than a
+# string that happens to be on every page.
+G15B_DOC="$TMP/g15-restore-doctor.txt"
+run_payload "$DOCTOR_SH" > "$G15B_DOC" 2>&1
+expect_eq "15B: doctor names the lost entry and the files on disk, on exactly one line" \
+  "1" "$(g15_doctor_lines "$G15B_DOC")"
+# AND THE LINE IS WHOLE. It carries a problem and then a command, and doctor's
+# first format rule is that the command survives the cut — a line that stated the
+# problem and lost the route would pass the count above and help nobody.
+expect_match "15B: …and that line ends with the route that clears it" \
+  '*impeccable lost its entry but its files are still on disk → /bionic:setup restores it, no download' \
+  "$(grep -F 'impeccable lost its entry' "$G15B_DOC" | head -1)"
+
+# THE CONSENT PAGE, WHICH IS WHERE THE USER ACTUALLY DECIDES. A page offering to
+# "install impeccable" over a machine that needs no download is asking consent
+# for an act that is not the act about to be taken. Arm C below runs the same
+# extractor on the machine where the install IS the act and gets the other
+# sentence, so this row is a difference between machines and not a string that
+# happens to be on every page.
+G15B_PLAN="$TMP/g15-restore-plan.txt"
+run_payload "$SETUP_SH" --all < /dev/null > "$G15B_PLAN" 2>&1
+expect_eq "15B: the consent page offers a restore, not an install" \
+  "  • restore impeccable's entry from the plugin cache, downloading nothing" \
+  "$(g15_plan_bullet "$G15B_PLAN")"
+
+G15B="$TMP/g15-restore.txt"
+printf 'y\ny\ny\n' | run_payload "$SETUP_SH" --only tool:impeccable > "$G15B" 2>&1
+
+expect_match "15B: setup says what it is about to do, and that it downloads nothing" \
+  '*the plugin'"'"'s files are still on disk*download nothing*' "$(cat "$G15B")"
+expect_eq "15B: …and the entry is back, naming the cached build's version" \
+  "4.1.1" "$(g15_row_in_registry)"
+expect_eq "15B: …pointing at the cache directory that was already on disk" \
+  "${G15_CACHE}/4.1.1" \
+  "$(jq -r '.plugins["impeccable@bionic"][0].installPath // "<absent>"' "$G15_REG")"
+expect_eq "15B: …carrying the commit the catalog pins" \
+  "5a149f3fdb1b5793f10567233b1dcab98fc305fd" \
+  "$(jq -r '.plugins["impeccable@bionic"][0].gitCommitSha // "<absent>"' "$G15_REG")"
+expect_eq "15B: …and the plugin is switched on in settings.json" \
+  "true" \
+  "$(jq -r '.enabledPlugins["impeccable@bionic"] // "<absent>"' "${HOME_FIX}/.claude/settings.json")"
+# THE NEGATIVE, BESIDE ITS POSITIVE (arm C below runs the same extractor on the
+# same fixture and comes out non-empty). Nothing was fetched: the CLI was never
+# asked to install this plugin.
+expect_no_match "15B: …and no install was ever attempted through the CLI" \
+  '*plugin install impeccable@bionic*' "$(cat "$CALLS")"
+# THE CACHE ITSELF IS NOT ASSERTED HERE, and the omission is deliberate. A stub
+# `claude plugin install` does not rewrite a cache directory, so a row claiming
+# the build was left alone would pass on this fixture whether the product
+# downloaded or not — it could not fail, which makes it worth nothing. The
+# rewrite is only visible to the real binary, so that half of AC-S0.3 is proved
+# by the live rig's `CACHE VERDICT` line (tests/lib/registry-drop.sh, arm
+# `setup-restores`) and reported with its before-picture beside it.
+expect_eq "15B: …and the check stops firing once the entry is back" \
+  "no" "$(g15_fires)"
+G15B_DOC2="$TMP/g15-restored-doctor.txt"
+run_payload "$DOCTOR_SH" > "$G15B_DOC2" 2>&1
+expect_eq "15B: …and doctor stops naming it once the entry is back" \
+  "0" "$(g15_doctor_lines "$G15B_DOC2")"
+
+# ── Arm D: two builds in the cache, and the newer one is the CLI's leftover. ─
+#
+# THE CASE THE LIVE RIG FOUND, brought back here so it is asked on every run.
+# `claude plugin install bionic@bionic` — setup's own first step — writes a
+# bare-sha directory for every sha-pinned plugin in the catalog and registers
+# none of them, so by the time the extras step reaches a dropped row the cache
+# holds two builds and the NEWER one is the CLI's leftover rather than the build
+# the machine was running. A restore that took the newest named a directory that
+# had not existed ten seconds earlier; the version directory, whose name agrees
+# with the version its own manifest declares, is the one the lost row named.
+#
+# THE LEFTOVER IS PLANTED WITH A MANIFEST, not as an empty directory, so the rule
+# under test is the agreement between the name and the declared version and not
+# merely "has a plugin.json".
+g15_plant no yes
+mkdir -p "${G15_CACHE}/5a149f3fdb1b/.claude-plugin"
+printf '%s\n' '{"name":"impeccable","version":"4.1.1"}' \
+  > "${G15_CACHE}/5a149f3fdb1b/.claude-plugin/plugin.json"
+touch "${G15_CACHE}/5a149f3fdb1b"
+expect_eq "15D: the planted leftover really is the newest build (the row below is not vacuous)" \
+  "5a149f3fdb1b" "$(ls -1t "$G15_CACHE" | head -1)"
+G15D="$TMP/g15-two-builds.txt"
+printf 'y\ny\ny\n' | run_payload "$SETUP_SH" --only tool:impeccable > "$G15D" 2>&1
+expect_eq "15D: the restore names the build whose name matches its own declared version" \
+  "${G15_CACHE}/4.1.1" \
+  "$(jq -r '.plugins["impeccable@bionic"][0].installPath // "<absent>"' "$G15_REG")"
+expect_eq "15D: …and records that build's version, not the leftover's directory name" \
+  "4.1.1" "$(g15_row_in_registry)"
+expect_no_match "15D: …and still attempts no install" \
+  '*plugin install impeccable@bionic*' "$(cat "$CALLS")"
+
+# ── Arm C: neither entry nor cache. A real install, and it must be attempted. ─
+#
+# This is what makes 15B's silence a finding rather than an artefact: the same
+# extractor over the same log, on the machine where a download IS the right act.
+g15_plant no no
+expect_eq "15C: with no cache either, the dropped-row check does not fire" \
+  "no" "$(g15_fires)"
+G15C_PLAN="$TMP/g15-install-plan.txt"
+run_payload "$SETUP_SH" --all < /dev/null > "$G15C_PLAN" 2>&1
+expect_eq "15C: …and the consent page offers an install, which is what this machine needs" \
+  "  • install impeccable" "$(g15_plan_bullet "$G15C_PLAN")"
+
+G15C="$TMP/g15-install.txt"
+printf 'y\ny\ny\n' | run_payload "$SETUP_SH" --only tool:impeccable > "$G15C" 2>&1
+expect_match "15C: …and setup installs it through the CLI, as it always did" \
+  '*plugin install impeccable@bionic*' "$(cat "$CALLS")"
+
 finish

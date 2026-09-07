@@ -295,6 +295,41 @@ column is the obligation the reviewer reads back. Shape:
   is a legitimate cell — some pairs are prose against prose, and a mandate dispatched verbatim
   has no seam to test — but it is a cell the reviewer will stop on, so give it the reason.
 
+### The Eval design table
+
+`## Eval design` sits beside `## Design` in a wave-or-epic spec, one row per acceptance
+criterion. SKILL.md carries the contract — the six columns, the type ladder, the rule that an
+eval with no nameable "Fails when" is refused at the card. This is how to fill one in.
+
+- **Approach is one line, and it is a design decision.** "Grep the rendered file for the six
+  column headers" is an approach; "test it" is not. It names the seam the eval reaches through,
+  which is exactly why the table is authored at Step 2 and not at Step 3: the architecture has
+  just decided what is observable, and an approach written before that is a guess about a shape
+  nobody has chosen yet.
+- **Eval type is the ladder in words** — static · unit · hermetic · live · human, T0–T4. Words
+  rather than tier codes because the Step-2 card counts types per requirement and a user
+  reading `T0 T0 T2` learns nothing they can push back on. The tier code still travels into the
+  plan's matrix, which is machine-read; this column is the one a person ratifies.
+- **Eval is `command → expected observation`,** both halves. A command with no expected
+  observation is a thing you ran, not an eval — the reader cannot tell a pass from a crash — and
+  an observation with no command is a hope. The observation is what the terminal shows, not the
+  conclusion you would draw: `rc=2, stderr names AC-K2.3`, never `the wall works`.
+- **Fails when names a PLANTED DEFECT, singular and specific.** "the code is broken" fails the
+  column; "the `fails-when:` line is deleted from one AC block" passes it, because a writer can
+  go and do that and watch the eval turn red. It is the sentence the writer implements first —
+  red on that exact mutation — before any of the code the eval is for.
+- **A criterion that admits no "Fails when" goes back to Step 1.** That is the loop the column
+  exists to close, and it closes upward: the defect is in the criterion's wording, not in the
+  eval, and rewriting the eval around an unfalsifiable criterion buys a green that means
+  nothing. Step 1's quality bar — write each criterion so a "fails when" is nameable — is this
+  rule paid for early, where it is cheap.
+- **One row per criterion, and the plan renders them.** Step 3 adds sequencing (which slice
+  implements which eval, in what order) and the matrix's bookkeeping columns. It authors no eval
+  of its own, and a matrix row with no row here is a criterion that skipped a step.
+- **The gate reads the rendered column.** From `current: 4` on, an AC block whose `fails-when:`
+  is missing or empty refuses the commit, naming the row. A waiver does not excuse it: a waiver
+  dissolves the obligation to RUN an eval, never the obligation to have designed one.
+
 ### Scaling
 
 - **Task** — a paragraph per non-trivial task, in the session plan: what it touches, what owns
