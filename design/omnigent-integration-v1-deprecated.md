@@ -1,3 +1,12 @@
+> **DEPRECATED 2026-09-07.** This file was the canon for the omnigent-integration v1 attempt
+> (epic-21-v1-ladder). Chris rejected that attempt on 2026-09-07 — knowledge crosses lineages,
+> work does not — and the port built on it was reverted (main reset to 5b7a9b5, bionic 1.5.1).
+> It is kept as a record of what was ratified and measured, not as a design bionic follows.
+> Its 45-term omni vocabulary lives in the private attempts record
+> (`~/workspace/personal/bionic-archive/omnigent-attempts/INDEX.md`), not in `design/`.
+> Successors: a plugin release-train epic owning the core, and an adapter-only omnigent epic that
+> merges main in after every release. Formerly `design/v1-spec-set.md`.
+
 # bionic v1 — spec set (DRAFT for ratification)
 
 **Status: RATIFIED by Chris, 2026-09-03 (map #19 closed); moved to its tracked home 2026-09-05 at
