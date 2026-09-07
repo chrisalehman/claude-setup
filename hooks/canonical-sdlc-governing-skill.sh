@@ -168,26 +168,6 @@ physicalize() {  # $1=absolute path (need not exist) → folded, ancestors resol
   fi
 }
 
-resolve_docs_root() {
-  local proj="$1"
-  local config="$proj/.bionic/config.yaml"
-  if [ -f "$config" ]; then
-    local override
-    override=$(grep -E '^[[:space:]]*docs-root[[:space:]]*:' "$config" 2>/dev/null \
-      | head -1 \
-      | sed -E 's/^[[:space:]]*docs-root[[:space:]]*:[[:space:]]*//' \
-      | sed -E "s/^['\"]//;s/['\"]\$//" \
-      | sed -E 's/[[:space:]]+$//')
-    if [ -n "$override" ]; then
-      case "$override" in
-        /*) echo "$override" ;;
-        *)  echo "$proj/$override" ;;
-      esac
-      return
-    fi
-  fi
-  echo "$proj/.bionic/docs"
-}
 
 # ---------- the library ----------
 #
@@ -434,7 +414,7 @@ if [ "$EVENT" = "PostToolUse" ]; then
   # through a symlink otherwise disagrees with itself about its own prefix.
   [ -f "$FILE_PATH" ] || exit 0
   GS_BIND_TARGET=$(physicalize "$FILE_PATH")
-  GS_BIND_DOCS=$(physicalize "$(resolve_docs_root "$PROJECT_ROOT_FROM_PATH")")
+  GS_BIND_DOCS=$(physicalize "$(docs_root "$PROJECT_ROOT_FROM_PATH")")
   case "$GS_BIND_TARGET" in
     "$GS_BIND_DOCS"/plans/*|"$GS_BIND_DOCS"/incidents/*) ;;
     *) exit 0 ;;
@@ -497,7 +477,7 @@ esac
 # that repository and leaves at the guard, which is the same answer the deleted clauses
 # gave, reached one test earlier.
 
-DOCS_ROOT=$(resolve_docs_root "$PROJECT_ROOT_FROM_PATH")
+DOCS_ROOT=$(docs_root "$PROJECT_ROOT_FROM_PATH")
 
 # Incident 0001: the audit stream must live where a consuming project cannot
 # commit it, regardless of that project's .gitignore. $HOME-rooted, per-project,
@@ -1314,16 +1294,24 @@ esac
 # redirection is performed before `printf` runs, so `printf 2>/dev/null` would
 # silence nothing) is suppressed too — matching the `mkdir -p ... 2>/dev/null`
 # beside it. An allowed tool call must leave stderr clean.
+#
+# THE SCAFFOLD USES `$DOCS_ROOT`, NOT A LITERAL (epic-22 wave-01, N1). This block spelled
+# `$PROJECT_ROOT_FROM_PATH/.bionic/docs/...` while the hook forty lines up had already
+# resolved `docs-root:` into `$DOCS_ROOT` — so a project that set the key got the DEFAULT
+# tree scaffolded and its configured tree never created, and then met this hook's own
+# misplacement refusal for writing into the tree it had asked for. One resolver, one answer:
+# the four leaders hang off `$DOCS_ROOT` and the two state directories off `tmp_root` and
+# `bionic_root`.
 # [WALL: tests/canonical-sdlc-governing-skill.test.sh]
 if [ -n "$SDLC_VERSION" ]; then
   mkdir -p \
-    "$PROJECT_ROOT_FROM_PATH/.bionic/tmp" \
-    "$PROJECT_ROOT_FROM_PATH/.bionic/docs/specs" \
-    "$PROJECT_ROOT_FROM_PATH/.bionic/docs/plans" \
-    "$PROJECT_ROOT_FROM_PATH/.bionic/docs/adrs" \
-    "$PROJECT_ROOT_FROM_PATH/.bionic/docs/incidents" \
+    "$(tmp_root "$PROJECT_ROOT_FROM_PATH")" \
+    "$DOCS_ROOT/specs" \
+    "$DOCS_ROOT/plans" \
+    "$DOCS_ROOT/adrs" \
+    "$DOCS_ROOT/incidents" \
     2>/dev/null
-  BIONIC_GITIGNORE="$PROJECT_ROOT_FROM_PATH/.bionic/.gitignore"
+  BIONIC_GITIGNORE="$(bionic_root "$PROJECT_ROOT_FROM_PATH")/.gitignore"
   [ -f "$BIONIC_GITIGNORE" ] || { printf '*\n' > "$BIONIC_GITIGNORE"; } 2>/dev/null
 fi
 

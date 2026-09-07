@@ -3,7 +3,6 @@
 #
 # WHAT IT OWNS (L-RUN, wave-bionic-1.4.0-update, spec AC-8; design-ledger S1). Pure
 # functions of disk, no writes:
-#   docs_root <root>   -> <root>/<docs-root from .bionic/config.yaml, default .bionic/docs>
 #   active_plan <root> -> the newest *.md (by mtime, to the SECOND under bash 3.2 — see
 #                         the compare site) under <docs_root>/plans (depth <= 2)
 #                         and <docs_root>/incidents (depth <= 2) that carries a flush-left
@@ -23,10 +22,6 @@
 #   _run_candidates <droot> -> every qualifying candidate under <droot>, NUL-separated, in
 #                         walk order. The ONE fence-aware walk; active_plan and open_runs
 #                         are now a selection and a filter over it and nothing else.
-#   config_value <root> <key> <default>
-#                      -> the first `<key>:` value in <root>/.bionic/config.yaml, trimmed
-#                         and unquoted; <default> when the file, the key or the value is
-#                         missing.
 #   live_runs <root>   -> the subset of open_runs whose plan mtime is within the
 #                         `live-window:` config value (default 7d) of now, same order.
 #                         `BIONIC_NOW_EPOCH` overrides now, so a suite can backdate a plan
@@ -53,9 +48,27 @@
 #
 # BASH 3.2. No associative arrays, no `${var^^}`, no `mapfile`.
 #
-# FUNCTIONS ONLY — sourcing this file executes no top-level command and prints nothing.
+# WHERE THE ROOTS WENT (epic-22 wave-01, N1). `docs_root` and `config_value` were defined
+# here; they are lib/roots.sh's now, with every other root resolver in the tree, and this
+# file is one of their callers. The soft source below is the only top-level command in this
+# file — it defines functions, reads nothing and prints nothing — and it is what keeps
+# `. lib/run.sh` on its own a complete thing, for tests/run-predicate.test.sh and for any
+# caller that has not declared roots.sh through the loader idiom.
+#
+# FUNCTIONS ONLY OTHERWISE — nothing else here runs at source time and nothing here prints.
 #
 # [WALL: tests/run-predicate.test.sh]
+
+# roots.sh, THE SOFT SOURCE — the idiom lib/detect.sh uses for lib/deps.sh and lib/checks.sh
+# for lib/patrol.sh. Guarded on the function, so a caller that already has it pays nothing.
+_run_self_dir() {
+  local self="${BASH_SOURCE[0]}"
+  case "$self" in */*) echo "${self%/*}" ;; *) echo "." ;; esac
+}
+if ! declare -F docs_root >/dev/null 2>&1; then
+  # shellcheck source=/dev/null
+  . "$(cd "$(_run_self_dir)" && pwd -P)/roots.sh"
+fi
 
 # _run_lines <file> -> the file with its line endings TRANSLATED to \n, never deleted.
 # A trailing \r is stripped from each record (CRLF) and any remaining lone \r becomes a
@@ -65,69 +78,6 @@
 # fail-dangerous direction (.claude/rules/hook-authoring.md).
 _run_lines() {
   awk '{ sub(/\r$/, ""); gsub(/\r/, "\n"); print }' "$1" 2>/dev/null
-}
-
-# docs_root <root> -> the absolute docs root for <root>: its .bionic/config.yaml's
-# `docs-root:` value if set (relative values are joined onto <root>; absolute values pass
-# through unchanged), else <root>/.bionic/docs. Byte-identical convention to
-# hooks/canonical-sdlc-evidence-gate.sh's resolve_docs_root.
-docs_root() {
-  local root="$1"
-  local config="$root/.bionic/config.yaml"
-  local override=""
-  if [ -f "$config" ]; then
-    override=$(grep -E '^[[:space:]]*docs-root[[:space:]]*:' "$config" 2>/dev/null \
-      | head -1 \
-      | sed -E 's/^[[:space:]]*docs-root[[:space:]]*:[[:space:]]*//' \
-      | sed -E "s/^['\"]//;s/['\"]\$//" \
-      | sed -E 's/[[:space:]]+$//')
-  fi
-  if [ -n "$override" ]; then
-    case "$override" in
-      /*) printf '%s\n' "$override" ;;
-      *)  printf '%s\n' "$root/$override" ;;
-    esac
-    return 0
-  fi
-  printf '%s\n' "$root/.bionic/docs"
-}
-
-# config_value <root> <key> <default> -> the FIRST `<key>:` value in <root>/.bionic/config.yaml
-# with surrounding whitespace and one layer of quotes removed; <default> when the file does
-# not exist, does not carry the key, or carries it with an empty value.
-#
-# ONE READER FOR A SECOND KEY (wave-roster-lifecycle, spec §Design §2). `live-window:` is the
-# second key this library needs out of that file. `docs_root` above reads the first one
-# inline, and a second inline copy is exactly the duplication this wave exists to stop — so
-# the general reader lands here and `live_runs` is its only caller. `docs_root` is NOT
-# converted onto it in this wave (the spec pins the conversion out: "only this key uses it in
-# this wave"), which is why the pipeline below is deliberately the SAME SHAPE as the one
-# above rather than a tidier parser: the two readings of one file agree about indentation,
-# quoting, trailing space and duplicate lines because they are the same six lines, and
-# run-predicate R9 holds this copy to the battery §A2 already runs against that one.
-#
-# THE §A2 MUTATIONS STILL LAND ON `docs_root` (tests/cross-gate-agreement.test.sh:823-853).
-# `docs-root-last-wins` and `keep-quotes` are `!d`-guarded awk edits that take the FIRST
-# matching line in the file, and `docs_root` is defined above this function — so they mutate
-# its copy, which is the one their fixtures read. A future slice that moves this function
-# ABOVE `docs_root` moves those mutations onto a reader those fixtures never call, and §A2
-# would go quietly vacuous rather than red.
-config_value() {
-  local root="$1" key="$2" default="$3"
-  local config="$root/.bionic/config.yaml"
-  local value=""
-  if [ -f "$config" ]; then
-    value=$(grep -E "^[[:space:]]*${key}[[:space:]]*:" "$config" 2>/dev/null \
-      | head -1 \
-      | sed -E "s/^[[:space:]]*${key}[[:space:]]*:[[:space:]]*//" \
-      | sed -E "s/^['\"]//;s/['\"]\$//" \
-      | sed -E 's/[[:space:]]+$//')
-  fi
-  if [ -n "$value" ]; then
-    printf '%s\n' "$value"
-    return 0
-  fi
-  printf '%s\n' "$default"
 }
 
 # _run_candidates <droot> -> every file under <droot>/plans and <droot>/incidents (each
