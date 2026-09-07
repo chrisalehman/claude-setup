@@ -267,7 +267,7 @@ column is the obligation the reviewer reads back. Shape:
 ```
 | concept | owning module (SSoT) | rendering surfaces | agreement test |
 |---|---|---|---|
-| version pin value | no single place — typed at each site; that IS the finding | both hooks · scripts.test.sh assertions · SKILL.md prose · this file's version history · the two SVG diagrams | pin-sync rows in tests/scripts.test.sh pin the two hook sites, and tests/diagrams.test.sh pins the four diagram renderings against the hook's value; the two prose sites drift silently |
+| version pin value | canonical-sdlc-evidence-gate.sh's `SUPPORTED_SDLC_VERSION` | both hooks · this file's version history · the two SVG diagrams | `tests/cross-gate-agreement.test.sh` §V pins all five renderings against the gate's value, with a mutation arm |
 | agreement-test exemplar + authoring rules | SKILL.md §Step 6 | SKILL.md §Step 6 · agents/critic.md AXIS block · this section | AXIS-marker rows in tests/agent-roles.test.sh — the pin covers two of the three surfaces; this section is the unpinned one |
 ```
 
@@ -281,16 +281,17 @@ column is the obligation the reviewer reads back. Shape:
   three surfaces, and the doc is the one that drifts, because nothing runs it.
 - **The agreement test is a real hermetic test that fails when the surfaces disagree** — named,
   not a suite and not "covered by the unit tests". The standing exemplar is the
-  `SUPPORTED_SDLC_VERSION` pin-sync rows in `tests/scripts.test.sh`: one logical constant, two
-  rendering sites pinned — the two hooks — and one test that goes red the moment either moves
-  alone. It is also the honest limit, and the limit is the half worth knowing while you write the
-  cell: the version paragraph in `SKILL.md` and the version-history bullet at the top of this file
-  are rendering sites *outside* that tuple, and they drift silently — which is exactly the row the
-  table above writes down rather than rounding up to "pinned". The diagrams used to sit in that
-  same unpinned set and no longer do: composing them as SVG made their four version renderings
-  greppable, and `tests/diagrams.test.sh` reads the hook's value rather than restating it. That is
-  the general move — a surface becomes pinnable by changing its format, not by promising to
-  remember it. `none — <why>`
+  `SUPPORTED_SDLC_VERSION` pin in `tests/cross-gate-agreement.test.sh` §V (epic-21 wave-02
+  S12): one logical constant, five rendering sites — the two hooks, this file's own
+  version-history bullet, and both diagram SVGs — held against the evidence gate as origin,
+  with a mutation arm. It replaced a narrower exemplar that pinned only the two hooks
+  (`tests/scripts.test.sh`, retired epic-18 W3) and left the prose and diagram sites to drift
+  silently — which was, for a while, exactly the honest-limit case this cell exists to
+  document, and is the half worth knowing while you write one: name what a tuple leaves out
+  rather than rounding up to "pinned". The general move that closed it: a surface becomes
+  pinnable by changing its format (composing the diagrams as SVG made their version
+  renderings greppable) or by naming it in the same agreement test as the origin, not by
+  promising to remember it. `none — <why>`
   is a legitimate cell — some pairs are prose against prose, and a mandate dispatched verbatim
   has no seam to test — but it is a cell the reviewer will stop on, so give it the reason.
 
