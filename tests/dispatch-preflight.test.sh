@@ -4097,4 +4097,79 @@ run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w30h" "claude-sonne
 expect_status "30h an engaged session with no plan on disk — the arm is inert" "0" "$GATE_ST"
 
 
+# ===========================================================================
+section "S31: the approval checkpoint binds at task scale too (epic-22 K2.5)"
+# ===========================================================================
+#
+# K2.5 (Chris 2026-09-07 "Option 2"): a task-scale plan's `current: T<n>` reads as
+# past Step 3 the same way the evidence gate's `k2_step_num` reads it — there is
+# no "still being authored" state at task scale, so this arm binds on ANY
+# `current: T<n>` (n >= 1), not only on numbered `current: 4`+. Mirrors S30
+# exactly, on a `scale: task` plan instead of `scale: wave`.
+
+# k2_write_task_plan <repo> <current T<n>> <approved-by line, or "">
+k2_write_task_plan() {
+  local repo="$1" cur="$2" approved="$3"
+  local dir="$repo/.bionic/docs/plans/epic-99-test"
+  mkdir -p "$dir"
+  {
+    printf -- '---\ngoverning-skill: canonical-sdlc\ncanonical_sdlc_version: 14\n'
+    printf -- 'intent: build\nrigor: tested\nscale: task\n---\n\n'
+    printf -- '# Test task-scale plan\n\n## Tasks\n\n'
+    printf -- '| id | intent | rigor | description | status |\n|---|---|---|---|---|\n'
+    printf -- '| %s | build | tested | wire the K2.5 arms | active |\n\n' "$cur"
+    printf -- '## SDLC State\n\nscale: task\ncurrent: %s\n' "$cur"
+    [ -n "$approved" ] && printf -- '%s\n' "$approved"
+    printf -- '\n- %s: bash tests/dispatch-preflight.test.sh green\n' "$cur"
+  } > "$dir/task-99-test.plan.md"
+}
+
+# --- 31a/31b: the two writer roles are refused while the line is absent ---
+for _role in bionic:implementor bionic:senior-implementor; do
+  _tag="31a"; [ "$_role" = "bionic:senior-implementor" ] && _tag="31b"
+  REPO=$(make_repo "r${_tag}" yes)
+  write_attestation "$REPO" "$SID_A"
+  k2_write_task_plan "$REPO" T1 ""
+  run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w${_tag}" "claude-sonnet-5" \
+                               "$S5_LIVE_TRANSCRIPT" "$_role")"
+  expect_status "${_tag} a ${_role} dispatch at task-scale current: T1 with no approved-by is refused" "2" "$GATE_ST"
+  expect_contains "${_tag} …and the refusal names the missing line" "approved-by" "$GATE_ERR"
+done
+
+# --- 31c: THE CONTROL — the same dispatch with the line present passes ---
+REPO=$(make_repo r31c yes)
+write_attestation "$REPO" "$SID_A"
+k2_write_task_plan "$REPO" T1 "$K2_APPROVED_LINE"
+run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w31c" "claude-sonnet-5" \
+                             "$S5_LIVE_TRANSCRIPT" "bionic:implementor")"
+expect_status "31c control: the same task-scale writer dispatch with approved-by present passes" "0" "$GATE_ST"
+expect_absent "31c …with no refusal printed" "BLOCKED" "$GATE_ERR"
+
+# --- 31d: an approved-by whose value is empty records no approval, at task scale ---
+REPO=$(make_repo r31d yes)
+write_attestation "$REPO" "$SID_A"
+k2_write_task_plan "$REPO" T1 "approved-by:"
+run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w31d" "claude-sonnet-5" \
+                             "$S5_LIVE_TRANSCRIPT" "bionic:implementor")"
+expect_status "31d an empty approved-by: value is not an approval, at task scale" "2" "$GATE_ST"
+
+# --- 31e: the reading roles pass through the same refused task-scale plan ---
+for _role in bionic:researcher bionic:test-runner bionic:auditor bionic:critic; do
+  REPO=$(make_repo "r31e-${_role##*:}" yes)
+  write_attestation "$REPO" "$SID_A"
+  k2_write_task_plan "$REPO" T1 ""
+  run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w31e" "claude-sonnet-5" \
+                               "$S5_LIVE_TRANSCRIPT" "$_role")"
+  expect_status "31e a ${_role} dispatch against the SAME unapproved task-scale plan passes" "0" "$GATE_ST"
+done
+
+# --- 31f: any n >= 1 binds, not only T1 ---
+REPO=$(make_repo r31f yes)
+write_attestation "$REPO" "$SID_A"
+k2_write_task_plan "$REPO" T3 ""
+run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w31f" "claude-sonnet-5" \
+                             "$S5_LIVE_TRANSCRIPT" "bionic:implementor")"
+expect_status "31f task-scale current: T3 with no approved-by is refused (any n >= 1, not just T1)" "2" "$GATE_ST"
+
+
 finish
