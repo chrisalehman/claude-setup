@@ -1193,6 +1193,85 @@ validate_fails_when() {
   return 0
 }
 
+# The `## Slices` section body, same fence-aware/heading-bounded shape as
+# `matrix_section` above — a separate awk pass over the whole plan, stopping at the
+# next `## ` heading. Moved up beside the other Step-4 arms (epic-22 K2.5) for the
+# same reason: the task-scale branch below needs it defined before it is called.
+slices_section() {
+  normalize_newlines "$PLAN" | awk '
+    /^[[:space:]]*```/ { fence = !fence; next }
+    fence { next }
+    /^## Slices/ { f=1; next }
+    /^## / { f=0 }
+    f'
+}
+
+# ---------- the prototype no-row arm (AC-K4.2, epic-22 K4 + K2.5) ----------
+#
+# A PROTOTYPE NEVER DISCHARGES A MATRIX ROW (design decision D7). Its output is a
+# design ruling written back to the spec, not a shipped behavior — nothing about a
+# throwaway is provable by an eval, so a `kind: prototype` slice that also owns a
+# Verification Matrix AC block is a category error the gate can catch structurally:
+# the `## Slices` table names which slices are prototypes, and each AC block's own
+# `slice:` field names which slice discharges it. Reads both tables the same way
+# `validate_fails_when` reads the matrix — rows first, then the block underneath
+# each row — so an AC id absent from the row table (and therefore from the matrix
+# entirely) cannot be judged here either.
+#
+# INERT BELOW STEP 4 (numbered) OR BELOW `current: T<n>` (task-scale, epic-22 K2.5),
+# same reasoning as the two arms above: the Slices table and the Verification Matrix
+# are both Step-3 artifacts, not necessarily complete before then, and a task-scale
+# plan typically carries neither — `slices_section` returns empty and this is a no-op.
+# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
+validate_prototype_no_matrix_row() {
+  local step slices proto_nums line num kind rows ac block_txt ac_slice n
+  step=$(k2_step_num)
+  [ -n "$step" ] || return 0
+  [ "$step" -ge 4 ] || return 0
+
+  slices=$(slices_section | grep -E '^[[:space:]]*\|')
+  [ -n "$slices" ] || return 0
+
+  proto_nums=""
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    echo "$line" | grep -qE '^[[:space:]]*\|[-|:[:space:]]*$' && continue
+    num=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')
+    [ "$num" = "#" ] && continue
+    kind=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$4); print $4}')
+    [ "$kind" = "prototype" ] || continue
+    [ -n "$num" ] || continue
+    proto_nums="$proto_nums $num"
+  done <<< "$slices"
+  [ -n "$proto_nums" ] || return 0
+
+  MATRIX=$(matrix_section)
+  [ -n "$MATRIX" ] || return 0
+  rows=$(echo "$MATRIX" | grep -E '^[[:space:]]*\|')
+  [ -n "$rows" ] || return 0
+
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    echo "$line" | grep -qE '^[[:space:]]*\|[-|:[:space:]]*$' && continue
+    ac=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')
+    [ "$ac" = "AC" ] && continue
+    [ -n "$ac" ] || continue
+    block_txt=$(matrix_block "$ac")
+    [ -n "$block_txt" ] || continue
+    ac_slice=$(echo "$block_txt" | grep -E '^[[:space:]]*slice[[:space:]]*:' | head -1 \
+      | sed -E 's/^[[:space:]]*slice[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
+    [ -n "$ac_slice" ] || continue
+    for n in $proto_nums; do
+      [ "$ac_slice" = "$n" ] || continue
+      echo "BLOCKED: canonical-sdlc step ${CURRENT} — matrix row '${ac}' names 'slice: ${ac_slice}', a 'kind: prototype' row in '## Slices'; a prototype ships nothing and never discharges a matrix row." >&2
+      echo "Plan: $PLAN" >&2
+      echo "Fix: remove the '${ac}:' block, or repoint its 'slice:' to the build slice that cites the prototype's ruling — the prototype's own output is a design decision written to the spec, never a matrix discharge." >&2
+      exit 2
+    done
+  done <<< "$rows"
+  return 0
+}
+
 # Parse current step. Accepts integers (1-13) and the 8b adversarial
 # critic step.
 CURRENT=$(echo "$SECTION" \
@@ -1203,18 +1282,19 @@ CURRENT=$(echo "$SECTION" \
 
 # Task-scale plans address a ledger TASK, not a numbered step:
 # `current: T<n>` with evidence on `- T<n>:` lines (no `Step N:` line). Validate
-# the ledger (log-only, D12/D14), then — epic-22 K2.5 — run the SAME two Step-4 arms
-# a numbered-step plan runs below: a task-scale plan is always mid-execution, never
-# mid-authoring, so `current: T<n>` (any n >= 1) reads as past Step 3 and the
-# approved-by / fails-when walls bind on it exactly as they do from `current: 4`
-# onward (`k2_step_num`, above, recognises the T-format directly). A `current: T<n>`
-# on a non-task plan is NOT accepted here; it falls through to the numeric check
-# below and blocks (T-format is scale: task only).
+# the ledger (log-only, D12/D14), then — epic-22 K2.5 — run the SAME three Step-4
+# arms a numbered-step plan runs below: a task-scale plan is always mid-execution,
+# never mid-authoring, so `current: T<n>` (any n >= 1) reads as past Step 3 and the
+# approved-by / fails-when / prototype-no-row walls bind on it exactly as they do
+# from `current: 4` onward (`k2_step_num`, above, recognises the T-format
+# directly). A `current: T<n>` on a non-task plan is NOT accepted here; it falls
+# through to the numeric check below and blocks (T-format is scale: task only).
 # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
 if echo "$CURRENT" | grep -qE '^T[0-9]+$' && [ "$SCALE" = "task" ]; then
   validate_task_ledger
   validate_approved_by
   validate_fails_when
+  validate_prototype_no_matrix_row
   exit 0
 fi
 
@@ -1615,15 +1695,17 @@ keys_for_tier() {
   esac
 }
 
-# THE TWO STEP-4 ARMS (epic-22 K2, K2.5): `matrix_section`, `matrix_block`,
-# `k2_step_num`, `validate_approved_by` and `validate_fails_when` are now defined just
-# before `CURRENT` is parsed, above — moved there so the task-scale `current: T<n>`
-# branch can call them too, instead of `exit 0`ing before ever reaching them. This is
-# the numbered-step call: it still runs in the same place it always has, right before
-# the pointer-step exit below.
+# THE THREE STEP-4 ARMS (epic-22 K2, K4, K2.5): `matrix_section`, `matrix_block`,
+# `slices_section`, `k2_step_num`, `validate_approved_by`, `validate_fails_when` and
+# `validate_prototype_no_matrix_row` are now all defined just before `CURRENT` is
+# parsed, above — moved there so the task-scale `current: T<n>` branch can call them
+# too, instead of `exit 0`ing before ever reaching them. This is the numbered-step
+# call: it still runs in the same place it always has, right before the pointer-step
+# exit below.
 # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
 validate_approved_by
 validate_fails_when
+validate_prototype_no_matrix_row
 
 # THE POINTER-STEP EXIT, relocated from above (epic-22 K2). A pointer step records a
 # link or a path rather than shaped fields; having passed the presence and placeholder
