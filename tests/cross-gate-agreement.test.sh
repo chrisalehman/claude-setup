@@ -8489,12 +8489,14 @@ expect_eq "S19.2 …and the same sweep DOES fire on a copy with the idiom plante
 # (Section 6) added three more (order-reversed, Mechanisms-inherited-stripped,
 # strategic-by-rule-stripped mutants), 26->29/27->30; K5 (Section 13) added three more
 # again (DOCTORED_NO_REQ_LAYOUT, DOCTORED_NO_SENTENCE, DOCTORED_NO_ROW_CLAUSE), 29->32/
-# 30->33. RE-DERIVED BY DIRECT GREP over the merged docs-pins.test.sh, not carried
-# forward from either pre-merge side — both sides' own "29"/"30" were each only two of
-# the three slices.
-expect_eq "S19.3 docs-pins holds 32 doctoring sites" "32" \
+# 30->33. RE-POINTED AGAIN (plan slice 21, K5.4, Section 15): one more doctoring site
+# (DOCTORED_NO_K54_CLAUSE) and one more anchor call, 32->33/33->34 — A-31's own warning
+# that a later card with a branch pair moves this count, landing on schedule.
+# RE-DERIVED BY DIRECT GREP over the merged docs-pins.test.sh at each point, not carried
+# forward from a pre-merge side.
+expect_eq "S19.3 docs-pins holds 33 doctoring sites" "33" \
   "$(/usr/bin/grep -cE '^DOCTORED[A-Z0-9_]*="\$TMP/' "$S19_DOCS_PINS")"
-expect_eq "S19.3 …declared by 33 anchor calls (Section 8's doctoring rewrites two sentences; Section 12 adds three, K1; Section 6 adds three, K3; Section 13 adds three, K5)" "33" \
+expect_eq "S19.3 …declared by 34 anchor calls (Section 8's doctoring rewrites two sentences; Section 12 adds three, K1; Section 6 adds three, K3; Section 13 adds three, K5; Section 15 adds one, K5.4)" "34" \
   "$(/usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]' "$S19_DOCS_PINS")"
 # 25 since Step 6: §S13.2 lifts the wall's own reduction out of the hook and
 # anchors both lines it lifts (review-b B-3). 26 at epic-21 wave-02 S12, when §V's
@@ -8532,7 +8534,9 @@ expect_eq "S19.3 …and landing-gate by three: the inverted-guard mutant, and th
 # down from 26). 33 + 25 + 1 + 3 = 62 — RE-DERIVED BY DIRECT GREP over the merged
 # files at THIS commit, never carried forward from either pre-merge side, which is the
 # whole reason this literal exists.
-expect_eq "S19.3 …62 anchor call sites across the four doctoring suites, all told" "62" \
+# 63 once plan slice 21 (K5.4, docs-pins Section 15) added its one anchor call on top
+# of the 62 baseline: 34 + 25 + 1 + 3 = 63 — RE-DERIVED BY DIRECT GREP the same way.
+expect_eq "S19.3 …63 anchor call sites across the four doctoring suites, all told" "63" \
   "$(cat "$S19_DOCS_PINS" "$S19_TESTS_DIR/cross-gate-agreement.test.sh" \
         "$S19_TESTS_DIR/agent-context-guard.test.sh" "$S19_TESTS_DIR/landing-gate.test.sh" \
      | /usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]')"
