@@ -601,6 +601,8 @@ The vehicle is a single-turn close-out report, sent to the user at Step 9 and ne
 
 Where — and only where — `deploy_target` names a live surface this run operates, the close-out also carries `deployed:`, `verified:`, and `monitored:`: the release lands, it is verified on the surface, and it is watched for one cycle before the report claims done. `deploy_target` defaults to `n/a` and is never inferred (Step 0), so this trio is strictly opt-in — the ordinary run owes nothing past delivery.
 
+**Archiving.** Once `delivered:` is written, call `archive_run` (`payload/scripts/lib/archive.sh`) with the closing plan's own directory under `<docs-root>/plans/`: an epic close or a standalone run's close moves that directory's `specs:`/`plans:`/`adrs:` trio to `<archive-root>/<project>/.bionic/<same relative path>`, and a wave inside an open epic moves nothing. `archive-on-close: false` in `.bionic/config.yaml` turns this off for the project. The close-out report's `delivered:` line is followed by an `archived:` line naming what moved, or why nothing did — the line `archive_run` itself printed.
+
 ## Evidence shapes
 
 One evidence artifact per step under `Step N:` in `## SDLC State`. The gate validates the current step only.
@@ -614,7 +616,7 @@ One evidence artifact per step under `Step N:` in `## SDLC State`. The gate vali
 | 6 | pointer to the 6-axis body + critic findings; matrix re-validated here |
 | 7 | `adr:` OR `rca:` OR `n/a:` |
 | 8 | `merge:`, `worktree-removed:`, and (`cleanup:`, `tmp-wiped:`, `tasks-completed:` OR `cleanup: n/a`) |
-| 9 | `delivered:` always, ON the `Step 9:` line itself — the run-closure predicate (`lib/run.sh`) greps that one line, so a `delivered:` written on a continuation line leaves the run open forever; plus `deployed:`, `verified:`, `monitored:` exactly when `deploy_target` names a live surface |
+| 9 | `delivered:` always, ON the `Step 9:` line itself — the run-closure predicate (`lib/run.sh`) greps that one line, so a `delivered:` written on a continuation line leaves the run open forever; `archived:` always, naming what `archive_run` moved or why nothing moved; plus `deployed:`, `verified:`, `monitored:` exactly when `deploy_target` names a live surface |
 
 **Placeholder ban.** These exact values are rejected anywhere evidence is required: `todo`, `pending`, `in progress`, `inprogress`, `xxx`, `tbd`, `placeholder`.
 
