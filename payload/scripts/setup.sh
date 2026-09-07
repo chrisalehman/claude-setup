@@ -383,6 +383,17 @@ _setup_item_verb() {  # <name>
       # A STALE ROW IS A RE-SYNC IN THE PLAN TOO (AC-17). The page a user consents
       # from is where "not re-offered" is first visible, and "install X" over a
       # renderer already on the machine is the offer the spec rules out.
+      # AND A RESTORE IS NOT AN INSTALL ON THE PAGE EITHER (REQ-S0, A-S9.5). A
+      # machine whose plugin files are all still in the cache and has only lost
+      # its registry entry is offered a repair, not a download — and this page is
+      # the one place the user decides, so "install impeccable" there would be
+      # asking consent for an act that is not the act. Asked of the dependency
+      # mechanism, exactly as the stale arm below asks `check_dep`: the page must
+      # never carry a second opinion about the state.
+      if dep_registry_row_restorable "${1#tool:}"; then
+        say "restore ${1#tool:}'s entry from the plugin cache, downloading nothing"
+        return 0
+      fi
       _setup_verb_present="$(check_dep "${1#tool:}" 2>/dev/null)" || _setup_verb_present=""
       _setup_verb_present="${_setup_verb_present#present=}"
       _setup_verb_present="${_setup_verb_present%%|*}"
