@@ -1629,7 +1629,102 @@ expect_contains "97h: …and sends an unfalsifiable criterion back to Step 1" \
 expect_eq "97e: the Eval design column header is a single line" "1" \
   "$(printf '%s\n' "$EVAL_HEADER" | wc -l | tr -d ' ')"
 
-# ── Section 7: K4 — the prototype unit (AC-K4.1, AC-K4.3) ───────────────────
+section "Section 14: K5 — the layout block names .requirements.md and the three-artifact sentence (spec §Eval design K5, plan slice 19)"
+#
+# WHAT THIS SECTION OWNS. K5 (design ledger K5; ADR-001) fixes three artifacts to three
+# steps. AC-K5.3 pins that SKILL.md's own text — the Artifact-layout code block and the
+# Steps table's rows 1–3 — names all three (requirements.md, spec.md, plan.md) and, in
+# one sentence each, what each holds. This is the "human reads the skill" half of K5; the
+# hook arms that enforce it (governing-skill's frontmatter contract, evidence-gate's
+# Step-1 pointer) are pinned by their own suites, not here.
+#
+# NUMBERED FROM 98 (renumbered at the epic-22 K2+K5 merge, plan slices 16/19 landing
+# together — both sections were independently numbered "Section 13" and started their own
+# assertions back at ~83/90a; Section 13 above is K2's and keeps its numbers, this section
+# is K5's and starts fresh past its last one, 97h).
+#
+# ANTI-VACUITY, same discriminate-a-doctored-copy pattern as Section 12: each extractor is
+# re-run against a copy mutated to reproduce K5.3's own "fails-when" (absent), and must go red.
+
+LAYOUT_BLOCK="$(awk '/^## Artifact layout$/{f=1;next} f&&/^```$/{c++; if(c==2) exit} f&&c==1{print}' "$SKILL_MD")"
+
+expect_true "98: the Artifact-layout code block is found in SKILL.md" \
+  test -n "$LAYOUT_BLOCK"
+
+expect_contains "99: AC-K5.3 — the layout block names wave-NN-<slug>.requirements.md beside the spec (fails-when: absent)" \
+  "wave-NN-<slug>.requirements.md" "$LAYOUT_BLOCK"
+
+expect_regex "100: 99's requirements.md sits in the SAME specs/ line as .spec.md, not its own directory" \
+  '^<docs-root>/specs/epic-NN-<slug>/\{[^}]*wave-NN-<slug>\.spec\.md[^}]*wave-NN-<slug>\.requirements\.md[^}]*\}$' \
+  "$LAYOUT_BLOCK"
+
+# The three-artifact sentence: one sentence each, naming what requirements.md, spec.md
+# and plan.md hold. Pinned as three separate substring checks (the exact prose is not
+# pinned, only that each artifact name co-occurs with its content description) rather
+# than one long regex, so a future reword of the connective prose does not false-fail
+# a check whose real subject is "does the sentence exist and name the right things".
+THREE_ARTIFACT_TEXT="$(awk '/^\*\*Three artifacts, three steps\*\*/{f=1} f{print} f&&/^$/{exit}' "$SKILL_MD")"
+
+expect_true "101: the three-artifact sentence is found in SKILL.md" \
+  test -n "$THREE_ARTIFACT_TEXT"
+
+expect_contains "102a: AC-K5.3 — names requirements.md and what it holds (fails-when: absent)" \
+  "requirements.md\`: numbered requirements" "$THREE_ARTIFACT_TEXT"
+expect_contains "102b: AC-K5.3 — names spec.md and what it holds (fails-when: absent)" \
+  "spec.md\`: the technical design" "$THREE_ARTIFACT_TEXT"
+expect_contains "102c: AC-K5.3 — names plan.md and what it holds (fails-when: absent)" \
+  "plan.md\`: slices, sequencing" "$THREE_ARTIFACT_TEXT"
+
+# Steps table rows 1-3: each row's Gate cell also names its Step's artifact + one-line content.
+STEP1_ROW="$(grep -E '^\| 1 Scope \|' "$SKILL_MD")"
+STEP2_ROW="$(grep -E '^\| 2 Design \|' "$SKILL_MD")"
+STEP3_ROW="$(grep -E '^\| 3 Plan \|' "$SKILL_MD")"
+
+expect_contains "103a: AC-K5.3 — Step 1's table row names requirements.md + what it holds (fails-when: absent)" \
+  "requirements.md\` — numbered requirements" "$STEP1_ROW"
+expect_contains "103b: AC-K5.3 — Step 2's table row names spec.md + what it holds (fails-when: absent)" \
+  "spec.md\` — the technical design" "$STEP2_ROW"
+expect_contains "103c: AC-K5.3 — Step 3's table row names plan.md + what it holds (fails-when: absent)" \
+  "plan.md\` — slices, sequencing" "$STEP3_ROW"
+
+# --- Anti-vacuity: each extractor must go red on the fails-when it names (absent) ---
+
+# 104: a layout block with requirements.md stripped out fails 99.
+anchor "$SKILL_MD" ', wave-NN-<slug>.requirements.md}' 1
+DOCTORED_NO_REQ_LAYOUT="$TMP/skill-k5-no-req-layout.md"
+sed 's/, wave-NN-<slug>\.requirements\.md}/}/' "$SKILL_MD" > "$DOCTORED_NO_REQ_LAYOUT"
+DOCTORED_LAYOUT_104="$(awk '/^## Artifact layout$/{f=1;next} f&&/^```$/{c++; if(c==2) exit} f&&c==1{print}' "$DOCTORED_NO_REQ_LAYOUT")"
+case "$DOCTORED_LAYOUT_104" in
+  *"wave-NN-<slug>.requirements.md"*) no "104: a layout block with requirements.md stripped still 'has' it (pin is vacuous)" ;;
+  *) ok "104: a layout block with requirements.md stripped fails the name check (pin discriminates)" ;;
+esac
+
+# 105: a SKILL.md with the whole three-artifact sentence removed fails 101/102a-c.
+anchor -E "$SKILL_MD" '^\*\*Three artifacts, three steps\*\*' 1
+DOCTORED_NO_SENTENCE="$TMP/skill-k5-no-sentence.md"
+awk '/^\*\*Three artifacts, three steps\*\*/{skip=1} skip&&/^$/{skip=0;next} !skip{print}' "$SKILL_MD" > "$DOCTORED_NO_SENTENCE"
+DOCTORED_SENTENCE_105="$(awk '/^\*\*Three artifacts, three steps\*\*/{f=1} f{print} f&&/^$/{exit}' "$DOCTORED_NO_SENTENCE")"
+if [ -z "$DOCTORED_SENTENCE_105" ]; then
+  ok "105: a SKILL.md with the three-artifact sentence removed fails the presence check (pin discriminates)"
+else
+  no "105: a SKILL.md with the three-artifact sentence removed fails the presence check (pin discriminates)" \
+     "the mutated copy still carried the sentence — the mutation is a no-op"
+fi
+
+# 106: a Step-1 table row with its artifact clause stripped fails 103a.
+anchor "$SKILL_MD" "requirements.md\` — numbered requirements" 1
+DOCTORED_NO_ROW_CLAUSE="$TMP/skill-k5-no-row-clause.md"
+sed -E "s/; writes \`wave-NN-<slug>\.requirements\.md\`[^|]*//" "$SKILL_MD" > "$DOCTORED_NO_ROW_CLAUSE"
+DOCTORED_ROW1_106="$(grep -E '^\| 1 Scope \|' "$DOCTORED_NO_ROW_CLAUSE")"
+case "$DOCTORED_ROW1_106" in
+  *"requirements.md\` — numbered requirements"*) no "106: a Step-1 row with its artifact clause stripped still 'has' it (pin is vacuous)" ;;
+  *) ok "106: a Step-1 row with its artifact clause stripped fails the row check (pin discriminates)" ;;
+esac
+
+# ── Section 15: K4 — the prototype unit (AC-K4.1, AC-K4.3) ──────────────────
+#
+# NUMBERED FROM 107, past K5's last number (106) — same renumber-at-merge
+# convention Section 14's own header note explains.
 #
 # AC-K4.1: the skill defines the prototype unit — three fields (question, what "right"
 # looks like, timebox), two homes (Step 2 by default, Step 4 by exception with a stated
@@ -1645,18 +1740,18 @@ proto_span() {
 }
 PROTO_SPAN="$(proto_span)"
 
-expect_true "98a: the prototype-unit paragraph exists in the skill file" test -n "$PROTO_SPAN"
+expect_true "107a: the prototype-unit paragraph exists in the skill file" test -n "$PROTO_SPAN"
 
 if has_all "$PROTO_SPAN" "question" '"right"' "timebox" "ships nothing" \
                         "never owns a matrix row" "Step 2" "Step 4" "kind: prototype" \
                         "states that reason" "refused by the evidence gate"; then
-  ok "98b: AC-K4.1 — the prototype unit names its three fields, two homes (the Step-4 exception stating its reason), the ruling-to-spec rule, ships nothing, and the no-row rule"
+  ok "107b: AC-K4.1 — the prototype unit names its three fields, two homes (the Step-4 exception stating its reason), the ruling-to-spec rule, ships nothing, and the no-row rule"
 else
-  no "98b: AC-K4.1 — the prototype unit names its three fields, two homes (the Step-4 exception stating its reason), the ruling-to-spec rule, ships nothing, and the no-row rule" \
+  no "107b: AC-K4.1 — the prototype unit names its three fields, two homes (the Step-4 exception stating its reason), the ruling-to-spec rule, ships nothing, and the no-row rule" \
      "span: $PROTO_SPAN"
 fi
 
-# 98c: Anti-vacuity — a copy with the no-row rule's sentence stripped fails 98b's check.
+# 107c: Anti-vacuity — a copy with the no-row rule's sentence stripped fails 107b's check.
 anchor "$SKILL_MD" 'never owns a matrix row' 1
 DOCTORED_NO_ROWRULE="$TMP/skill-k4-no-rowrule.md"
 sed '/never owns a matrix row/d' "$SKILL_MD" > "$DOCTORED_NO_ROWRULE"
@@ -1668,26 +1763,27 @@ DOCTORED_PROTO_SPAN="$(awk '
 if has_all "$DOCTORED_PROTO_SPAN" "question" '"right"' "timebox" "ships nothing" \
                         "never owns a matrix row" "Step 2" "Step 4" "kind: prototype" \
                         "states that reason" "refused by the evidence gate"; then
-  no "98c: a prototype-unit paragraph missing the no-row rule still passes 98b's check (pin is vacuous)" \
+  no "107c: a prototype-unit paragraph missing the no-row rule still passes 107b's check (pin is vacuous)" \
      "doctored span: $DOCTORED_PROTO_SPAN"
 else
-  ok "98c: a prototype-unit paragraph missing the no-row rule fails 98b's check (pin discriminates)"
+  ok "107c: a prototype-unit paragraph missing the no-row rule fails 107b's check (pin discriminates)"
 fi
 
 # AC-K4.3: the Step-3 card's "Open at approval" section is a QUESTION → SLICE mapping, not
 # just a bare header — 93a already pins the header string; this pins the row shape it
 # names, `closed by slice <n>`, which is what makes the section machine-checkable rather
 # than a caption with nothing under it.
-expect_contains "98d: AC-K4.3 — the Step-3 card's Open-at-approval row maps a question to the slice that closes it" \
+expect_contains "107d: AC-K4.3 — the Step-3 card's Open-at-approval row maps a question to the slice that closes it" \
   "closed by slice" "$CARD3"
 
-# 98e: Anti-vacuity — a Step-3 card with the mapping text stripped fails 98d.
+# 107e: Anti-vacuity — a Step-3 card with the mapping text stripped fails 107d.
 anchor "$SKILL_MD" 'closed by slice' 1
 DOCTORED_NO_CLOSEDBY="$TMP/skill-k4-no-closedby.md"
 sed 's/closed by slice/discharged eventually/' "$SKILL_MD" > "$DOCTORED_NO_CLOSEDBY"
-DOCTORED_CARD3_98="$(card_span "$DOCTORED_NO_CLOSEDBY" 'Step 3 · Plan')"
-case "$DOCTORED_CARD3_98" in
-  *"closed by slice"*) no "98f: a Step-3 card missing the 'closed by slice' mapping still 'has' it (pin is vacuous)" ;;
-  *) ok "98f: a Step-3 card missing the 'closed by slice' mapping fails the K4.3 check (pin discriminates)" ;;
+DOCTORED_CARD3_107="$(card_span "$DOCTORED_NO_CLOSEDBY" 'Step 3 · Plan')"
+case "$DOCTORED_CARD3_107" in
+  *"closed by slice"*) no "107f: a Step-3 card missing the 'closed by slice' mapping still 'has' it (pin is vacuous)" ;;
+  *) ok "107f: a Step-3 card missing the 'closed by slice' mapping fails the K4.3 check (pin discriminates)" ;;
 esac
+
 finish
