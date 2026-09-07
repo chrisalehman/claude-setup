@@ -736,9 +736,17 @@ expect_no_match "19.2: …and the old unconditional line is gone too" \
 # failure marker, must NOT earn a fix line either — this is the exact shape the
 # pre-R2 detector fired on (`[ -n "$(patrol_dead_sessions …)" ]`), which is what
 # made ticket-30's "N problems" never reach zero between one `/clear` and the
-# next session start. The ✗ `predecessor …` PATROL line still renders (doctor's
-# per-session listing is untouched by this slice) — only the FIX line, the one
-# that raises N_FIX, must stay silent.
+# next session start. The per-session PATROL `predecessor …` line still renders
+# (doctor's per-session listing is untouched by this slice) but no longer as a
+# ✗ row: 12f18/18.6/18.7 above pin "every ✗ row is a problem, count >= rows on
+# the whole page" over THIS repo's own live ambient .bionic/tmp state, and a
+# predecessor line marked ✗ while contributing nothing to N_FIX (once the fix
+# line is conditional) is exactly the count-less-than-rows shape that rule
+# forbids — caught against $REPO's own real dead-session residue from the
+# other agents in this wave, not against this section's private fixtures.
+# `$DOCTOR_NIL` (the same glyph `active run: none` uses a few lines above the
+# predecessor loop in doctor.sh) is the fix: a true fact about this project
+# that names no action is informational, not a ✗.
 DS_R2_D="$(ds_r2_repo)"
 DS_R2_D_SID="018c3ea1-1111-4111-8111-111111111111"
 printf '# bionic session roster — schema roster-state/v1\n' > "$DS_R2_D/.bionic/tmp/roster-${DS_R2_D_SID}.state"
@@ -749,6 +757,8 @@ expect_no_match "19.9: …but mere residue, with no failure marker, earns no fix
   "*dead session* left state under .bionic/tmp*" "$OUT19D"
 expect_no_match "19.10: …nor the new-style line — nothing failed here" \
   "*automatic dead-session sweep failed*" "$OUT19D"
+expect_no_match "19.11: …and the predecessor line itself is not a ✗ row (count >= rows, 12f18)" \
+  "*✗ predecessor*" "$OUT19D"
 
 # ---------- the marker present: exactly one line, naming the rc ----------
 DS_R2_B="$(ds_r2_repo)"
