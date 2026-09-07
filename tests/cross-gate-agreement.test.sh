@@ -8458,4 +8458,172 @@ expect_eq "S17c …and it does grep the marker, through the constant (the zero i
 
 
 # ============================================================
+section "B — no backtick pair hides inside a double-quoted assertion name (AC-B.1/AC-B.2, epic-22 slice 7)"
+# ============================================================
+#
+# THE DEFECT CLASS (seed ideas/fixit-residue-names.md item 3, critic issue 3 / A-S18a-6).
+# `expect_*` calls take their FIRST argument as a human-readable label, always inside double
+# quotes. A label that wraps a literal token in backticks for readability — "the neighbour
+# the `.` would have swallowed" — is not quoted text to bash: a double-quoted string still
+# expands backtick command substitution, so the shell RUNS `.` (the `source` builtin, no
+# argument) on every pass, corrupts the label to whatever it printed, and dumps a usage
+# error to stderr. This landed three times in this wave alone and once executed `uv tool
+# install --force omnigent` for real (critic issue 3) — a machine-mutating class of test
+# defect, not a cosmetic one. The instance live on main is tests/stop-check.test.sh:298,
+# fixed by 8727375 (this slice's cherry-pick, landed in this same tree).
+#
+# THE SCAN. A per-line state machine, not a bare regex: it tracks single/double-quote state,
+# stops at a `#` outside any quote (comments never execute), and skips heredoc BODY lines
+# entirely between an opening `<<[-]DELIM` (quoted or not) and its closing delimiter line —
+# heredoc text is never "inside a double-quoted string" as a shell grammar node. An escaped
+# backtick (`\``) is consumed by its backslash, so no pair forms. THE ONE CASE THAT NEEDS ITS
+# OWN RULE: a legitimate $(...) substitution nested inside a double-quoted string reopens
+# ordinary shell quoting for its own body, so a backtick nested inside a SINGLE-quoted
+# argument of a $(...) call — e.g. "$(printf '```markdown```')" — is inert there for the
+# same reason it is inert anywhere else inside single quotes; the scanner re-enters its own
+# state machine for a $(...) span instead of reading it as flat text. Without that rule, four
+# genuine committed lines (fenced code blocks passed to `printf` inside $(...), in
+# tests/canonical-sdlc-governing-skill.test.sh) false-positive and §B.2 could never be green
+# on this tree. Left alone, by design: a bare backtick pair directly inside a $(...) body,
+# not nested in further quotes, is real intentional legacy substitution nested in the modern
+# form — a style question, not this defect class. A hit prints as `<file>:<line>`, one per
+# PAIR found.
+
+B_AWK="$SANDBOX/backtick-scan.awk"
+cat > "$B_AWK" <<'AWK_EOF'
+function skip_squote(line, i, n,    c) {
+  while (i <= n) { c = substr(line, i, 1); if (c == "'") return i + 1; i++ }
+  return n + 1
+}
+function scan_subshell(line, i, n,    c, r) {
+  while (i <= n) {
+    c = substr(line, i, 1)
+    if (c == "\\") { i += 2; continue }
+    if (c == "'") { i = skip_squote(line, i + 1, n); continue }
+    if (c == "\"") { r = scan_dquote(line, i + 1, n); i = r + 1; continue }
+    if (c == "$" && substr(line, i + 1, 1) == "(") { i = scan_subshell(line, i + 2, n); continue }
+    if (c == ")") return i + 1
+    i++
+  }
+  return n + 1
+}
+function find_second_backtick(line, i, n,    c) {
+  while (i <= n) {
+    c = substr(line, i, 1)
+    if (c == "\\") { i += 2; continue }
+    if (c == "`") return i
+    if (c == "\"") return 0
+    i++
+  }
+  return 0
+}
+function scan_dquote(line, i, n,    c, j) {
+  while (i <= n) {
+    c = substr(line, i, 1)
+    if (c == "\\") { i += 2; continue }
+    if (c == "\"") return i
+    if (c == "$" && substr(line, i + 1, 1) == "(") { i = scan_subshell(line, i + 2, n); continue }
+    if (c == "`") {
+      j = find_second_backtick(line, i + 1, n)
+      if (j > 0) { HIT = 1; i = j + 1; continue }
+      i++; continue
+    }
+    i++
+  }
+  return n + 1
+}
+function scan_line(line,    i, n, c, r) {
+  HIT = 0; i = 1; n = length(line)
+  while (i <= n) {
+    c = substr(line, i, 1)
+    if (c == "#") return HIT
+    if (c == "\\") { i += 2; continue }
+    if (c == "'") { i = skip_squote(line, i + 1, n); continue }
+    if (c == "\"") { r = scan_dquote(line, i + 1, n); i = r + 1; continue }
+    i++
+  }
+  return HIT
+}
+function heredoc_start(line,    tmp) {
+  if (match(line, /<<-?[ \t]*'[A-Za-z_][A-Za-z0-9_]*'/)) {
+    tmp = substr(line, RSTART, RLENGTH); HD_STRIP = (tmp ~ /^<<-/) ? 1 : 0
+    sub(/^<<-?[ \t]*'/, "", tmp); sub(/'$/, "", tmp); HD_DELIM = tmp; return 1
+  }
+  if (match(line, /<<-?[ \t]*"[A-Za-z_][A-Za-z0-9_]*"/)) {
+    tmp = substr(line, RSTART, RLENGTH); HD_STRIP = (tmp ~ /^<<-/) ? 1 : 0
+    sub(/^<<-?[ \t]*"/, "", tmp); sub(/"$/, "", tmp); HD_DELIM = tmp; return 1
+  }
+  if (match(line, /<<-?[ \t]*[A-Za-z_][A-Za-z0-9_]*/)) {
+    tmp = substr(line, RSTART, RLENGTH); HD_STRIP = (tmp ~ /^<<-/) ? 1 : 0
+    sub(/^<<-?[ \t]*/, "", tmp); HD_DELIM = tmp; return 1
+  }
+  return 0
+}
+function is_delim_line(line,    t) {
+  t = line; if (HD_STRIP) sub(/^[ \t]+/, "", t); return (t == HD_DELIM)
+}
+FNR == 1 { IN_HEREDOC = 0 }
+{
+  if (IN_HEREDOC) { if (is_delim_line($0)) IN_HEREDOC = 0; next }
+  if (scan_line($0)) print FILENAME ":" FNR
+  if (heredoc_start($0)) IN_HEREDOC = 1
+}
+AWK_EOF
+
+b_scan() { awk -f "$B_AWK" "$@" 2>/dev/null; }
+
+# (a) §B.2 — GREEN ON THE COMMITTED TREE. The same two roots 8727375's own sweep grep named
+# (minus tests/drill/, which does not exist on main, per plan Assumption A-6).
+B_TESTS_HITS="$(b_scan "$REPO_ROOT"/tests/*.test.sh "$REPO_ROOT"/tests/lib/*.sh)"
+expect_empty "§B.2 the scan is silent on the committed tree (the fix landed, nothing else hides)" \
+  "$B_TESTS_HITS"
+
+# (b) §B.1 — THE MUTATION, the discriminator. A scratch COPY of one suite (the shipped file
+# is never touched), with a fresh backtick pair planted at a known line — line 2, right
+# after the shebang, so no `anchor` precondition is needed: this is an INSERTION at a fixed
+# offset, not a pattern-matched deletion that could silently miss its target.
+B_MUT_DIR="$SANDBOX/backtick-mutant"; mkdir -p "$B_MUT_DIR"
+{
+  head -n 1 "$REPO_ROOT/tests/session-sweeper.test.sh"
+  printf 'expect_eq "a planted `pair` right here" "x" "x"\n'
+  tail -n +2 "$REPO_ROOT/tests/session-sweeper.test.sh"
+} > "$B_MUT_DIR/session-sweeper.test.sh"
+
+B_MUT_HITS="$(b_scan "$B_MUT_DIR/session-sweeper.test.sh")"
+expect_eq "§B.1 a planted pair makes the scan RED naming file:line" \
+  "$B_MUT_DIR/session-sweeper.test.sh:2" "$B_MUT_HITS"
+
+# CONTROL — the same file, unplanted: still silent, or the RED above was the `cp`/`head`/
+# `tail` reshuffle and not the plant.
+B_CTRL_DIR="$SANDBOX/backtick-control"; mkdir -p "$B_CTRL_DIR"
+cp "$REPO_ROOT/tests/session-sweeper.test.sh" "$B_CTRL_DIR/session-sweeper.test.sh"
+expect_empty "…control: the unmutated copy stays silent" \
+  "$(b_scan "$B_CTRL_DIR/session-sweeper.test.sh")"
+
+# (c) THE EXCLUSIONS, individually named — one fixture line per shape, so a future edit that
+# widens the scan (and starts flagging safe text) is caught here rather than being
+# discovered as a false-positive drowning out a real hit. Five shapes: an ESCAPED pair
+# (line 2), a legitimate $(...) with a nested SINGLE-quoted pair (line 3), a pair inside a
+# COMMENT (line 4), a pair inside a bare SINGLE-quoted string (line 5), and a pair inside a
+# HEREDOC body opened with a quoted delimiter (lines 6-8) — the fourth exclusion class
+# 8727375's own commit message named. Only line 9, a real unescaped pair inside a plain
+# double-quoted string, is a hit.
+B_FX="$SANDBOX/backtick-exclusions.sh"
+cat > "$B_FX" <<'FX_EOF'
+#!/bin/bash
+expect_eq "the \`escaped\` pair is inert" "yes" "yes"
+expect_eq "fence" "$(printf '```markdown```')" "x"
+# this comment mentions `a pair` right here
+MSG='the `pair` is inert in single quotes'
+cat <<'HEREDOC_EOF'
+a heredoc body line with a `pair` in it, quoted delimiter
+HEREDOC_EOF
+expect_eq "the neighbour the `.` would have swallowed" "x" "y"
+FX_EOF
+B_FX_HITS="$(b_scan "$B_FX")"
+expect_eq "…the five exclusions (escaped, \$(...) w/ nested single quotes, comment, single-quoted, heredoc body) stay silent; only the real pair on line 9 is a hit" \
+  "$B_FX:9" "$B_FX_HITS"
+
+
+# ============================================================
 finish
