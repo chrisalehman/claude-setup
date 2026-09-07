@@ -41,7 +41,7 @@ fi
 # One loader idiom, byte-identical in every hook (spec AC-16). FAIL OPEN, and here that
 # is barely a choice: this hook is an instrument. Its whole failure mode is silence, and
 # a missing library is one more way to be silent.
-BIONIC_LIB_WANT="roots.sh root.sh run.sh session.sh"
+BIONIC_LIB_WANT="root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -171,7 +171,6 @@ BIONIC_LOADER_REFUSE
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "context-spend"; fi
 # shellcheck source=/dev/null
-. "$BIONIC_LIB/roots.sh"
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"

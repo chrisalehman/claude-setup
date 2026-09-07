@@ -72,7 +72,7 @@ ACTOR=$(_jq '.agent_id')
 # cheap next to refusing every backgrounded command in every session on the machine
 # because one file is missing. The failure directions in this repo are chosen by the
 # cost of the mistake, never uniformly.
-BIONIC_LIB_WANT="roots.sh cmd-class.sh root.sh run.sh session.sh"
+BIONIC_LIB_WANT="cmd-class.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -204,7 +204,6 @@ if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "background-suite-guard";
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/cmd-class.sh"
 # shellcheck source=/dev/null
-. "$BIONIC_LIB/roots.sh"
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"

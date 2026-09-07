@@ -169,7 +169,7 @@ physicalize() {  # $1=absolute path (need not exist) → folded, ancestors resol
 # a mistake a person can move, and the evidence gate's own misplacement sweep catches
 # the consequential half of it at commit time. Refusing every Write and Edit on the
 # machine because a file is missing is not recoverable at that price.
-BIONIC_LIB_WANT="roots.sh root.sh run.sh session.sh binding.sh"
+BIONIC_LIB_WANT="root.sh run.sh session.sh binding.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -299,7 +299,6 @@ BIONIC_LOADER_REFUSE
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "canonical-sdlc-governing-skill"; fi
 # shellcheck source=/dev/null
-. "$BIONIC_LIB/roots.sh"
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"

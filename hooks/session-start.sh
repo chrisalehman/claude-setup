@@ -53,7 +53,7 @@
 
 set -u
 
-BIONIC_LIB_WANT="roots.sh root.sh session.sh patrol.sh run.sh"
+BIONIC_LIB_WANT="root.sh session.sh patrol.sh run.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -185,7 +185,6 @@ BIONIC_LOADER_REFUSE
 # The library, or nothing. `loader_fail_open` prints one stderr line and exits 0 —
 # a detector that cannot read the disk reports nothing rather than guessing.
 [ -n "$BIONIC_LIB" ] || loader_fail_open "session-start"
-. "$BIONIC_LIB/roots.sh"    || exit 0   # every root resolver, and config_value
 . "$BIONIC_LIB/root.sh"    || exit 0   # project_root
 . "$BIONIC_LIB/session.sh" || exit 0   # session_id, and its one divergence warning
 . "$BIONIC_LIB/patrol.sh"  || exit 0   # PATROL_STALE_MULTIPLIER

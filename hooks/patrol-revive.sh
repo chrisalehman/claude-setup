@@ -190,7 +190,7 @@ CWD=$(_jq '.cwd')
 # One loader idiom, byte-identical in every hook (spec AC-16). FAIL OPEN: a monitor
 # that refused a stop because a file was missing would be a worse outage than the one
 # it watches for.
-BIONIC_LIB_WANT="roots.sh root.sh run.sh session.sh"
+BIONIC_LIB_WANT="root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -320,7 +320,6 @@ BIONIC_LOADER_REFUSE
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "patrol-revive"; fi
 # shellcheck source=/dev/null
-. "$BIONIC_LIB/roots.sh"
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"

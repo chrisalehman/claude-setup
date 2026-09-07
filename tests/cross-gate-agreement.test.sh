@@ -4183,9 +4183,35 @@ for _rh in canonical-sdlc-evidence-gate canonical-sdlc-governing-skill session-s
   expect_eq "Roots …and calls the library's docs_root" "yes" \
     "$([ "$(/usr/bin/grep -cE '(^|[^a-z_])docs_root "' "$ROOTS_TREE/hooks/$_rh.sh")" -ge 1 ] \
        && echo yes || echo no)"
-  expect_eq "Roots …declaring roots.sh through the loader contract" "1" \
-    "$(/usr/bin/grep -cE '^BIONIC_LIB_WANT="roots\.sh( |")' "$ROOTS_TREE/hooks/$_rh.sh")"
+  # THE DECLARATION RULE, and why it is a disjunction. A hook reaches `docs_root` one of
+  # two ways: it declares roots.sh through the loader idiom, or it declares run.sh, which
+  # soft-sources roots.sh from its own directory. The second is not a loophole — it is the
+  # shape lib/detect.sh already has for lib/deps.sh, and no hook in the tree declares
+  # deps.sh either. What matters is that a hook does not reach a library it never named a
+  # route to; a hook declaring NEITHER is the regression this row catches.
+  expect_eq "Roots …declaring a route to it, roots.sh or the run.sh that pulls it in" "yes" \
+    "$([ "$(/usr/bin/grep -cE '^BIONIC_LIB_WANT=.*(roots\.sh|run\.sh)' "$ROOTS_TREE/hooks/$_rh.sh")" -ge 1 ] \
+       && echo yes || echo no)"
 done
+
+# The two hooks that source NEITHER run.sh nor any other carrier name roots.sh outright —
+# without the declaration the loader would qualify a directory that has no roots.sh in it,
+# and these two would resolve every contracted path against the wrong root in silence.
+for _rh in session-sweeper stop-check; do
+  expect_eq "Roots $_rh.sh names roots.sh outright — it sources no other carrier" "1" \
+    "$(/usr/bin/grep -cE '^BIONIC_LIB_WANT="roots\.sh( |")' "$ROOTS_TREE/hooks/$_rh.sh")"
+  expect_eq "Roots …and sources it" "1" \
+    "$(grep -cF '. "$BIONIC_LIB/roots.sh"' "$ROOTS_TREE/hooks/$_rh.sh")"
+  expect_eq "Roots …and really does not source run.sh (the disjunction above is not vacuous)" "0" \
+    "$(/usr/bin/grep -cE '^BIONIC_LIB_WANT=.*run\.sh' "$ROOTS_TREE/hooks/$_rh.sh")"
+done
+
+# lib/run.sh IS the carrier the disjunction leans on: it soft-sources roots.sh at source
+# time, so `. lib/run.sh` on its own is still a complete thing.
+expect_eq "Roots lib/run.sh soft-sources roots.sh, which is what makes the route real" "1" \
+  "$(grep -cF '/roots.sh"' "$ROOTS_LIB_DIR/run.sh")"
+expect_eq "Roots …and sourcing run.sh alone really does define docs_root and config_value" "yes" \
+  "$(bash -c '. "$1" >/dev/null 2>&1; declare -F docs_root >/dev/null 2>&1 && declare -F config_value >/dev/null 2>&1 && echo yes || echo no' _ "$ROOTS_LIB_DIR/run.sh")"
 expect_eq "Roots lib/run.sh defines no docs_root of its own (the fifth copy, invisible to §R)" "0" \
   "$(/usr/bin/grep -cE '^docs_root\(\)' "$ROOTS_LIB_DIR/run.sh")"
 expect_eq "Roots …and lib/run.sh defines no config_value of its own either" "0" \
@@ -8241,12 +8267,8 @@ expect_eq "S18.2 landing-gate.sh calls the shared mapping" "1" \
   "$(grep -cF 'worktree_for_row "$repo" "$name"' "$S18_LG")"
 expect_eq "S18.2 …and never redefines it" "0" \
   "$(grep -c '^worktree_for_row()' "$S18_LG")"
-# roots.sh leads the list since epic-22 wave-01 N1: the landing gate sources lib/run.sh,
-# whose docs-root and config readers are lib/roots.sh's now, and the loader qualifies a
-# candidate directory only when it holds EVERY wanted basename — so an undeclared roots.sh
-# is a gate that loads from a directory without it and dies on its first config read.
 expect_eq "S18.2 …declaring the dependency, per the loader contract" "1" \
-  "$(grep -cF 'BIONIC_LIB_WANT="roots.sh root.sh run.sh session.sh worktree.sh"' "$S18_LG")"
+  "$(grep -cF 'BIONIC_LIB_WANT="root.sh run.sh session.sh worktree.sh"' "$S18_LG")"
 
 # --- §S18.3 the reconciliation re-asks the SAME impact-command key S13's dispatch wall
 # reads — never a second config key, never a second derivation command ---

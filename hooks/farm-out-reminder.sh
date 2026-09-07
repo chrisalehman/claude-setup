@@ -50,7 +50,7 @@ CWD="${CLAUDE_PROJECT_DIR:-}"
 # the hook prints one line and steps aside. Until 1.4.0 it denied instead, on the
 # same reasoning the two irreversible-action walls still use; the cost of THAT
 # mistake is what separates them.
-BIONIC_LIB_WANT="roots.sh cmd-class.sh root.sh run.sh session.sh"
+BIONIC_LIB_WANT="cmd-class.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -182,7 +182,6 @@ if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "farm-out-reminder"; fi
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/cmd-class.sh"
 # shellcheck source=/dev/null
-. "$BIONIC_LIB/roots.sh"
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"

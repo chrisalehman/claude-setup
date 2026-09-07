@@ -57,7 +57,7 @@ fi
 # FAIL-CLOSED (design ledger S4, Chris D1 2026-08-30): this is a wall over an
 # IRREVERSIBLE action, so it refuses rather than waving a command through it cannot
 # read — after permitting the four repair commands by whole-string match.
-BIONIC_LIB_WANT="roots.sh git-argv.sh root.sh run.sh session.sh"
+BIONIC_LIB_WANT="git-argv.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -246,7 +246,6 @@ fi
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/git-argv.sh"
 # shellcheck source=/dev/null
-. "$BIONIC_LIB/roots.sh"
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"

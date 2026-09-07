@@ -80,11 +80,24 @@ LIB_WORKTREE="$(cd "$(dirname "$0")" 2>/dev/null && pwd)/lib/worktree.sh"
 # "the main checkout from anywhere inside this repository" (epic-22 wave-01, N1); this
 # script carried the third copy of it as `resolve_main_root`, beside lib/worktree.sh's
 # `_wt_main_root` and lib/patrol.sh's own root question, none of them held together by any
-# test. Sourced at the top rather than per-verb because every verb resolves that root, and a
-# script that cannot find it can do nothing at all — which is what the refusal below says.
+# test.
+#
+# SOURCED AT THE TOP, unlike LIB_WORKTREE above, because every verb resolves the main root
+# — there is no verb this is optional for — and REFUSING here rather than at the call site
+# keeps the failure one line instead of a `command not found` per use.
+#
+# ONE CANDIDATE, `$(dirname "$0")/lib`, and no healing chain: this file ships beside that
+# directory in every layout, and a copy of it somewhere else is an incomplete copy rather
+# than a degraded install. tests/spawn-worktree.test.sh's mutation arms doctor a COPY of
+# this script, so they plant `lib/` beside it — a mutant that could not load its library
+# would refuse for a reason that has nothing to do with the mutation, and the arm would be
+# proving the wrong failure.
 LIB_ROOTS="$(cd "$(dirname "$0")" 2>/dev/null && pwd)/lib/roots.sh"
 # shellcheck source=/dev/null
-. "$LIB_ROOTS" 2>/dev/null || { printf '%s: FAIL reason=roots-library-missing path=%s\n' "spawn-worktree" "$LIB_ROOTS"; exit 1; }
+. "$LIB_ROOTS" 2>/dev/null || {
+  printf '%s: FAIL reason=roots-library-missing path=%s\n' "spawn-worktree" "$LIB_ROOTS"
+  exit 1
+}
 
 # Contract lines go to STDOUT — all three of them. OK, FAIL and REMOVED are not
 # log output; they are this script's product. Splitting them across two channels
