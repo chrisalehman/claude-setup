@@ -1519,11 +1519,23 @@ EOF2
   _dead_state="$(patrol_roster_state "$DOCTOR_ROOT" "$_dead_sid" 2>/dev/null)"
   _dead_open="$(_doctor_pfield "$_dead_state" open)"
   case "$_dead_open" in ''|*[!0-9]*) _dead_open=0 ;; esac
+  # $DOCTOR_NIL, NOT $DOCTOR_BAD (R2, ticket-30; doctor-reads.test.sh 12f18's
+  # own rule: "every ✗ row is a problem", count >= rows on the whole page).
+  # Before R2 this line WAS the problem — the only cure was the raw script
+  # named below, and every dead session that had one raised N_FIX by one via
+  # the (now-removed) unconditional fix() call, keeping count == rows. Now
+  # hooks/session-start.sh sweeps this routinely (REQ-R2) and the fix() call
+  # below fires only when THAT auto-sweep itself failed — so a predecessor line
+  # with no failure marker is informational history, not a problem nobody can
+  # act on, and marking it ✗ while N_FIX stops counting it would be exactly
+  # the count-less-than-rows defect 12f18 exists to catch. `active run: none`
+  # a few lines above this loop uses the same glyph for the same reason: a
+  # true fact about this project's state that names no action.
   if [ "$_dead_open" -gt 0 ]; then
-    _run_add "$(_doctor_item "$DOCTOR_BAD" "predecessor ${_dead_sid%%-*}" \
+    _run_add "$(_doctor_item "$DOCTOR_NIL" "predecessor ${_dead_sid%%-*}" \
       "${_dead_files} leftover $(_doctor_plural "$_dead_files" file files) · ${_dead_open} open $(_doctor_plural "$_dead_open" row rows) — a /clear left them unclosed")"
   else
-    _run_add "$(_doctor_item "$DOCTOR_BAD" "predecessor ${_dead_sid%%-*}" \
+    _run_add "$(_doctor_item "$DOCTOR_NIL" "predecessor ${_dead_sid%%-*}" \
       "${_dead_files} leftover $(_doctor_plural "$_dead_files" file files) — nothing open; the session is gone")"
   fi
 done <<EOF
