@@ -5824,4 +5824,128 @@ expect_block "37l a WAIVED row still has to name its fails-when → block" \
 # plan with the live hook, with its command and output.
 
 
+# ============================================================
+# Section 38: the prototype no-row arm (epic-22 K4, AC-K4.2)
+# ============================================================
+#
+# A PROTOTYPE NEVER DISCHARGES A MATRIX ROW (design decision D7). Its output is a
+# design ruling written back to the spec, not a shipped behavior — nothing about a
+# throwaway is provable by an eval. The arm reads two Step-3 tables the plan already
+# carries: `## Slices` names which slice numbers are `kind: prototype`, and each
+# Verification Matrix AC block's own `slice:` field names which slice discharges it.
+# An AC block naming a prototype slice is refused, at `current: 4` onward — the same
+# step boundary as the approval and fails-when arms beside it (Section 37), and
+# inert for the identical reason: both tables are Step-3 artifacts, not necessarily
+# complete before Step 4.
+
+section "Section 38: the prototype no-row arm (epic-22 K4)"
+
+# k4_slices <prototype-num> <other-num> -> a Slices table with one prototype row and
+# one build row, the shape the real plan's slice 12 (prototype) and slice 13 (build)
+# already carry.
+k4_slices() {
+  cat <<EOF
+## Slices
+
+| # | slice | kind | depends | complexity | Files: (closed set) | status |
+|---|---|---|---|---|---|---|
+| $1 | E1: refusal wording (attended) | prototype | 10 | standard | record/x.md | pending |
+| $2 | E1: hooks migrated | build | 11 $1 | complex | hooks/*.sh | pending |
+EOF
+}
+
+# k4_matrix <AC-1's slice: value> -> a one-row matrix whose AC-1 block names the given
+# slice.
+k4_matrix() {
+  cat <<EOF
+## Verification Matrix
+
+stack-health: n/a: no long-running serve
+
+| AC | tier | status | evidence | auditor |
+|---|---|---|---|---|
+| AC-1 | T0 | pending | see AC-1 | |
+
+AC-1:
+  criterion: the refusal wording is proven
+  provenance: user 2026-09-07 "approved"
+  slice: $1
+  fails-when: the wording is untested
+EOF
+}
+
+# k4_plan <current> <slices section> <matrix section> -> a whole plan, same shape as
+# k2_plan (Section 37) with a `## Slices` table spliced in ahead of the matrix.
+k4_plan() {
+  printf '%s\n## SDLC State\ncurrent: %s\n%s\nStep %s:\n%s\n\n%s\n\n%s\n' \
+    "$(matrix_frontmatter true)" "$1" "$K2_APPROVED" "$1" "$k2_step4" "$2" "$3"
+}
+
+# --- 38a/38b: the refusal, and its control -----------------------------------
+
+# 38a — slice 12 is `kind: prototype` and AC-1 names `slice: 12`: refused, naming
+# both the AC and the slice.
+h38a=$(make_home)
+write_plan "$h38a" "$(k4_plan 4 "$(k4_slices 12 13)" "$(k4_matrix 12)")" > /dev/null
+expect_block "38a a kind: prototype slice (12) owning a matrix row (AC-1, slice: 12) → block" \
+  "$h38a" 'git commit -m "x"' "AC-1"
+h38a2=$(make_home)
+write_plan "$h38a2" "$(k4_plan 4 "$(k4_slices 12 13)" "$(k4_matrix 12)")" > /dev/null
+expect_block "38a2 …and the refusal names the prototype slice" \
+  "$h38a2" 'git commit -m "x"' "slice: 12"
+
+# 38b — THE CONTROL 38a needs: the identical plan with AC-1 repointed at the BUILD
+# slice (13) instead. Same Slices table, same prototype row still present — only the
+# matrix's own `slice:` field changed — so an allow here proves the refusal above was
+# earned by the AC pointing at a prototype, not by the fixture shape.
+h38b=$(make_home)
+write_plan "$h38b" "$(k4_plan 4 "$(k4_slices 12 13)" "$(k4_matrix 13)")" > /dev/null
+expect_allow "38b control: the same AC repointed at the build slice (13) → allow" \
+  "$h38b" 'git commit -m "x"'
+
+# --- 38c: inert below Step 4 --------------------------------------------------
+#
+# `current: 3` is still plan authoring: the Slices table and the matrix may both be
+# incomplete, and this arm — like the approval and fails-when arms beside it — does
+# not fire there even on a fixture that would refuse at Step 4.
+h38c=$(make_home)
+write_plan "$h38c" "$(k4_plan 3 "$(k4_slices 12 13)" "$(k4_matrix 12)")" > /dev/null
+expect_allow "38c current: 3 with a prototype slice owning a matrix row → allow (arm inert below Step 4)" \
+  "$h38c" 'git commit -m "x"'
+
+# --- 38d: no prototype row at all --------------------------------------------
+#
+# A Slices table with no `kind: prototype` row leaves the arm with nothing to check —
+# every AC's `slice:` value is compared against an empty set, never against itself.
+h38d=$(make_home)
+k4_slices_no_proto="## Slices
+
+| # | slice | kind | depends | complexity | Files: (closed set) | status |
+|---|---|---|---|---|---|---|
+| 12 | E1: refusal wording | build | 10 | standard | record/x.md | pending |
+| 13 | E1: hooks migrated | build | 11 12 | complex | hooks/*.sh | pending |"
+write_plan "$h38d" "$(k4_plan 4 "$k4_slices_no_proto" "$(k4_matrix 12)")" > /dev/null
+expect_allow "38d no kind: prototype row in '## Slices' → allow (nothing to check against)" \
+  "$h38d" 'git commit -m "x"'
+
+# --- 38e: a prototype row, but no matrix AC names its slice ------------------
+#
+# The prototype slice exists in '## Slices' but the matrix's own AC doesn't cite it
+# (points at the build slice) — this is 38b's shape again from the other direction,
+# confirming the arm judges the AC block's `slice:` field and not merely the presence
+# of a prototype row anywhere in the plan.
+h38e=$(make_home)
+write_plan "$h38e" "$(k4_plan 4 "$(k4_slices 12 13)" "$(k4_matrix 13)")" > /dev/null
+expect_allow "38e a prototype slice present, but no AC block names it → allow" \
+  "$h38e" 'git commit -m "x"'
+
+# --- 38f: this plan's own slice 18 body — the wave's real Slices/matrix shape ---
+#
+# Not a fixture: the arm's brief requires this exact plan pass as it stands (slice 12
+# is `kind: prototype` and owns no matrix row). That drive is recorded, with the real
+# hook and the real plan, in record/wave-01-plugin-only/s18-prototype-unit.log rather
+# than reproduced here — `.bionic/` is machine-local and absent from a fresh clone, so
+# an in-suite fixture reading it would degrade to a vacuous pass on exactly the
+# machines this arm is meant to protect.
+
 finish
