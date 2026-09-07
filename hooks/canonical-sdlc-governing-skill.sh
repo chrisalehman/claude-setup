@@ -39,6 +39,13 @@
 
 set -u
 
+# ONE supported version. Anything else — an older number, a typo, an empty value, garbage —
+# blocks. Bound here, before the first place that quotes it (the missing-frontmatter hint
+# below), so every echo of "the" supported version is this one variable and never a second,
+# independently-typed literal (review-duplication D-2).
+# [WALL: tests/canonical-sdlc-governing-skill.test.sh]
+SUPPORTED_SDLC_VERSION=14
+
 INPUT=$(cat)
 TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
 
@@ -711,7 +718,7 @@ if [ -z "$FRONTMATTER" ]; then
   echo "  sdlc-step: <step number>" >&2
   echo "  epic: epic-NN-<slug>" >&2
   echo "  wave: wave-NN-<slug>   # omit for epic-level and continuation" >&2
-  echo "  canonical_sdlc_version: 14" >&2
+  echo "  canonical_sdlc_version: ${SUPPORTED_SDLC_VERSION}" >&2
   echo "  intent: <build|bugfix|refactor|tune|spike|incident-response>" >&2
   echo "  rigor: <tested|peer-reviewed|audited>" >&2
   echo "  scale: <task|wave|epic>" >&2
@@ -753,12 +760,10 @@ yaml_get() {
 
 SDLC_VERSION=$(yaml_get canonical_sdlc_version)
 
-# ONE supported version. Anything else — an older number, a typo, an empty
-# value, garbage — blocks. There is no version dispatch below this line and
-# no path that reaches `exit 0` without passing the whole contract.
+# SUPPORTED_SDLC_VERSION is bound once, near the top of the file (before the
+# missing-frontmatter hint that also quotes it). There is no version dispatch below this
+# line and no path that reaches `exit 0` without passing the whole contract.
 # [WALL: tests/canonical-sdlc-governing-skill.test.sh]
-SUPPORTED_SDLC_VERSION=14
-
 if [ "$SDLC_VERSION" != "$SUPPORTED_SDLC_VERSION" ]; then
   echo "BLOCKED: canonical-sdlc artifact '$BASENAME' declares canonical_sdlc_version: '$SDLC_VERSION'." >&2
   echo "Path: $FILE_PATH" >&2
