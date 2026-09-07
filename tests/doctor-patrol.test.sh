@@ -860,41 +860,73 @@ expect_no_match "63: …and so is the residue session's" "*session aa69dcad*" "$
 expect_match "64: …while the live session's attestation still renders there" \
   "*session e96260d1*" "$DSR16"
 
-# THE FIX LINE, RENDERED FROM THE CHECK TABLE'S ROW — the count is doctor's, the
-# verb is the row's.
-expect_contains "65: the page names the repair once, with the count" \
-  "3 dead sessions left state under .bionic/tmp" "$OUT16"
-expect_contains "66: …and the verb comes from the check table's hint" \
-  "session-poker.sh sweep" "$OUT16"
-expect_absent "67: …and never sends the reader to setup, which has no project concept" \
-  "dead sessions left state under .bionic/tmp → /bionic:setup" "$OUT16"
-expect_absent "68: the header does not say there is nothing to do" \
-  "Nothing to do" "$OUT16"
+# THE FIX LINE, RE-POINTED TO THE AUTO-SWEEP'S OWN FAILURE MARKER (R2, ticket-30;
+# this section pinned the OLD unconditional line — "N dead sessions left state
+# under .bionic/tmp", one per dead session, count == dead sessions — until this
+# slice's own dead-session-state row change, which is what closed ticket-30's
+# actual defect: hooks/session-start.sh sweeps this residue routinely now
+# (REQ-R2), so "N dead sessions have residue right now" stopped being a problem
+# doctor should keep naming forever between one `/clear` and the next session
+# start. What is STILL a problem is the auto-sweep itself failing, which is a
+# fact about a MARKER FILE, not about how many dead sessions exist — so this
+# fixture (no marker planted) earns NO fix line at all, and a second fixture
+# below (marker planted) earns exactly one, independent of the dead-session
+# count.
+#
+# THE PREDECESSOR ROWS THEMSELVES ALSO CHANGED GLYPH (doctor.sh's PATROL loop):
+# $DOCTOR_NIL now, not $DOCTOR_BAD — tests/doctor-reads.test.sh 12f18's own rule
+# ("every ✗ row is a problem, count >= rows on the whole page") is what caught
+# the old unconditional line leaving three ✗ predecessor rows on the page with
+# nothing in N_FIX accounting for them once the fix line went conditional; a
+# predecessor line marked ✗ while contributing nothing to the count is exactly
+# that inequality, broken.
+expect_absent "65: without a failure marker, no fix line names the dead sessions" \
+  "left state under .bionic/tmp" "$OUT16"
+expect_no_match "66: …and their PATROL lines are informational (§ above), never ✗ rows" \
+  "*✗ predecessor*" "$PB16"
+
+# ---------- the auto-sweep's own failure marker: exactly one fix line, however many dead sessions ----------
+printf 'sweep-failed/v1|at=2026-09-07T00:00:00Z|rc=2\n' > "$REPO16/.bionic/tmp/sweep-failed.state"
+OUT16M="$(run_doctor "$HOME16" "$REPO16")"
+
+expect_contains "67: with the marker, the page names the failure and its rc" \
+  "the automatic dead-session sweep failed (rc=2)" "$OUT16M"
+expect_contains "68: …and the verb still comes from the check table's hint" \
+  "the automatic dead-session sweep failed (rc=2) → session-poker.sh sweep" "$OUT16M"
+expect_eq "69: …exactly once, regardless of how many dead sessions are on this page" \
+  "1" "$(printf '%s\n' "$OUT16M" | grep -c 'automatic dead-session sweep failed')"
+expect_absent "70: …and never sends the reader to setup, which has no project concept" \
+  "sweep failed (rc=2) → /bionic:setup" "$OUT16M"
+expect_absent "71: the header does not say there is nothing to do" \
+  "Nothing to do" "$OUT16M"
 
 # CAUSATION, NOT COINCIDENCE. The fixture machine has unrelated problems of its
-# own, so "no Nothing-to-do header" proves little on its own. Removing ONLY the
-# dead sessions' files from the same tree must drop the fix line and lower the
-# problem count by the number of sessions that line stood for — which is what
-# says this row, and not the machine's other trouble, is what put it there.
-#
-# ONE PROBLEM PER DEAD SESSION, NOT ONE PER LINE (1.5.1 fix-up batch). This pin
-# read "exactly one problem fewer" while the collapsed dead-session line was
-# counted as a single problem — and that is the count-versus-rows inequality
-# broken in the direction doctor's own rule forbids: three ✗ predecessor rows
-# under a headline saying one. tests/doctor-reads.test.sh 12f18 is the assertion
-# that caught it (headline == the ✗ rows it stands for), so the line now takes
-# the same swap the two dependency collapses take, and the drop this fixture
-# measures is three. The count is read from the fix line itself rather than
-# spelled here, so the pin follows the fixture rather than pinning it.
-# THE HEADER'S OWN COUNT, not a count of glyphs on the page. `N_FIX` is what
-# decides between "Nothing to do" and "N problems", and it counts FIX LINES with
-# each collapsed line swapped for the rows it stands for. Counting `✗` directly
-# would have counted rows that carry no fix line at all, which is a different
-# number and not the one the header is a function of.
+# own, so a page that names a failure proves little by itself. Removing ONLY
+# the marker (not the dead sessions' files, which are irrelevant to this row
+# now) must drop the fix line and lower the problem count by exactly one — the
+# count this ONE fix line stands for, never a function of how many predecessor
+# sessions happen to be dead alongside it.
 n16_problems() {  # <doctor output> -> the header's problem count, or empty
   printf '%s\n' "$1" | sed -n 's/^→ \([0-9][0-9]*\) problems*\..*$/\1/p' | head -1
 }
-N16_BEFORE="$(n16_problems "$OUT16")"
+N16_WITH_MARKER="$(n16_problems "$OUT16M")"
+rm -f "$REPO16/.bionic/tmp/sweep-failed.state"
+OUT16NM="$(run_doctor "$HOME16" "$REPO16")"
+N16_NO_MARKER="$(n16_problems "$OUT16NM")"
+
+expect_nonempty "72: the header states a problem count with the marker (73 is not vacuous)" \
+  "$N16_WITH_MARKER"
+expect_eq "73: …and removing ONLY the marker drops the count by exactly one" \
+  "1" "$(( N16_WITH_MARKER - N16_NO_MARKER ))"
+expect_absent "74: …and the fix line is gone with it" \
+  "automatic dead-session sweep failed" "$OUT16NM"
+expect_match "75: …while the (still-dead, still-unswept) predecessor lines remain, informational" \
+  "*predecessor 018c3ea1*" "$(patrol_block "$OUT16NM")"
+
+# THE ORIGINAL FIXTURE'S OWN DECAY, KEPT (1.5.1 T5, AC-8): removing the dead
+# sessions' FILES (not the marker, which is already gone above) still collapses
+# their predecessor lines away and leaves the live session's attestation and
+# the unkeyed context-spend.state exactly where they were.
 rm -f "$REPO16/.bionic/tmp/"roster-018c3ea1*.state "$REPO16/.bionic/tmp/"preflight-018c3ea1*.state \
       "$REPO16/.bionic/tmp/"engaged-018c3ea1*.state \
       "$REPO16/.bionic/tmp/"roster-1dc72c57*.state "$REPO16/.bionic/tmp/"preflight-1dc72c57*.state \
@@ -902,20 +934,10 @@ rm -f "$REPO16/.bionic/tmp/"roster-018c3ea1*.state "$REPO16/.bionic/tmp/"preflig
       "$REPO16/.bionic/tmp/"roster-aa69dcad*.state "$REPO16/.bionic/tmp/"preflight-aa69dcad*.state \
       "$REPO16/.bionic/tmp/"engaged-aa69dcad*.state
 OUT16B="$(run_doctor "$HOME16" "$REPO16")"
-N16_AFTER="$(n16_problems "$OUT16B")"
-
-expect_absent "69: with the dead state gone, the fix line goes with it" \
-  "dead sessions left state under .bionic/tmp" "$OUT16B"
-expect_no_match "70: …and no predecessor line remains" "*predecessor *" "$(patrol_block "$OUT16B")"
-expect_nonempty "71: the header states a problem count both times (72 is not vacuous)" "$N16_BEFORE"
-N16_DEAD="$(printf '%s\n' "$OUT16" | sed -n 's/^→ \([0-9][0-9]*\) dead sessions* left state.*$/\1/p' | head -1)"
-expect_eq "71b: …and the fix line named the sessions it stood for (72 reads that number)" \
-  "3" "$N16_DEAD"
-expect_eq "72: …and it counts one problem fewer per dead session it stopped naming" \
-  "$N16_BEFORE" "$((N16_AFTER + N16_DEAD))"
-expect_match "73: …while the live session's attestation is still there (69-72 are not an empty page)" \
+expect_no_match "76: …and no predecessor line remains" "*predecessor *" "$(patrol_block "$OUT16B")"
+expect_match "77: …while the live session's attestation is still there" \
   "*session e96260d1*" "$(printf '%s\n' "$OUT16B" | awk '/^RESOURCES$/{f=1;next} f && /^[A-Z][A-Z]/{exit} f')"
-expect_true "74: …and the unkeyed context-spend.state was never the subject" \
+expect_true "78: …and the unkeyed context-spend.state was never the subject" \
   test -f "$REPO16/.bionic/tmp/context-spend.state"
 
 finish

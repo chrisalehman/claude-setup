@@ -658,7 +658,7 @@ STATUSLINE_NPX_STATE="${STATUSLINE_NPX_FACT##*present=}"
 DOCTOR_INSTALL_PATH="$(detect_plugin_install_path bionic 2>/dev/null)" || DOCTOR_INSTALL_PATH=""
 _doctor_is_repo() { ( cd "${1:-/nonexistent}" 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1 ); }
 if [ -z "$DOCTOR_INSTALL_PATH" ] || ! _doctor_is_repo "$DOCTOR_INSTALL_PATH"; then
-  _doctor_root_alt="$(_detect_plugin_root)"
+  _doctor_root_alt="$(plugin_root)"
   if _doctor_is_repo "$_doctor_root_alt"; then DOCTOR_INSTALL_PATH="$_doctor_root_alt"; fi
   [ -n "$DOCTOR_INSTALL_PATH" ] || DOCTOR_INSTALL_PATH="$_doctor_root_alt"
 fi
@@ -726,7 +726,7 @@ HOOK_RESOLVING="${HOOK_WIRING_FACT##*resolving=}"
 # This is a directory listing, not a schema parse — there is no second reading of
 # a format that could drift away from a first one, which is what the RV-7 rule
 # against re-deriving facts in this file is protecting against.
-_doctor_payload_root="$(_detect_plugin_root)"
+_doctor_payload_root="$(plugin_root)"
 SKILLS_TOTAL=0; SKILLS_OK=0; SKILL_NAMES=""
 for _sk in "$_doctor_payload_root"/skills/*/; do
   [ -d "$_sk" ] || continue
@@ -1519,11 +1519,23 @@ EOF2
   _dead_state="$(patrol_roster_state "$DOCTOR_ROOT" "$_dead_sid" 2>/dev/null)"
   _dead_open="$(_doctor_pfield "$_dead_state" open)"
   case "$_dead_open" in ''|*[!0-9]*) _dead_open=0 ;; esac
+  # $DOCTOR_NIL, NOT $DOCTOR_BAD (R2, ticket-30; doctor-reads.test.sh 12f18's
+  # own rule: "every ✗ row is a problem", count >= rows on the whole page).
+  # Before R2 this line WAS the problem — the only cure was the raw script
+  # named below, and every dead session that had one raised N_FIX by one via
+  # the (now-removed) unconditional fix() call, keeping count == rows. Now
+  # hooks/session-start.sh sweeps this routinely (REQ-R2) and the fix() call
+  # below fires only when THAT auto-sweep itself failed — so a predecessor line
+  # with no failure marker is informational history, not a problem nobody can
+  # act on, and marking it ✗ while N_FIX stops counting it would be exactly
+  # the count-less-than-rows defect 12f18 exists to catch. `active run: none`
+  # a few lines above this loop uses the same glyph for the same reason: a
+  # true fact about this project's state that names no action.
   if [ "$_dead_open" -gt 0 ]; then
-    _run_add "$(_doctor_item "$DOCTOR_BAD" "predecessor ${_dead_sid%%-*}" \
+    _run_add "$(_doctor_item "$DOCTOR_NIL" "predecessor ${_dead_sid%%-*}" \
       "${_dead_files} leftover $(_doctor_plural "$_dead_files" file files) · ${_dead_open} open $(_doctor_plural "$_dead_open" row rows) — a /clear left them unclosed")"
   else
-    _run_add "$(_doctor_item "$DOCTOR_BAD" "predecessor ${_dead_sid%%-*}" \
+    _run_add "$(_doctor_item "$DOCTOR_NIL" "predecessor ${_dead_sid%%-*}" \
       "${_dead_files} leftover $(_doctor_plural "$_dead_files" file files) — nothing open; the session is gone")"
   fi
 done <<EOF
@@ -1531,14 +1543,22 @@ $(patrol_dead_sessions "$DOCTOR_ROOT" "${CLAUDE_CODE_SESSION_ID:-}")
 EOF
 
 # THE LINE THAT NAMES THE CURE, from the row rather than from a literal here —
-# the same shape the legacy-symlink row below uses. Until 1.5.1 this state was
-# detected and then left un-named: every row above was a session doctor had
-# already PROVEN dead, printed as an informational dash under a header reading
-# "Nothing to do". A fix line is also what raises N_FIX, so that header stops
-# contradicting the body without anything here special-casing it.
-if [ "$_doctor_dead_n" -gt 0 ]; then
-  fix "${_doctor_dead_n} dead $(_doctor_plural "$_doctor_dead_n" session sessions) left state under .bionic/tmp → $(bionic_check_hint dead-session-state)" \
-      "$_doctor_dead_n"
+# the same shape the legacy-symlink row below uses.
+#
+# R2 NARROWED WHAT RAISES THIS LINE (ticket-30). Before R2 this fired whenever
+# `_doctor_dead_n > 0` — a session doctor had proven dead but nobody had a way to
+# clear, which was true for every predecessor UNTIL hooks/session-start.sh started
+# clearing them itself (REQ-R2). With the auto-sweep in place, "a dead session's
+# residue exists right now" is the ordinary, self-healing state between a `/clear`
+# and the next session start — the ✗ `predecessor …` rows above still say so, every
+# time, because that is still informative — and firing THIS line on the same fact
+# would turn a healthy, temporary gap into a permanent "N problems" count that
+# never reaches zero. What is actually worth a fix line now is the auto-sweep
+# itself failing, which `checks.sh`'s row answers from session-start.sh's own
+# failure marker rather than from `_doctor_dead_n`.
+if bionic_check_fires dead-session-state; then
+  _doctor_sweep_rc="$(bionic_check_sweep_failed_rc)"
+  fix "the automatic dead-session sweep failed (rc=${_doctor_sweep_rc:-?}) → $(bionic_check_hint dead-session-state)"
 fi
 
 # LEGACY `.bionic` SYMLINKS (AC-11). spawn-worktree.sh used to plant
@@ -1606,7 +1626,7 @@ if [ -n "$_doctor_hooks_mtime" ]; then
     _rs_cwd="$(_doctor_pfield "$_rs_line" cwd)"
     _doctor_session_here "$_rs_cwd" || continue
     _rs_pid="$(_doctor_pfield "$_rs_line" pid)"
-    _rs_sf="$(_patrol_claude_home)/sessions/${_rs_pid}.json"
+    _rs_sf="$(claude_home)/sessions/${_rs_pid}.json"
     _rs_started_ms="$(command -v jq >/dev/null 2>&1 && jq -r '.startedAt // empty' "$_rs_sf" 2>/dev/null)"
     case "$_rs_started_ms" in ''|*[!0-9]*) continue ;; esac
     _rs_started_sec=$(( _rs_started_ms / 1000 ))
@@ -1931,6 +1951,44 @@ PERM_MODE_STATE=no;  bionic_check_fires permission-mode         && PERM_MODE_STA
   fix "bionic's retired permission block is still in settings.json → run $(bionic_check_hint legacy-permission-block)"
 [ "$PERM_MODE_STATE" = "yes" ] && \
   fix "the default permission mode is not ${BIONIC_DEFAULT_PERMISSION_MODE} → run $(bionic_check_hint permission-mode)"
+
+# THE ROW THE REGISTRY LOST WHILE THE PLUGIN'S FILES STAYED (REQ-S0, AC-S0.3).
+#
+# WHY THE DEPENDENCY TABLE COULD NOT SAY THIS. The row two tables down already
+# reports `✗ impeccable  not installed → /bionic:setup`, and that sentence is true
+# of this machine and of a machine that never had the plugin alike — one of which
+# needs a download and one of which does not. The difference is the whole finding,
+# and it does not fit there: the state cell is 44 columns of a 100-column budget
+# once the name, version and source columns are paid for, and the route already
+# spends 29 of them (lib/width.sh's own arithmetic). A sentence about the cache
+# would be truncated away by `bionic_line` exactly where the reader needs it.
+#
+# So it is a FIX line, which is the surface for a fact that reaches a reader as a
+# repair rather than as a cell — the same channel the walls and the dead-session
+# rows use. Every such line ending in the setup route is collapsed into the
+# verdict's name list, so a machine with one dropped row gets one sentence.
+#
+# NAMED, NOT COUNTED. Which plugin lost its entry is the actionable half — the
+# reader wants to know whether it is the design pack or the skills pack — so the
+# rows are printed one per name rather than collapsed into a number, exactly as
+# the environment keys are.
+# THE TAIL SAYS "NO DOWNLOAD" ONLY WHERE THAT IS TRUE. A row bionic does not
+# declare is setup's, and setup writes the entry back from the cache — that is
+# the sentence worth reading, and it is why this line exists at all. A `core`
+# row is the CLI's: reinstalling bionic restores it, and that DOES fetch, so the
+# line carries the route and makes no claim about downloading. A cli route is
+# not the setup route, so that line reaches its own line either way; the setup
+# one has to earn it by not ENDING in the route, which is `fix`'s own rule for
+# what may be collapsed into the verdict's name list.
+for _rr_name in $(dep_names_kind native); do
+  bionic_check_fires "registry-row:${_rr_name}" || continue
+  _rr_hint="$(bionic_check_hint "registry-row:${_rr_name}")"
+  if [ "$_rr_hint" = "$DOCTOR_SETUP_ROUTE" ]; then
+    fix "${_rr_name} lost its entry but its files are still on disk → ${_rr_hint} restores it, no download"
+  else
+    fix "${_rr_name} lost its entry but its files are still on disk → ${_rr_hint}"
+  fi
+done
 
 if [ "$PLUGIN_HOOKS" = "degraded" ] || [ "$PLUGIN_HOOKS" = "absent" ]; then
   # THE HINT IS THE WHOLE TAIL, AND IT KNOWS WHICH STATE IS ASKING (W7 S11,

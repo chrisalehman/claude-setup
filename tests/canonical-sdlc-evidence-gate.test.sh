@@ -4533,18 +4533,22 @@ h30g_dir=$(mktemp -d); cleanup_dirs+=("$h30g_dir")
 # in a bare temp dir therefore refuses everything for the wrong reason, so the
 # copy gets the shipped layout around it: hooks/ beside scripts/lib/.
 mkdir -p "$h30g_dir/hooks" "$h30g_dir/scripts/lib"
-# Since bionic 1.4.0 the gate wants THREE libraries — the command reader plus the
-# root and run facts — and the loader qualifies a directory only when it holds all
-# of them (BIONIC_LIB_WANT). A fixture that plants one of the three is a fixture
-# that refuses everything for the wrong reason.
-for _h30g_lib in git-argv.sh root.sh run.sh session.sh; do
-  for _h30g_cand in "${BIONIC_HOOKS_DIR}/../scripts/lib/$_h30g_lib" \
-                    "${BIONIC_HOOKS_DIR}/../payload/scripts/lib/$_h30g_lib"; do
-    if [ -r "$_h30g_cand" ]; then
-      cp "$_h30g_cand" "$h30g_dir/scripts/lib/$_h30g_lib"
-      break
-    fi
-  done
+# Since bionic 1.4.0 the gate wants several libraries and the loader qualifies a directory
+# only when it holds ALL of them (BIONIC_LIB_WANT). A fixture that plants a subset is a
+# fixture that refuses everything for the wrong reason.
+#
+# THE WHOLE DIRECTORY, NOT A HAND-LIST (epic-22 wave-01, N1). This loop named four
+# libraries by hand. That list went stale the moment lib/run.sh grew a soft source of
+# lib/roots.sh — `docs_root` came back `command not found`, the gate fell through, and this
+# section's mutation arm went GREEN against a hook that had allowed for the wrong reason.
+# A hand-list of a shipped directory's contents is a second copy of that directory, kept by
+# hand; the glob cannot drift.
+for _h30g_cand in "${BIONIC_HOOKS_DIR}/../scripts/lib" \
+                  "${BIONIC_HOOKS_DIR}/../payload/scripts/lib"; do
+  if [ -d "$_h30g_cand" ]; then
+    cp "$_h30g_cand"/*.sh "$h30g_dir/scripts/lib/" 2>/dev/null
+    break
+  fi
 done
 DOCTORED_HOOK="$h30g_dir/hooks/loose-gate.sh"
 sed 's#user_confirmed_form_ok "\$block_txt"#[ -n "$(user_confirmed_value "$block_txt")" ]#' \

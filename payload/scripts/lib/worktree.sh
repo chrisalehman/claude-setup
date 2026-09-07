@@ -22,11 +22,16 @@
 # NO `--force`, ANYWHERE. git's refusal to discard uncommitted work is the
 # feature; a land that forced would be a lease that ate a writer's work.
 
-# The CLI's config directory, through the same override chain
-# payload/scripts/lib/patrol.sh reads. One chain for this directory, not two.
-_wt_claude_home() {
-  printf '%s' "${BIONIC_CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"
-}
+_wt_self_dir() { dirname "${BASH_SOURCE[0]}"; }
+# roots.sh, THE SOFT SOURCE — the idiom this file already uses for git-argv.sh, taken at
+# source time because two of this file's roots are wanted on every path through it. Every
+# root resolver in the tree has one definition there (epic-22 wave-01, N1); this file is a
+# caller of `claude_home` (three copies before N1: here, lib/patrol.sh, lib/deps.sh) and
+# `worktree_root` (three: here as `_wt_main_root`, lib/patrol.sh, spawn-worktree.sh).
+if ! declare -F claude_home >/dev/null 2>&1; then
+  # shellcheck source=/dev/null
+  . "$( cd "$(_wt_self_dir)" 2>/dev/null && pwd -P )/roots.sh"
+fi
 
 # Physical absolute path of a directory. No `realpath`: BSD's is flagless and it
 # is absent on some targets, and every path this file canonicalises is a
@@ -50,7 +55,6 @@ _wt_abs() {  # <dir>
 # FAIL CLOSED (design ledger S4). Exit 2 means "unknowable", not "not
 # protected": a wall that cannot read its own list must refuse rather than wave
 # the merge through.
-_wt_self_dir() { dirname "${BASH_SOURCE[0]:-$0}"; }
 _wt_branch_protected() {  # <branch> -> 0 protected, 1 not, 2 unknowable
   local lib
   if ! declare -f git_branch_protected >/dev/null 2>&1; then
@@ -63,16 +67,6 @@ _wt_branch_protected() {  # <branch> -> 0 protected, 1 not, 2 unknowable
   git_branch_protected "${1:-}"
 }
 
-# The MAIN checkout's root from anywhere inside the repository, including from
-# inside a linked worktree where --show-toplevel would answer with the linked
-# tree. Same resolution spawn-worktree.sh does, for the same reason.
-_wt_main_root() {  # [dir]
-  local d="${1:-.}" common
-  common="$( cd "$d" 2>/dev/null && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null )"
-  [ -n "$common" ] || common="$( cd "$d" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null )"
-  [ -n "$common" ] || return 1
-  ( cd "$d" 2>/dev/null && cd "$common/.." 2>/dev/null && pwd -P )
-}
 
 # Every legacy `<main-root>/.worktrees/*/.bionic` that is a SYMLINK, absolute,
 # one per line. A real `.bionic` directory in a tree is the branch's own content
@@ -147,7 +141,7 @@ _wt_cwd_in_project() {  # <cwd> <main-root>
 # directory.
 _wt_busy_suite() {  # <main-root> -> session=... pid=... cwd=...
   local root="${1:-}" dir f pid cwd status name
-  dir="$(_wt_claude_home)/sessions"
+  dir="$(claude_home)/sessions"
   [ -d "$dir" ] || return 1
   command -v jq >/dev/null 2>&1 || return 1
   _wt_proc_running 'tests/run.sh' || return 1
@@ -222,7 +216,7 @@ worktree_land() {  # <worktree path> -> LANDED | REFUSED
   [ -f "${target}/.git" ] || { _wt_refuse "not-a-linked-worktree path=${target}"; return 2; }
 
   wt_abs="$(_wt_abs "$target")" || { _wt_refuse "no-such-worktree path=${target}"; return 2; }
-  root="$(_wt_main_root "$wt_abs")" || { _wt_refuse "repo-root-unresolvable path=${wt_abs}"; return 2; }
+  root="$(worktree_root "$wt_abs")" || { _wt_refuse "repo-root-unresolvable path=${wt_abs}"; return 2; }
   [ -n "$root" ] || { _wt_refuse "repo-root-unresolvable path=${wt_abs}"; return 2; }
 
   # INSIDE THE FARM. Both sides are already physical absolute paths, so this is

@@ -230,7 +230,18 @@ HOOK="$BIONIC_SESSION_START_UNDER_TEST_SAVE"
 section "1 — a predecessor roster on a /clear: the block, and the sequence"
 # The whole point of the hook, driven exactly as the probe left the disk: same
 # process, new sid, the old conversation's roster still open beside the new one's.
-P1=$(make_env 1s)
+#
+# 3600s, NOT THE 1s DEFAULT (R2, ticket-30). session-start.sh now sweeps a DEAD
+# predecessor's state whose files are older than one Patrol interval — that is
+# the whole feature under test in tests/session-sweep.test.sh §7 — and this
+# section is not about that feature at all: OLD_SID's roster here is written
+# moments before `drive()` runs it, and under the suite's own 1s default that
+# freshness is a coin flip against however long sourcing four libraries and
+# parsing the JSON payload actually takes on the machine running this suite. A
+# generous interval keeps the file unambiguously YOUNG so "wrote nothing" below
+# tests what this section is actually about — the report and the re-arm
+# sequence — deterministically, not by how loaded the box happens to be.
+P1=$(make_env 3600s)
 roster_rows "$P1/.bionic/tmp/roster-$OLD_SID.state" "$OLD_SID" "W-ALPHA"
 roster_rows "$P1/.bionic/tmp/roster-$OLD_SID.state" "$OLD_SID" "W-BETA"
 swept "$P1/.bionic/tmp/roster-$OLD_SID.state" "$OLD_SID" "W-BETA"
@@ -302,13 +313,24 @@ eq  "5.5 wrote nothing" "$S5_BEFORE" "$(snap "$P5")"
 
 section "6 — predecessor stamps: stale past PATROL_STALE_MULTIPLIER x interval"
 # interval 1s -> limit 2s. One predecessor stamp backdated well past it, one
-# predecessor stamp written now, and THIS session's own stamp backdated too — the
-# last is the anti-vacuity control: staleness alone must not make a stamp mine.
+# predecessor stamp backdated to EXACTLY the sweep's own 1s interval, and THIS
+# session's own stamp backdated too — the last is the anti-vacuity control:
+# staleness alone must not make a stamp mine.
 P6=$(make_env 1s)
 write_stamp "$P6" "$OLD_SID";  backdate "$P6/.bionic/tmp/patrol-$OLD_SID.state" 600
-write_stamp "$P6" "$OLD2_SID"
+# 1s, NOT freshly-written (R2, ticket-30). The R2 auto-sweep below reads dead
+# sessions in ONE BATCH: if ANY dead session anywhere in .bionic/tmp has ANY
+# file younger than the interval, the WHOLE sweep defers this round (the age
+# gate has no per-session granularity — see hooks/session-start.sh's own
+# comment on the tradeoff). A freshly-written OLD2_SID stamp would make that
+# call a coin flip against how long sourcing four libraries and parsing JSON
+# takes on the machine running this suite — exactly the race that used to make
+# this section's assertions non-deterministic. Backdated to EXACTLY 1s, its age
+# at read time is >= the 1s interval (real time only adds, never subtracts), so
+# it is never "young" — deterministically — while still comfortably under the
+# 2s stale LIMIT the report below tests, so 6.4's "fresh" still holds.
+write_stamp "$P6" "$OLD2_SID"; backdate "$P6/.bionic/tmp/patrol-$OLD2_SID.state" 1
 write_stamp "$P6" "$CUR_SID";  backdate "$P6/.bionic/tmp/patrol-$CUR_SID.state" 600
-S6_BEFORE=$(snap "$P6")
 OUT=$(drive "$P6" clear "$CUR_SID" "$CUR_SID" "$CUR_SID")
 eq  "6.1 exit 0" "0" "$(rc)"
 has "6.2 the stamps section is present" "predecessor stamps:" "$OUT"
@@ -318,12 +340,32 @@ eq  "6.4 the just-written predecessor stamp reads fresh" "1" \
   "$(printf '%s\n' "$OUT" | grep -c "^  ${OLD2_SID:0:8} .*fresh$")"
 hasnt "6.5 THIS session's own stale stamp is not a predecessor" "  ${CUR_SID:0:8}" "$OUT"
 has "6.6 the age is reported in seconds" "s old" "$OUT"
-eq  "6.7 wrote nothing" "$S6_BEFORE" "$(snap "$P6")"
+
+# NOT A BLANKET "wrote nothing" ANY MORE (R2, ticket-30). Both predecessor
+# stamps are DEAD (no live pid for OLD_SID or OLD2_SID in this fixture's
+# claude-home), and the report above is read off the disk BEFORE the sweep
+# runs, so 6.3/6.4 stand regardless of what the sweep does next. Both are now
+# aged past the 1s interval by construction (600s and exactly 1s), so both are
+# swept, deterministically — the age-gate detail above is why OLD2_SID had to
+# be backdated at all rather than left fresh. THIS session's own 600s-old stamp
+# survives because it is LIVE, not because of its age — the same anti-vacuity
+# point 6.5 already makes about the report, made again here about the sweep.
+expect_false "6.7 the dead, 600s-old predecessor stamp is swept" \
+  test -e "$P6/.bionic/tmp/patrol-$OLD_SID.state"
+expect_false "6.8 …and the OTHER dead predecessor, aged to exactly the interval, too" \
+  test -e "$P6/.bionic/tmp/patrol-$OLD2_SID.state"
+expect_true "6.9 THIS session's own 600s-old stamp survives — it is live, not young" \
+  test -f "$P6/.bionic/tmp/patrol-$CUR_SID.state"
+expect_false "6.10 …and no sweep-failure marker appeared — nothing failed here" \
+  test -e "$P6/.bionic/tmp/sweep-failed.state"
 
 section "7 — the hook never blocks and never refuses"
 # Every fixture above already asserted rc 0. What is left is the degenerate input
 # a real SessionStart can still deliver: no payload at all, and no session key.
-P7=$(make_env 1s)
+# 3600s: see §1's comment above — this fixture's predecessor roster is fresh and
+# unrelated to R2's own age-gate feature, so a generous interval keeps it out of
+# the sweep's reach deterministically.
+P7=$(make_env 3600s)
 roster_rows "$P7/.bionic/tmp/roster-$OLD_SID.state" "$OLD_SID" "W-GAMMA"
 S7_BEFORE=$(snap "$P7")
 OUT=$( cd "$P7" && printf '' | CLAUDE_CODE_SESSION_ID="" BIONIC_CLAUDE_HOME="$WORK/nohome" bash "$HOOK" 2>/dev/null )
@@ -353,7 +395,10 @@ hasnt "8.8 no predecessor stamps section" "predecessor stamps:" "$OUT"
 eq    "8.9 the hook wrote nothing under .bionic" "$S8_BEFORE" "$(snap "$P8")"
 
 section "9 — an open run + the engagement marker: today's block, unchanged (AC-12)"
-P9=$(make_env 1s)
+# 3600s: see §1's comment — engaged fixtures reach the predecessor-roster/sweep
+# code below the early-exit branches, so this section's fresh OLD_SID roster is
+# exactly the R2 age-gate race described there.
+P9=$(make_env 3600s)
 write_open_plan "$P9" >/dev/null
 roster_rows "$P9/.bionic/tmp/roster-$OLD_SID.state" "$OLD_SID" "W-DELTA"
 plant_engaged "$P9" "$CUR_SID"
@@ -442,7 +487,9 @@ eq    "12b.6 wrote nothing" "$S12b_BEFORE" "$(snap "$P12b")"
 
 echo ""
 echo "--- 12c: two open plans, engaged and bound-open to one: today's engaged block, no listing ---"
-P12c=$(make_env 1s)
+# 3600s: see §1's comment — a bound session is engaged too, so this also reaches
+# the sweep below.
+P12c=$(make_env 3600s)
 PLAN12cA="$(write_open_plan "$P12c" alpha)"
 PLAN12cB="$(write_open_plan "$P12c" beta)"
 roster_rows "$P12c/.bionic/tmp/roster-$OLD_SID.state" "$OLD_SID" "W-ZETA"
@@ -459,7 +506,8 @@ eq    "12c.6 wrote nothing" "$S12c_BEFORE" "$(snap "$P12c")"
 
 echo ""
 echo "--- 12d: two open plans, engaged with an EMPTY (unbound) marker: the listing, then today's engaged block ---"
-P12d=$(make_env 1s)
+# 3600s: see §1's comment — engaged and unbound still reaches the sweep below.
+P12d=$(make_env 3600s)
 PLAN12dA="$(write_open_plan "$P12d" alpha)"
 PLAN12dB="$(write_open_plan "$P12d" beta)"
 roster_rows "$P12d/.bionic/tmp/roster-$OLD_SID.state" "$OLD_SID" "W-ETA"
@@ -612,7 +660,8 @@ hasnt "14c.4 no count-style listing" "open runs exist here" "$OUT"
 has   "14c.5 the predecessor roster still prints alongside it" "roster-$OLD_SID.state" "$OUT"
 
 section "15 — engaged, one live run, unbound: unchanged (regression control, S3 scope (c))"
-P15=$(make_env 1s)
+# 3600s: see §1's comment — engaged, N==1, unbound also reaches the sweep below.
+P15=$(make_env 3600s)
 write_open_plan "$P15" >/dev/null
 roster_rows "$P15/.bionic/tmp/roster-$OLD_SID.state" "$OLD_SID" "W-IOTA"
 plant_engaged "$P15" "$CUR_SID"

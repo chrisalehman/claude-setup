@@ -97,7 +97,7 @@ bionic_check_route() {  # <setup|cli|user>
 # is here, and doctor reads it.
 BIONIC_WALL_HOOKS="protect-main canonical-sdlc-evidence-gate farm-out-reminder background-suite-guard"
 
-bionic_check_payload_root() { _detect_plugin_root; }
+bionic_check_payload_root() { plugin_root; }
 
 # THE WANTED BASENAMES COME FROM THE HOOK, not from a list kept here. A hook that
 # adopts the loader idiom declares them on a `BIONIC_LIB_WANT=` line above the
@@ -211,6 +211,25 @@ bionic_check_dep_absent() {  # <row id: tool:<name> | dep:<name>>
   present="$(check_dep "${1#*:}")" || return 1
   present="${present#present=}"; present="${present%%|*}"
   [ "$present" != "yes" ]
+}
+
+# THE ROW THE REGISTRY LOST WHILE THE FILES STAYED (REQ-S0). Two facts about one
+# plugin: the CLI's list of installed plugins has no entry for it, and the
+# directory the CLI unpacked it into is still there. Apart, neither is a finding
+# — an absent entry is the ordinary state of a plugin nobody installed, and a
+# cache directory is what every installed plugin has. Together they are the state
+# the field report describes and the one a probe reading the registry alone
+# cannot see: `bionic_check_dep_absent` above answers `absent` for it and for
+# never-installed alike, so the report offered a fresh install and setup paid for
+# a download of bytes that were already correct on disk
+# (record/wave-01-plugin-only/s00-registry-drop.md §4).
+#
+# THE PREDICATE IS deps.sh's, NOT A SECOND READING OF THE SAME FILES. The
+# registry parse and the cache walk both belong to the mechanism that installs a
+# native row, and the repair party reads the same two answers before it writes;
+# a copy here would be free to drift from the repair it is a diagnosis for.
+bionic_check_registry_row_dropped() {  # <row id: registry-row:<name>>
+  dep_registry_row_restorable "${1#registry-row:}"
 }
 
 bionic_check_env_unwritten() {  # <row id: env:<KEY>>
@@ -353,25 +372,55 @@ bionic_check_wall_unloadable() {  # <row id>
 }
 
 # DEAD-SESSION STATE UNDER .bionic/tmp — the one PROJECT-scoped row in this
-# table, and the one whose party is `user` (fixit 1.5.2 defect; plan D-4/D-5).
-# Every other row is a fact about the machine; this one is a fact about the tree
-# doctor was run in, which is why it renders in doctor's project sections rather
-# than in either machine-state table.
+# table, and the one whose party is `user` (fixit 1.5.2 defect; plan D-4/D-5;
+# REWORDED for R2, ticket-30, plan D-4/D-5 amended). Every other row is a fact
+# about the machine; this one is a fact about the tree doctor was run in, which
+# is why it renders in doctor's project sections rather than in either
+# machine-state table.
 #
-# THE ENUMERATION IS THE LIBRARY'S. `patrol_dead_sessions` is the same function
-# hooks/session-poker.sh's `sweep` walks, so what this detector counts and what
-# that verb deletes cannot come apart — the property that makes naming the verb
-# as the repair honest. Read-only, like every detector here: it stats filenames
-# and asks the kernel about pids.
+# WHAT THIS ROW USED TO FIRE ON, AND WHY THAT IS GONE. Before R2 the detector was
+# `[ -n "$(patrol_dead_sessions …)" ]` — any dead session's leftover state, every
+# time — which is exactly the shape ticket-30 filed against: doctor named the raw
+# script `session-poker.sh sweep` as the fix, and nothing in the product could
+# invoke it, so the row was permanent nagging with no button behind it. Now
+# hooks/session-start.sh calls that same verb itself, silently, once per session
+# start (REQ-R2) — so a dead session's residue is routinely gone again within one
+# Patrol interval, and a row that still fired on "any dead session exists" would
+# be reporting the NORMAL, SELF-HEALING gap between a `/clear` and the next
+# session start as a standing problem. The fact worth a row now is not "residue
+# exists" — it is "the thing that is supposed to clear it did not".
 #
-# THE CURRENT SESSION IS NAMED LIVE BY HAND for the reason the library documents:
-# a session running doctor is live by construction, and a claude-home doctor
-# cannot read must not turn its own state into a row telling it to sweep itself.
+# THE ENUMERATION IS THE HOOK'S OWN MARKER, NOT A RE-WALK. session-start.sh writes
+# `.bionic/tmp/sweep-failed.state` only when its own bounded `sweep` call answered
+# something other than "swept" or "nothing to sweep, everyone here is live" (rc 0
+# or 1) — a genuine refusal, or its own bound expiring. Read-only, like every
+# detector here: it stats one path and, on the positive case, reads one line back.
 bionic_check_dead_session_state() {  # <row id>
+  local f
+  f="$(_bionic_check_sweep_failed_marker)"
+  [ -f "$f" ] && [ ! -L "$f" ]
+}
+
+# THE MARKER'S PATH, for the detector above and for the rc reader below — one
+# spelling, because a second copy of `<root>/.bionic/tmp/sweep-failed.state` is
+# exactly the drift this file exists to prevent elsewhere.
+_bionic_check_sweep_failed_marker() {  # -> the marker path for the project at $PWD
   local root
-  root="$(_patrol_repo_root "$PWD" 2>/dev/null)" || root=""
+  root="$(project_root "$PWD" 2>/dev/null)" || root=""
   [ -n "$root" ] || root="$PWD"
-  [ -n "$(patrol_dead_sessions "$root" "${CLAUDE_CODE_SESSION_ID:-}")" ]
+  printf '%s/.bionic/tmp/sweep-failed.state' "$root"
+}
+
+# THE RC A READER PUTS IN WORDS (scope constraint: "naming that the automatic
+# sweep failed and the rc"). Read here, once, rather than doctor re-parsing the
+# marker's own line — the same "one reader" rule every fielded value in this file
+# follows. Empty when the marker is absent or unreadable; the caller decides what
+# an empty rc renders as.
+bionic_check_sweep_failed_rc() {  # -> the rc session-start.sh recorded, or empty
+  local f
+  f="$(_bionic_check_sweep_failed_marker)"
+  [ -f "$f" ] && [ ! -L "$f" ] || { printf ''; return 1; }
+  sed -n 's/.*|rc=\([0-9][0-9]*\).*/\1/p' "$f" 2>/dev/null | head -1
 }
 
 # ─── The table ───────────────────────────────────────────────────────────────
@@ -450,6 +499,32 @@ _bionic_checks_build() {
     _bionic_checks_emit "tool:${n}" "$n" "bionic_check_dep_absent" "setup" "tool:${n}" "$r_setup"
   done 3< <(dep_names_class extra)
 
+  # ONLY ON A MACHINE THAT HAS THE STATE, the same way a `duplicate:` row exists
+  # only for a duplicate this machine actually carries. A row emitted for every
+  # native plugin would put five permanent entries on setup's roster that a
+  # healthy machine has nothing to do about; the roster is what a user reads, and
+  # a fact that is almost never true does not belong on it as a standing line.
+  # The detector is asked here AND kept on the row: the table is built once per
+  # process, and a repair that lands inside that process must be able to make the
+  # row stop firing without the build being redone.
+  #
+  # WHO REPAIRS IT DEPENDS ON WHICH ROW IT IS, and both answers were measured. A
+  # row bionic does not declare — `impeccable`, and the two anthropic skill packs
+  # — is reachable from setup's own extras item, and that item now restores the
+  # entry from the cache instead of re-installing (deps.sh `restore_plugin_row`).
+  # A `core` row is the CLI's: reinstalling bionic restores `superpowers` and
+  # `agent-skills` because bionic declares them (ruling §1), and D1 gives setup no
+  # item for either, so the row names the CLI's route exactly as `dep:<name>` does.
+  while IFS= read -r n <&3; do
+    [ -n "$n" ] || continue
+    bionic_check_registry_row_dropped "registry-row:${n}" || continue
+    if [ "$(dep_field "$n" class 2>/dev/null)" = "core" ]; then
+      _bionic_checks_emit "registry-row:${n}" "" "bionic_check_registry_row_dropped" "cli" "" "$r_cli"
+    else
+      _bionic_checks_emit "registry-row:${n}" "" "bionic_check_registry_row_dropped" "setup" "tool:${n}" "$r_setup"
+    fi
+  done 3< <(dep_names_kind native)
+
   # ONE ROW PER SETTING, ONE ITEM FOR ALL OF THEM. doctor prints a row per name
   # and setup writes them in one step, so the rows are per-name and they share an
   # item — which is exactly what the `item` column being its own field is for.
@@ -478,11 +553,12 @@ _bionic_checks_build() {
 
   # THE PROJECT-STATE ROW, and the only one whose party is the reader. No item:
   # setup is machine-scoped and has no project concept, so there is nothing for
-  # it to offer — which is exactly what the defect found when `--all` reported
-  # "nothing left to do" over a directory holding five dead sessions. No label
-  # either: like `plugin` and the two wall rows, this check reaches a reader
-  # through a FIX line rather than through a row of its own name, and doctor's
-  # per-session lines carry the session ids instead.
+  # it to offer. No label either: like `plugin` and the two wall rows, this check
+  # reaches a reader through a FIX line rather than through a row of its own name.
+  # R2 (ticket-30) narrowed WHAT fires it — session-start.sh's own auto-sweep is
+  # the ordinary cure now, so this row is silent unless that auto-sweep itself
+  # failed — but the hint stays the manual verb: it is the one thing left for a
+  # reader to type when the automatic cure did not work on its own.
   _bionic_checks_emit "dead-session-state" "" "bionic_check_dead_session_state" "user" "" "session-poker.sh sweep"
 
   # THE WALLS ARE THE CLI'S TO REPAIR, not setup's. A wall missing from the

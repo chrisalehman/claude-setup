@@ -1158,6 +1158,16 @@ expect_eq "15h: …and marks nothing, delivered or not" "0" "$(swept_count "$R15
 SUPDIR="$SANDBOX/hooks-supersede-mutant"
 mkdir -p "$SUPDIR"
 cp "$HOOKS_DIR/session-sweeper.sh" "$SUPDIR/session-sweeper.sh"
+# THE SHIPPED LAYOUT AROUND THE MUTANT: hooks/ beside scripts/lib/, holding THIS
+# checkout's library (epic-22 wave-01, N1). Without it the loader's first candidate misses
+# and its healing candidates reach the plugin INSTALLED on this machine, whose library is
+# whatever was last published — so the mutant would be driven against someone else's
+# libraries, and a mutant that fails to load its own fails OPEN and marks nothing, which
+# reads here as the guard still holding. Same reason cross-gate's `plant_hook_tree` exists.
+mkdir -p "$SANDBOX/scripts/lib"
+for _sup_lib in "$HOOKS_DIR/../scripts/lib" "$HOOKS_DIR/../payload/scripts/lib"; do
+  if [ -d "$_sup_lib" ]; then cp "$_sup_lib"/*.sh "$SANDBOX/scripts/lib/" 2>/dev/null; break; fi
+done
 # BOTH guards go, because either one alone still holds the line: an unmarked row has no
 # latest state, so the UNMET comparison rejects it too. The mutant is therefore the
 # over-broad implementation this arm could plausibly have been written as — supersede any
