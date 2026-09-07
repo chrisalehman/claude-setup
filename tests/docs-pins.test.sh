@@ -1361,4 +1361,86 @@ else
      "the mutation removed more than the strategic-by-rule clause"
 fi
 
+section "Section 12: K1 — the Step-0 confirmation display is a settings-only card (spec §Eval design K1, plan slice 15)"
+#
+# WHAT THIS SECTION OWNS. D1 (design ledger record/wave-01-plugin-only/design-ledger.md §D1)
+# moves the Verification Matrix to Step 3 and cuts per-line inference rationale from Step 0:
+# the confirmation display becomes a ten-section settings card — Purpose, Seed, Run, Branches,
+# Paths, Machine, Shape, Gates, Models, Warnings — ending in a direct approval question. AC-K1.1
+# pins the section names and their order; AC-K1.2 pins the matrix's absence; AC-K1.3 pins that
+# Branches always carries both the working and the integration line (Chris: "You must always
+# include the working branch and integration branch.").
+#
+# ANTI-VACUITY, same discriminate-a-doctored-copy pattern as the sections above: each extractor
+# is re-run against a copy mutated to reproduce the AC's own "fails-when", and must go red.
+
+# step0_card <file> -> the fenced Step-0 card, header line through the closing fence.
+step0_card() {
+  awk '/^Step 0 · Plan Configuration$/{f=1} f{print} f&&/^```$/{exit}' "$1" 2>/dev/null
+}
+
+STEP0_CARD="$(step0_card "$SKILL_MD")"
+
+expect_true "76: the Step-0 card block is found in SKILL.md" \
+  test -n "$STEP0_CARD"
+
+K1_EXPECTED_SECTIONS="Purpose
+Seed
+Run
+Branches
+Paths
+Machine
+Shape
+Gates
+Models
+Warnings"
+K1_SECTION_RE='^  (Purpose|Seed|Run|Branches|Paths|Machine|Shape|Gates|Models|Warnings)([[:space:]]|$)'
+K1_ACTUAL_SECTIONS="$(printf '%s\n' "$STEP0_CARD" | grep -E "$K1_SECTION_RE" | sed -E 's/^  ([A-Za-z]+).*/\1/')"
+
+expect_eq "77: AC-K1.1 — the Step-0 card carries the ten sections, in order (fails-when: card partially rendered)" \
+  "$K1_EXPECTED_SECTIONS" "$K1_ACTUAL_SECTIONS"
+
+expect_absent "78: AC-K1.2 — no Verification Matrix table renders in the Step-0 card (fails-when: the matrix is left in)" \
+  "Verification Matrix" "$STEP0_CARD"
+
+expect_contains "79a: AC-K1.3 — Branches carries the working branch line (fails-when: one branch line dropped)" \
+  "    working" "$STEP0_CARD"
+expect_contains "79b: AC-K1.3 — …and the integration branch line" \
+  "    integration" "$STEP0_CARD"
+
+# --- Anti-vacuity: each extractor must go red on the fails-when it names ---
+
+# 80: a card with a whole section dropped (Gates) fails K1.1's order check.
+anchor -E "$SKILL_MD" '^  Gates$' 1
+DOCTORED_NO_GATES="$TMP/skill-k1-no-gates.md"
+sed '/^  Gates$/,/^$/d' "$SKILL_MD" > "$DOCTORED_NO_GATES"
+DOCTORED_SECTIONS_80="$(printf '%s\n' "$(step0_card "$DOCTORED_NO_GATES")" | grep -E "$K1_SECTION_RE" | sed 's/^  //')"
+if [ "$DOCTORED_SECTIONS_80" = "$K1_EXPECTED_SECTIONS" ]; then
+  no "80: a Step-0 card partially rendered (a section dropped) fails the order check (pin discriminates)" \
+     "the mutated copy still matched the expected order — the pin is vacuous"
+else
+  ok "80: a Step-0 card partially rendered (a section dropped) fails the order check (pin discriminates)"
+fi
+
+# 81: a card with the matrix left in fails K1.2.
+anchor -E "$SKILL_MD" '^Step 0 · Plan Configuration$' 1
+DOCTORED_MATRIX_BACK="$TMP/skill-k1-matrix-back.md"
+awk '{print} /^Step 0 · Plan Configuration$/{print "  Verification Matrix:"}' "$SKILL_MD" > "$DOCTORED_MATRIX_BACK"
+DOCTORED_CARD_81="$(step0_card "$DOCTORED_MATRIX_BACK")"
+case "$DOCTORED_CARD_81" in
+  *"Verification Matrix"*) ok "81: a Step-0 card with the matrix left in fails the no-matrix check (pin discriminates)" ;;
+  *) no "81: a Step-0 card with the matrix left in fails the no-matrix check (pin discriminates)" \
+        "the mutated copy did not carry the matrix string — the mutation is a no-op" ;;
+esac
+
+# 82: a card missing the integration branch line fails K1.3.
+anchor "$SKILL_MD" '    integration   ' 1
+DOCTORED_NO_INTEGRATION="$TMP/skill-k1-no-integration.md"
+sed '/^    integration   /d' "$SKILL_MD" > "$DOCTORED_NO_INTEGRATION"
+DOCTORED_CARD_82="$(step0_card "$DOCTORED_NO_INTEGRATION")"
+case "$DOCTORED_CARD_82" in
+  *"    integration"*) no "82: a Step-0 card missing the integration branch line still 'has' it (pin is vacuous)" ;;
+  *) ok "82: a Step-0 card missing the integration branch line fails the branch-pair check (pin discriminates)" ;;
+esac
+
 finish
