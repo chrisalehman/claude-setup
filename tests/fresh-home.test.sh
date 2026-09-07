@@ -2000,6 +2000,14 @@ g15_doctor_lines() {  # <report file> -> the count
   printf '%s' "${n:-0}"
 }
 
+# The consent page's bullet for one item. `--all` prints the plan and then asks
+# ONE question over it; with the answer channel closed the question goes
+# unanswered, the run declines, and nothing on the fixture is written — which is
+# how the page is read without consenting to anything.
+g15_plan_bullet() {  # <report file> -> the bullet naming impeccable, or nothing
+  grep -F '• ' "$1" 2>/dev/null | grep -F 'impeccable' | head -1
+}
+
 g15_row_in_registry() {  # -> the recorded version, or <absent>
   jq -r '.plugins["impeccable@bionic"][0].version // "<absent>"' "$G15_REG" 2>/dev/null \
     || echo "<unreadable>"
@@ -2043,6 +2051,18 @@ expect_eq "15B: doctor names the lost entry and the files on disk, on exactly on
 expect_match "15B: …and that line ends with the route that clears it" \
   '*impeccable lost its entry but its files are still on disk → /bionic:setup restores it, no download' \
   "$(grep -F 'impeccable lost its entry' "$G15B_DOC" | head -1)"
+
+# THE CONSENT PAGE, WHICH IS WHERE THE USER ACTUALLY DECIDES. A page offering to
+# "install impeccable" over a machine that needs no download is asking consent
+# for an act that is not the act about to be taken. Arm C below runs the same
+# extractor on the machine where the install IS the act and gets the other
+# sentence, so this row is a difference between machines and not a string that
+# happens to be on every page.
+G15B_PLAN="$TMP/g15-restore-plan.txt"
+run_payload "$SETUP_SH" --all < /dev/null > "$G15B_PLAN" 2>&1
+expect_eq "15B: the consent page offers a restore, not an install" \
+  "  • restore impeccable's entry from the plugin cache, downloading nothing" \
+  "$(g15_plan_bullet "$G15B_PLAN")"
 
 G15B="$TMP/g15-restore.txt"
 printf 'y\ny\ny\n' | run_payload "$SETUP_SH" --only tool:impeccable > "$G15B" 2>&1
@@ -2117,6 +2137,11 @@ expect_no_match "15D: …and still attempts no install" \
 g15_plant no no
 expect_eq "15C: with no cache either, the dropped-row check does not fire" \
   "no" "$(g15_fires)"
+G15C_PLAN="$TMP/g15-install-plan.txt"
+run_payload "$SETUP_SH" --all < /dev/null > "$G15C_PLAN" 2>&1
+expect_eq "15C: …and the consent page offers an install, which is what this machine needs" \
+  "  • install impeccable" "$(g15_plan_bullet "$G15C_PLAN")"
+
 G15C="$TMP/g15-install.txt"
 printf 'y\ny\ny\n' | run_payload "$SETUP_SH" --only tool:impeccable > "$G15C" 2>&1
 expect_match "15C: …and setup installs it through the CLI, as it always did" \
