@@ -1628,4 +1628,64 @@ expect_contains "97h: …and sends an unfalsifiable criterion back to Step 1" \
 # match only, so a second header row elsewhere cannot be what the column checks read.
 expect_eq "97e: the Eval design column header is a single line" "1" \
   "$(printf '%s\n' "$EVAL_HEADER" | wc -l | tr -d ' ')"
+
+# ── Section 7: K4 — the prototype unit (AC-K4.1, AC-K4.3) ───────────────────
+#
+# AC-K4.1: the skill defines the prototype unit — three fields (question, what "right"
+# looks like, timebox), two homes (Step 2 by default, Step 4 by exception with a stated
+# reason), the ruling-to-spec rule, ships nothing, and the no-row rule. It is one bounded
+# paragraph, extracted the same way the Step-2/3 cards are (heading in, blank line out) so
+# a `has_all` below cannot be satisfied by unrelated prose living elsewhere in the file.
+proto_span() {
+  awk '
+    index($0, "The prototype unit") { f=1 }
+    f { print }
+    f && /^$/ { exit }
+  ' "$SKILL_MD"
+}
+PROTO_SPAN="$(proto_span)"
+
+expect_true "98a: the prototype-unit paragraph exists in the skill file" test -n "$PROTO_SPAN"
+
+if has_all "$PROTO_SPAN" "question" '"right"' "timebox" "ships nothing" \
+                        "never owns a matrix row" "Step 2" "Step 4" "kind: prototype" \
+                        "states that reason" "refused by the evidence gate"; then
+  ok "98b: AC-K4.1 — the prototype unit names its three fields, two homes (the Step-4 exception stating its reason), the ruling-to-spec rule, ships nothing, and the no-row rule"
+else
+  no "98b: AC-K4.1 — the prototype unit names its three fields, two homes (the Step-4 exception stating its reason), the ruling-to-spec rule, ships nothing, and the no-row rule" \
+     "span: $PROTO_SPAN"
+fi
+
+# 98c: Anti-vacuity — a copy with the no-row rule's sentence stripped fails 98b's check.
+DOCTORED_NO_ROWRULE="$TMP/skill-k4-no-rowrule.md"
+sed '/never owns a matrix row/d' "$SKILL_MD" > "$DOCTORED_NO_ROWRULE"
+DOCTORED_PROTO_SPAN="$(awk '
+    index($0, "The prototype unit") { f=1 }
+    f { print }
+    f && /^$/ { exit }
+  ' "$DOCTORED_NO_ROWRULE")"
+if has_all "$DOCTORED_PROTO_SPAN" "question" '"right"' "timebox" "ships nothing" \
+                        "never owns a matrix row" "Step 2" "Step 4" "kind: prototype" \
+                        "states that reason" "refused by the evidence gate"; then
+  no "98c: a prototype-unit paragraph missing the no-row rule still passes 98b's check (pin is vacuous)" \
+     "doctored span: $DOCTORED_PROTO_SPAN"
+else
+  ok "98c: a prototype-unit paragraph missing the no-row rule fails 98b's check (pin discriminates)"
+fi
+
+# AC-K4.3: the Step-3 card's "Open at approval" section is a QUESTION → SLICE mapping, not
+# just a bare header — 93a already pins the header string; this pins the row shape it
+# names, `closed by slice <n>`, which is what makes the section machine-checkable rather
+# than a caption with nothing under it.
+expect_contains "98d: AC-K4.3 — the Step-3 card's Open-at-approval row maps a question to the slice that closes it" \
+  "closed by slice" "$CARD3"
+
+# 98e: Anti-vacuity — a Step-3 card with the mapping text stripped fails 98d.
+DOCTORED_NO_CLOSEDBY="$TMP/skill-k4-no-closedby.md"
+sed 's/closed by slice/discharged eventually/' "$SKILL_MD" > "$DOCTORED_NO_CLOSEDBY"
+DOCTORED_CARD3_98="$(card_span "$DOCTORED_NO_CLOSEDBY" 'Step 3 · Plan')"
+case "$DOCTORED_CARD3_98" in
+  *"closed by slice"*) no "98f: a Step-3 card missing the 'closed by slice' mapping still 'has' it (pin is vacuous)" ;;
+  *) ok "98f: a Step-3 card missing the 'closed by slice' mapping fails the K4.3 check (pin discriminates)" ;;
+esac
 finish
