@@ -198,14 +198,14 @@ mk_transcript "$S5_LIVE_TRANSCRIPT" fresh W-ONE W-TWO W-THREE W-FOUR
 # defaults to $S5_LIVE_TRANSCRIPT (fresh, names every W-* fixture row live).
 mk_agent_payload() {
   local prompt="${3-$BRIEF_FULL}" name="${4-w99-impl}" model="${5-claude-sonnet-5}" \
-        transcript="${6-$S5_LIVE_TRANSCRIPT}"
+        transcript="${6-$S5_LIVE_TRANSCRIPT}" stype="${7-implementor}"
   jq -n --arg s "$1" --arg c "$2" --arg p "$prompt" --arg n "$name" --arg m "$model" \
-        --arg t "$transcript" \
+        --arg t "$transcript" --arg y "$stype" \
     '{session_id:$s, transcript_path:$t, cwd:$c,
       prompt_id:"f3cd7d62-305d-47ed-9eaf-46fb12d4f4ed",
       permission_mode:"bypassPermissions", effort:{level:"high"},
       hook_event_name:"PreToolUse", tool_name:"Agent",
-      tool_input:({description:"a test dispatch", subagent_type:"implementor",
+      tool_input:({description:"a test dispatch", subagent_type:$y,
                    prompt:$p, run_in_background:true}
                   + (if $n == "-" then {} else {name:$n} end)
                   + (if $m == "-" then {} else {model:$m} end)),
@@ -3991,5 +3991,110 @@ expect_contains "29c …with the operator warned at the moment the config is fix
   "derived no suites" "$GATE_ERR"
 ROW=$(roster_nth_row "$(roster_path "$REPO" "$SID_A")" 1)
 expect_status "29c …and the row records the empty third state" "" "$(roster_field "$ROW" suites_allowed)"
+
+
+# ===========================================================================
+section "S30: the approval checkpoint — a writer needs an approved plan (epic-22 K2, AC-K2.4)"
+# ===========================================================================
+#
+# WHY THE WRITER AND NOT ONLY THE COMMIT. The evidence gate refuses a commit made at
+# `current: 4` while the plan carries no `approved-by:`. That is the right wall, and it is
+# the LATE one: by the time it fires, eight writers have already read the brief, taken
+# worktrees and written code against a plan nobody ratified. This arm is the early half —
+# it refuses the writer, which is the first act of a plan that closing a file cannot undo.
+#
+# THE ROLE SET IS THE WHOLE DISCRIMINATION. Researchers, test-runners, auditors and critics
+# are dispatched BEFORE approval as a matter of course: the research that informs the plan
+# is exactly such a dispatch, and refusing it would refuse the work that produces the
+# approval. So the arm names two roles and only two, matched whole.
+#
+# HERMETIC, like everything else here: `make_repo` writes a plan at `current: 4` with no
+# `approved-by:` line, which is precisely the refused state; the pass cases add the line.
+
+# k2_plan_line <repo> <line...> — rewrite the fixture plan's `## SDLC State` body.
+k2_write_plan() {  # <repo> <current> <approved-by line, or "">
+  local repo="$1" cur="$2" approved="$3"
+  local dir="$repo/.bionic/docs/plans/epic-99-test"
+  mkdir -p "$dir"
+  {
+    printf -- '---\ngoverning-skill: canonical-sdlc\ncanonical_sdlc_version: 14\n'
+    printf -- 'intent: build\nrigor: audited\nscale: wave\n---\n\n'
+    printf -- '# Test wave plan\n\n## SDLC State\n\nintegration-branch: main\ncurrent: %s\n' "$cur"
+    [ -n "$approved" ] && printf -- '%s\n' "$approved"
+    printf -- '\n- Step %s: slices in flight\n' "$cur"
+  } > "$dir/wave-01-test.plan.md"
+}
+
+K2_APPROVED_LINE='approved-by: dana 2026-09-07T19:05Z "Ok, amazing! Approved."'
+
+# --- 30a/30b: the two writer roles are refused while the line is absent ---
+for _role in bionic:implementor bionic:senior-implementor; do
+  _tag="30a"; [ "$_role" = "bionic:senior-implementor" ] && _tag="30b"
+  REPO=$(make_repo "r${_tag}" yes)
+  write_attestation "$REPO" "$SID_A"
+  k2_write_plan "$REPO" 4 ""
+  run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w${_tag}" "claude-sonnet-5" \
+                               "$S5_LIVE_TRANSCRIPT" "$_role")"
+  expect_status "${_tag} a ${_role} dispatch at current: 4 with no approved-by is refused" "2" "$GATE_ST"
+  expect_contains "${_tag} …and the refusal names the missing line" "approved-by" "$GATE_ERR"
+  # NOT merely the plan path: an unbound session's own resolution announcement carries that
+  # already, so a path assertion here would be green with no refusal printed at all.
+  expect_contains "${_tag} …and says what a writer needs" "writers run against an APPROVED plan" "$GATE_ERR"
+done
+
+# --- 30c: THE CONTROL — the same dispatch with the line present passes ---
+REPO=$(make_repo r30c yes)
+write_attestation "$REPO" "$SID_A"
+k2_write_plan "$REPO" 4 "$K2_APPROVED_LINE"
+run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w30c" "claude-sonnet-5" \
+                             "$S5_LIVE_TRANSCRIPT" "bionic:implementor")"
+expect_status "30c control: the same writer dispatch with approved-by present passes" "0" "$GATE_ST"
+expect_absent "30c …with no refusal printed" "BLOCKED" "$GATE_ERR"
+
+# --- 30d: an approved-by whose value is empty records no approval ---
+REPO=$(make_repo r30d yes)
+write_attestation "$REPO" "$SID_A"
+k2_write_plan "$REPO" 4 "approved-by:"
+run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w30d" "claude-sonnet-5" \
+                             "$S5_LIVE_TRANSCRIPT" "bionic:implementor")"
+expect_status "30d an empty approved-by: value is not an approval" "2" "$GATE_ST"
+
+# --- 30e: the reading roles pass through the same refused plan ---
+for _role in bionic:researcher bionic:test-runner bionic:auditor bionic:critic; do
+  REPO=$(make_repo "r30e-${_role##*:}" yes)
+  write_attestation "$REPO" "$SID_A"
+  k2_write_plan "$REPO" 4 ""
+  run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w30e" "claude-sonnet-5" \
+                               "$S5_LIVE_TRANSCRIPT" "$_role")"
+  expect_status "30e a ${_role} dispatch against the SAME unapproved plan passes" "0" "$GATE_ST"
+done
+
+# --- 30f: below Step 4 the arm is inert — the plan is still being authored ---
+REPO=$(make_repo r30f yes)
+write_attestation "$REPO" "$SID_A"
+k2_write_plan "$REPO" 3 ""
+run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w30f" "claude-sonnet-5" \
+                             "$S5_LIVE_TRANSCRIPT" "bionic:implementor")"
+expect_status "30f current: 3 with no approved-by — the arm is inert" "0" "$GATE_ST"
+
+# --- 30g: the durable half — the approval still binds after Step 4 ---
+REPO=$(make_repo r30g yes)
+write_attestation "$REPO" "$SID_A"
+k2_write_plan "$REPO" 6 ""
+run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w30g" "claude-sonnet-5" \
+                             "$S5_LIVE_TRANSCRIPT" "bionic:implementor")"
+expect_status "30g current: 6 with no approved-by — still refused" "2" "$GATE_ST"
+
+# --- 30h: no plan on disk at all — a plan-bound arm with nothing to measure ---
+REPO=$(make_repo r30h no)
+mkdir -p "$REPO/.bionic/tmp"
+printf 'patrol-stamp/v1|at=%s|session=%s|verb=arm\n' \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SID_A" > "$REPO/.bionic/tmp/patrol-$SID_A.state"
+: > "$REPO/.bionic/tmp/engaged-$SID_A.state"
+write_attestation "$REPO" "$SID_A"
+run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w30h" "claude-sonnet-5" \
+                             "$S5_LIVE_TRANSCRIPT" "bionic:implementor")"
+expect_status "30h an engaged session with no plan on disk — the arm is inert" "0" "$GATE_ST"
+
 
 finish
