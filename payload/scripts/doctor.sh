@@ -658,7 +658,7 @@ STATUSLINE_NPX_STATE="${STATUSLINE_NPX_FACT##*present=}"
 DOCTOR_INSTALL_PATH="$(detect_plugin_install_path bionic 2>/dev/null)" || DOCTOR_INSTALL_PATH=""
 _doctor_is_repo() { ( cd "${1:-/nonexistent}" 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1 ); }
 if [ -z "$DOCTOR_INSTALL_PATH" ] || ! _doctor_is_repo "$DOCTOR_INSTALL_PATH"; then
-  _doctor_root_alt="$(_detect_plugin_root)"
+  _doctor_root_alt="$(plugin_root)"
   if _doctor_is_repo "$_doctor_root_alt"; then DOCTOR_INSTALL_PATH="$_doctor_root_alt"; fi
   [ -n "$DOCTOR_INSTALL_PATH" ] || DOCTOR_INSTALL_PATH="$_doctor_root_alt"
 fi
@@ -726,7 +726,7 @@ HOOK_RESOLVING="${HOOK_WIRING_FACT##*resolving=}"
 # This is a directory listing, not a schema parse — there is no second reading of
 # a format that could drift away from a first one, which is what the RV-7 rule
 # against re-deriving facts in this file is protecting against.
-_doctor_payload_root="$(_detect_plugin_root)"
+_doctor_payload_root="$(plugin_root)"
 SKILLS_TOTAL=0; SKILLS_OK=0; SKILL_NAMES=""
 for _sk in "$_doctor_payload_root"/skills/*/; do
   [ -d "$_sk" ] || continue
@@ -1626,7 +1626,7 @@ if [ -n "$_doctor_hooks_mtime" ]; then
     _rs_cwd="$(_doctor_pfield "$_rs_line" cwd)"
     _doctor_session_here "$_rs_cwd" || continue
     _rs_pid="$(_doctor_pfield "$_rs_line" pid)"
-    _rs_sf="$(_patrol_claude_home)/sessions/${_rs_pid}.json"
+    _rs_sf="$(claude_home)/sessions/${_rs_pid}.json"
     _rs_started_ms="$(command -v jq >/dev/null 2>&1 && jq -r '.startedAt // empty' "$_rs_sf" 2>/dev/null)"
     case "$_rs_started_ms" in ''|*[!0-9]*) continue ;; esac
     _rs_started_sec=$(( _rs_started_ms / 1000 ))
@@ -1951,6 +1951,44 @@ PERM_MODE_STATE=no;  bionic_check_fires permission-mode         && PERM_MODE_STA
   fix "bionic's retired permission block is still in settings.json → run $(bionic_check_hint legacy-permission-block)"
 [ "$PERM_MODE_STATE" = "yes" ] && \
   fix "the default permission mode is not ${BIONIC_DEFAULT_PERMISSION_MODE} → run $(bionic_check_hint permission-mode)"
+
+# THE ROW THE REGISTRY LOST WHILE THE PLUGIN'S FILES STAYED (REQ-S0, AC-S0.3).
+#
+# WHY THE DEPENDENCY TABLE COULD NOT SAY THIS. The row two tables down already
+# reports `✗ impeccable  not installed → /bionic:setup`, and that sentence is true
+# of this machine and of a machine that never had the plugin alike — one of which
+# needs a download and one of which does not. The difference is the whole finding,
+# and it does not fit there: the state cell is 44 columns of a 100-column budget
+# once the name, version and source columns are paid for, and the route already
+# spends 29 of them (lib/width.sh's own arithmetic). A sentence about the cache
+# would be truncated away by `bionic_line` exactly where the reader needs it.
+#
+# So it is a FIX line, which is the surface for a fact that reaches a reader as a
+# repair rather than as a cell — the same channel the walls and the dead-session
+# rows use. Every such line ending in the setup route is collapsed into the
+# verdict's name list, so a machine with one dropped row gets one sentence.
+#
+# NAMED, NOT COUNTED. Which plugin lost its entry is the actionable half — the
+# reader wants to know whether it is the design pack or the skills pack — so the
+# rows are printed one per name rather than collapsed into a number, exactly as
+# the environment keys are.
+# THE TAIL SAYS "NO DOWNLOAD" ONLY WHERE THAT IS TRUE. A row bionic does not
+# declare is setup's, and setup writes the entry back from the cache — that is
+# the sentence worth reading, and it is why this line exists at all. A `core`
+# row is the CLI's: reinstalling bionic restores it, and that DOES fetch, so the
+# line carries the route and makes no claim about downloading. A cli route is
+# not the setup route, so that line reaches its own line either way; the setup
+# one has to earn it by not ENDING in the route, which is `fix`'s own rule for
+# what may be collapsed into the verdict's name list.
+for _rr_name in $(dep_names_kind native); do
+  bionic_check_fires "registry-row:${_rr_name}" || continue
+  _rr_hint="$(bionic_check_hint "registry-row:${_rr_name}")"
+  if [ "$_rr_hint" = "$DOCTOR_SETUP_ROUTE" ]; then
+    fix "${_rr_name} lost its entry but its files are still on disk → ${_rr_hint} restores it, no download"
+  else
+    fix "${_rr_name} lost its entry but its files are still on disk → ${_rr_hint}"
+  fi
+done
 
 if [ "$PLUGIN_HOOKS" = "degraded" ] || [ "$PLUGIN_HOOKS" = "absent" ]; then
   # THE HINT IS THE WHOLE TAIL, AND IT KNOWS WHICH STATE IS ASKING (W7 S11,
