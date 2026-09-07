@@ -1721,7 +1721,72 @@ case "$DOCTORED_ROW1_106" in
   *) ok "106: a Step-1 row with its artifact clause stripped fails the row check (pin discriminates)" ;;
 esac
 
-section "Section 15: K5.4 — the goal-paragraph rule text (design ledger K5.4, plan slice 21)"
+# ── Section 15: K4 — the prototype unit (AC-K4.1, AC-K4.3) ──────────────────
+#
+# NUMBERED FROM 107, past K5's last number (106) — same renumber-at-merge
+# convention Section 14's own header note explains.
+#
+# AC-K4.1: the skill defines the prototype unit — three fields (question, what "right"
+# looks like, timebox), two homes (Step 2 by default, Step 4 by exception with a stated
+# reason), the ruling-to-spec rule, ships nothing, and the no-row rule. It is one bounded
+# paragraph, extracted the same way the Step-2/3 cards are (heading in, blank line out) so
+# a `has_all` below cannot be satisfied by unrelated prose living elsewhere in the file.
+proto_span() {
+  awk '
+    index($0, "The prototype unit") { f=1 }
+    f { print }
+    f && /^$/ { exit }
+  ' "$SKILL_MD"
+}
+PROTO_SPAN="$(proto_span)"
+
+expect_true "107a: the prototype-unit paragraph exists in the skill file" test -n "$PROTO_SPAN"
+
+if has_all "$PROTO_SPAN" "question" '"right"' "timebox" "ships nothing" \
+                        "never owns a matrix row" "Step 2" "Step 4" "kind: prototype" \
+                        "states that reason" "refused by the evidence gate"; then
+  ok "107b: AC-K4.1 — the prototype unit names its three fields, two homes (the Step-4 exception stating its reason), the ruling-to-spec rule, ships nothing, and the no-row rule"
+else
+  no "107b: AC-K4.1 — the prototype unit names its three fields, two homes (the Step-4 exception stating its reason), the ruling-to-spec rule, ships nothing, and the no-row rule" \
+     "span: $PROTO_SPAN"
+fi
+
+# 107c: Anti-vacuity — a copy with the no-row rule's sentence stripped fails 107b's check.
+anchor "$SKILL_MD" 'never owns a matrix row' 1
+DOCTORED_NO_ROWRULE="$TMP/skill-k4-no-rowrule.md"
+sed '/never owns a matrix row/d' "$SKILL_MD" > "$DOCTORED_NO_ROWRULE"
+DOCTORED_PROTO_SPAN="$(awk '
+    index($0, "The prototype unit") { f=1 }
+    f { print }
+    f && /^$/ { exit }
+  ' "$DOCTORED_NO_ROWRULE")"
+if has_all "$DOCTORED_PROTO_SPAN" "question" '"right"' "timebox" "ships nothing" \
+                        "never owns a matrix row" "Step 2" "Step 4" "kind: prototype" \
+                        "states that reason" "refused by the evidence gate"; then
+  no "107c: a prototype-unit paragraph missing the no-row rule still passes 107b's check (pin is vacuous)" \
+     "doctored span: $DOCTORED_PROTO_SPAN"
+else
+  ok "107c: a prototype-unit paragraph missing the no-row rule fails 107b's check (pin discriminates)"
+fi
+
+# AC-K4.3: the Step-3 card's "Open at approval" section is a QUESTION → SLICE mapping, not
+# just a bare header — 93a already pins the header string; this pins the row shape it
+# names, `closed by slice <n>`, which is what makes the section machine-checkable rather
+# than a caption with nothing under it.
+expect_contains "107d: AC-K4.3 — the Step-3 card's Open-at-approval row maps a question to the slice that closes it" \
+  "closed by slice" "$CARD3"
+
+# 107e: Anti-vacuity — a Step-3 card with the mapping text stripped fails 107d.
+anchor "$SKILL_MD" 'closed by slice' 1
+DOCTORED_NO_CLOSEDBY="$TMP/skill-k4-no-closedby.md"
+sed 's/closed by slice/discharged eventually/' "$SKILL_MD" > "$DOCTORED_NO_CLOSEDBY"
+DOCTORED_CARD3_107="$(card_span "$DOCTORED_NO_CLOSEDBY" 'Step 3 · Plan')"
+case "$DOCTORED_CARD3_107" in
+  *"closed by slice"*) no "107f: a Step-3 card missing the 'closed by slice' mapping still 'has' it (pin is vacuous)" ;;
+  *) ok "107f: a Step-3 card missing the 'closed by slice' mapping fails the K4.3 check (pin discriminates)" ;;
+esac
+
+section "Section 16: K5.4 — the goal-paragraph rule text (design ledger K5.4, plan slice 21)"
 #
 # WHAT THIS SECTION OWNS. AC-K5.4 pins that SKILL.md's own text says each of the three
 # artifacts opens with a concise goal paragraph under '## Goal', and that a
@@ -1732,21 +1797,24 @@ section "Section 15: K5.4 — the goal-paragraph rule text (design ledger K5.4, 
 # tests/canonical-sdlc-governing-skill.test.sh's own K5.4 section, not here; this section
 # owns the "human reads the skill" half only, same division Section 14 draws for K5.3.
 #
-# NUMBERED FROM 107 (continuing past Section 14's last number, 106).
+# NUMBERED FROM 108 (continuing past Section 15's last number, 107f). Section 15 (K4) and
+# this section both landed a "Section 15" numbered from 107 in their own worktrees — the
+# same renumber-at-merge convention Section 14's own header note describes; K5.4 is the
+# one that moves, since it merges second.
 
-expect_contains "107: AC-K5.4 — the three-artifact sentence says each opens with a concise goal paragraph under '## Goal' (fails-when: absent)" \
+expect_contains "108: AC-K5.4 — the three-artifact sentence says each opens with a concise goal paragraph under '## Goal' (fails-when: absent)" \
   "\`## Goal\` section — one concise paragraph" "$THREE_ARTIFACT_TEXT"
 
-expect_contains "108: AC-K5.4 — …and that a governing-skill arm refuses a write whose first section is not Goal (fails-when: absent)" \
+expect_contains "109: AC-K5.4 — …and that a governing-skill arm refuses a write whose first section is not Goal (fails-when: absent)" \
   "first section is not Goal" "$THREE_ARTIFACT_TEXT"
 
-# --- Anti-vacuity: 107/108 must go red when the K5.4 clause is stripped ---
+# --- Anti-vacuity: 108/109 must go red when the K5.4 clause is stripped ---
 #
 # The clause is the tail of Section 14's own paragraph (spans the last four physical
 # lines of it, wrapped) — a narrower mutation than 105's whole-paragraph removal above,
 # because 105 already discharges anti-vacuity for 101/102a-c and would prove nothing new
-# for 107/108 specifically: this mutation keeps the rest of the paragraph (including the
-# ". Each" boundary) and strips only the sentence 107/108 are about.
+# for 108/109 specifically: this mutation keeps the rest of the paragraph (including the
+# ". Each" boundary) and strips only the sentence 108/109 are about.
 anchor "$SKILL_MD" 'validates `*.spec.md`, minus the design three-way rule (that stays spec-only). Each' 1
 DOCTORED_NO_K54_CLAUSE="$TMP/skill-k54-no-clause.md"
 sed -e "s/(that stays spec-only)\. Each\$/(that stays spec-only)./" \
@@ -1754,18 +1822,18 @@ sed -e "s/(that stays spec-only)\. Each\$/(that stays spec-only)./" \
     -e '/^(design ledger K5\.4) — and a governing-skill arm/d' \
     -e '/^write whose first section is not Goal, or whose Goal section is empty\.$/d' \
     "$SKILL_MD" > "$DOCTORED_NO_K54_CLAUSE"
-DOCTORED_THREE_ARTIFACT_109="$(awk '/^\*\*Three artifacts, three steps\*\*/{f=1} f{print} f&&/^$/{exit}' "$DOCTORED_NO_K54_CLAUSE")"
-case "$DOCTORED_THREE_ARTIFACT_109" in
-  *"\`## Goal\` section — one concise paragraph"*) no "109a: a sentence with the K5.4 clause stripped still 'has' the goal-paragraph text (107 is vacuous)" ;;
-  *) ok "109a: a sentence with the K5.4 clause stripped fails 107's check (pin discriminates)" ;;
+DOCTORED_THREE_ARTIFACT_110="$(awk '/^\*\*Three artifacts, three steps\*\*/{f=1} f{print} f&&/^$/{exit}' "$DOCTORED_NO_K54_CLAUSE")"
+case "$DOCTORED_THREE_ARTIFACT_110" in
+  *"\`## Goal\` section — one concise paragraph"*) no "110a: a sentence with the K5.4 clause stripped still 'has' the goal-paragraph text (108 is vacuous)" ;;
+  *) ok "110a: a sentence with the K5.4 clause stripped fails 108's check (pin discriminates)" ;;
 esac
-case "$DOCTORED_THREE_ARTIFACT_109" in
-  *"first section is not Goal"*) no "109b: a sentence with the K5.4 clause stripped still 'has' the arm-refusal text (108 is vacuous)" ;;
-  *) ok "109b: a sentence with the K5.4 clause stripped fails 108's check (pin discriminates)" ;;
+case "$DOCTORED_THREE_ARTIFACT_110" in
+  *"first section is not Goal"*) no "110b: a sentence with the K5.4 clause stripped still 'has' the arm-refusal text (109 is vacuous)" ;;
+  *) ok "110b: a sentence with the K5.4 clause stripped fails 109's check (pin discriminates)" ;;
 esac
 # The mutation kept the rest of the paragraph — proof the delete was surgical, not
 # 105's whole-paragraph wipe reused under a new number.
-expect_contains "109c: the doctored copy still carries the REST of the paragraph (the mutation is surgical, not 105's whole-paragraph wipe)" \
-  "requirements.md\`: numbered requirements" "$DOCTORED_THREE_ARTIFACT_109"
+expect_contains "110c: the doctored copy still carries the REST of the paragraph (the mutation is surgical, not 105's whole-paragraph wipe)" \
+  "requirements.md\`: numbered requirements" "$DOCTORED_THREE_ARTIFACT_110"
 
 finish

@@ -1591,8 +1591,85 @@ validate_fails_when() {
   return 0
 }
 
+# The `## Slices` section body, same fence-aware/heading-bounded shape as
+# `matrix_section` above — a separate awk pass over the whole plan, stopping at the
+# next `## ` heading.
+slices_section() {
+  normalize_newlines "$PLAN" | awk '
+    /^[[:space:]]*```/ { fence = !fence; next }
+    fence { next }
+    /^## Slices/ { f=1; next }
+    /^## / { f=0 }
+    f'
+}
+
+# ---------- the prototype no-row arm (AC-K4.2) ----------
+#
+# A PROTOTYPE NEVER DISCHARGES A MATRIX ROW (design decision D7). Its output is a
+# design ruling written back to the spec, not a shipped behavior — nothing about a
+# throwaway is provable by an eval, so a `kind: prototype` slice that also owns a
+# Verification Matrix AC block is a category error the gate can catch structurally:
+# the `## Slices` table names which slices are prototypes, and each AC block's own
+# `slice:` field names which slice discharges it. Reads both tables the same way
+# `validate_fails_when` reads the matrix — rows first, then the block underneath
+# each row — so an AC id absent from the row table (and therefore from the matrix
+# entirely) cannot be judged here either.
+#
+# INERT BELOW STEP 4, same reasoning as the two arms above: the Slices table and the
+# Verification Matrix are both Step-3 artifacts, not necessarily complete before then.
+# [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
+validate_prototype_no_matrix_row() {
+  local step slices proto_nums line num kind rows ac block_txt ac_slice n
+  step=$(k2_step_num)
+  [ -n "$step" ] || return 0
+  [ "$step" -ge 4 ] || return 0
+
+  slices=$(slices_section | grep -E '^[[:space:]]*\|')
+  [ -n "$slices" ] || return 0
+
+  proto_nums=""
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    echo "$line" | grep -qE '^[[:space:]]*\|[-|:[:space:]]*$' && continue
+    num=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')
+    [ "$num" = "#" ] && continue
+    kind=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$4); print $4}')
+    [ "$kind" = "prototype" ] || continue
+    [ -n "$num" ] || continue
+    proto_nums="$proto_nums $num"
+  done <<< "$slices"
+  [ -n "$proto_nums" ] || return 0
+
+  MATRIX=$(matrix_section)
+  [ -n "$MATRIX" ] || return 0
+  rows=$(echo "$MATRIX" | grep -E '^[[:space:]]*\|')
+  [ -n "$rows" ] || return 0
+
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    echo "$line" | grep -qE '^[[:space:]]*\|[-|:[:space:]]*$' && continue
+    ac=$(echo "$line" | awk -F'|' '{gsub(/^[ \t]+|[ \t]+$/,"",$2); print $2}')
+    [ "$ac" = "AC" ] && continue
+    [ -n "$ac" ] || continue
+    block_txt=$(matrix_block "$ac")
+    [ -n "$block_txt" ] || continue
+    ac_slice=$(echo "$block_txt" | grep -E '^[[:space:]]*slice[[:space:]]*:' | head -1 \
+      | sed -E 's/^[[:space:]]*slice[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
+    [ -n "$ac_slice" ] || continue
+    for n in $proto_nums; do
+      [ "$ac_slice" = "$n" ] || continue
+      echo "BLOCKED: canonical-sdlc step ${CURRENT} — matrix row '${ac}' names 'slice: ${ac_slice}', a 'kind: prototype' row in '## Slices'; a prototype ships nothing and never discharges a matrix row." >&2
+      echo "Plan: $PLAN" >&2
+      echo "Fix: remove the '${ac}:' block, or repoint its 'slice:' to the build slice that cites the prototype's ruling — the prototype's own output is a design decision written to the spec, never a matrix discharge." >&2
+      exit 2
+    done
+  done <<< "$rows"
+  return 0
+}
+
 validate_approved_by
 validate_fails_when
+validate_prototype_no_matrix_row
 
 # THE POINTER-STEP EXIT, relocated from above (epic-22 K2). A pointer step records a
 # link or a path rather than shaped fields; having passed the presence and placeholder
