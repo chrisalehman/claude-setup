@@ -351,15 +351,6 @@ expect_match    "24: the section falls back to none running" "*none running*" "$
 expect_no_match "25: and a deliberate stop earns no fix line" \
   "*session ${SHORT5}: the Patrol*" "$OUT5"
 
-section "Section 6: registration"
-
-# THE SUITE IS REGISTERED. tests/*.test.sh is NOT globbed by the runner — see
-# tests/patrol-duties-gate.test.sh's own case 24 for the prior instance of this
-# lesson (doctor.test.sh, deleted at 8582861, was never re-registered because
-# nothing needed to be — this is that suite's live successor).
-expect_true "26: tests/run.sh names doctor-patrol.test.sh" \
-  grep -q 'run "doctor-patrol.test.sh" bash tests/doctor-patrol.test.sh' "${BIONIC_SCRIPTS_DIR}/tests/run.sh"
-
 section "Section 7: a firing Patrol with NO roster file and launches in the transcript"
 
 # THE DEFECT THIS SECTION OWNS (Chris, 2026-08-29, on the 1.3.0 plugin):
@@ -806,5 +797,125 @@ OUT17B="$(run_doctor "$HOME17" "$REPO17")"
 PB17B="$(patrol_block "$OUT17B")"
 expect_match "56: …and flipping that same marker to MET closes it (54 discriminates)" \
   "*✓ session ${SHORT17} · 0 open dispatches*" "$PB17B"
+
+section "Section 16: dead-session state — one collapsed line, one fix, no \"Nothing to do\" (1.5.1 T5, AC-8)"
+
+# THE DEFECT THIS CLOSES, in its own shape (ideas/fixit-1.5.2-dead-session-sweep.md
+# §Observed): a project whose predecessor sessions are all gone, whose `.bionic/tmp`
+# holds their roster, preflight and engagement files, and whose doctor page listed
+# them as informational dashes — or, for the ones whose rows had all landed, did not
+# list them at all — under a header reading "Nothing to do".
+#
+# FIXTURE FIDELITY: the layout is the defect's, scaled down — three dead sessions
+# with three classes each, one live session beside them, and `context-spend.state`,
+# which carries no session id and must survive every reading. The residue case is
+# the one that matters most: NONE of these rosters carries an open row, which is
+# exactly the state the old open-row test rendered nothing for.
+SID16_LIVE="e96260d1-6666-4666-8666-666666666666"
+SID16_A="018c3ea1-1111-4111-8111-111111111111"
+SID16_B="1dc72c57-2222-4222-8222-222222222222"
+SID16_C="aa69dcad-3333-4333-8333-333333333333"
+
+spawn_live_pid; PID16="$LIVE_PID"
+REPO16="$(mktemp -d -p "$TMP")"
+mkdir -p "$REPO16/.bionic/tmp"
+for _s16 in "$SID16_A" "$SID16_B" "$SID16_C"; do
+  printf '# bionic session roster — schema roster-state/v1 — machine-local, safe to delete\n' \
+    > "$REPO16/.bionic/tmp/roster-${_s16}.state"
+  printf 'preflight-attestation/v1|session=%s\n' "$_s16" \
+    > "$REPO16/.bionic/tmp/preflight-${_s16}.state"
+  printf 'engaged/v1|session=%s\n' "$_s16" \
+    > "$REPO16/.bionic/tmp/engaged-${_s16}.state"
+done
+printf '# bionic session roster — schema roster-state/v1 — machine-local, safe to delete\n' \
+  > "$REPO16/.bionic/tmp/roster-${SID16_LIVE}.state"
+printf 'preflight-attestation/v1|session=%s\n' "$SID16_LIVE" \
+  > "$REPO16/.bionic/tmp/preflight-${SID16_LIVE}.state"
+printf 'context-spend/v1\n' > "$REPO16/.bionic/tmp/context-spend.state"
+
+HOME16="$(make_claude_home "$SID16_LIVE" "$PID16" "$REPO16")"
+OUT16="$(run_doctor "$HOME16" "$REPO16")"
+PB16="$(patrol_block "$OUT16")"
+
+# ONE LINE PER DEAD SESSION, counting files rather than open rows.
+expect_match "57: a dead session with no open row still earns a line, and it counts files" \
+  "*predecessor 018c3ea1*3 leftover files*" "$PB16"
+expect_match "58: …so does the second" "*predecessor 1dc72c57*3 leftover files*" "$PB16"
+expect_match "59: …and the residue session the defect was filed on" \
+  "*predecessor aa69dcad*3 leftover files*" "$PB16"
+expect_match "60: …and the line says what a reader can conclude, in words" \
+  "*nothing open; the session is gone*" "$PB16"
+
+# THE LIVE SESSION IS NOT ONE OF THEM — the paired positive that keeps the three
+# rows above from passing on a page that simply lists every session it finds.
+expect_no_match "61: the live session is never called a predecessor" \
+  "*predecessor e96260d1*" "$PB16"
+
+# COLLAPSED: a dead session costs the page ONE line, not one per section. Its
+# attestation is gone from RESOURCES while the live session's remains.
+DSR16="$(printf '%s\n' "$OUT16" | awk '/^RESOURCES$/{f=1;next} f && /^[A-Z][A-Z]/{exit} f')"
+expect_no_match "62: a dead session's attestation is dropped from RESOURCES" \
+  "*session 018c3ea1*" "$DSR16"
+expect_no_match "63: …and so is the residue session's" "*session aa69dcad*" "$DSR16"
+expect_match "64: …while the live session's attestation still renders there" \
+  "*session e96260d1*" "$DSR16"
+
+# THE FIX LINE, RENDERED FROM THE CHECK TABLE'S ROW — the count is doctor's, the
+# verb is the row's.
+expect_contains "65: the page names the repair once, with the count" \
+  "3 dead sessions left state under .bionic/tmp" "$OUT16"
+expect_contains "66: …and the verb comes from the check table's hint" \
+  "session-poker.sh sweep" "$OUT16"
+expect_absent "67: …and never sends the reader to setup, which has no project concept" \
+  "dead sessions left state under .bionic/tmp → /bionic:setup" "$OUT16"
+expect_absent "68: the header does not say there is nothing to do" \
+  "Nothing to do" "$OUT16"
+
+# CAUSATION, NOT COINCIDENCE. The fixture machine has unrelated problems of its
+# own, so "no Nothing-to-do header" proves little on its own. Removing ONLY the
+# dead sessions' files from the same tree must drop the fix line and lower the
+# problem count by the number of sessions that line stood for — which is what
+# says this row, and not the machine's other trouble, is what put it there.
+#
+# ONE PROBLEM PER DEAD SESSION, NOT ONE PER LINE (1.5.1 fix-up batch). This pin
+# read "exactly one problem fewer" while the collapsed dead-session line was
+# counted as a single problem — and that is the count-versus-rows inequality
+# broken in the direction doctor's own rule forbids: three ✗ predecessor rows
+# under a headline saying one. tests/doctor-reads.test.sh 12f18 is the assertion
+# that caught it (headline == the ✗ rows it stands for), so the line now takes
+# the same swap the two dependency collapses take, and the drop this fixture
+# measures is three. The count is read from the fix line itself rather than
+# spelled here, so the pin follows the fixture rather than pinning it.
+# THE HEADER'S OWN COUNT, not a count of glyphs on the page. `N_FIX` is what
+# decides between "Nothing to do" and "N problems", and it counts FIX LINES with
+# each collapsed line swapped for the rows it stands for. Counting `✗` directly
+# would have counted rows that carry no fix line at all, which is a different
+# number and not the one the header is a function of.
+n16_problems() {  # <doctor output> -> the header's problem count, or empty
+  printf '%s\n' "$1" | sed -n 's/^→ \([0-9][0-9]*\) problems*\..*$/\1/p' | head -1
+}
+N16_BEFORE="$(n16_problems "$OUT16")"
+rm -f "$REPO16/.bionic/tmp/"roster-018c3ea1*.state "$REPO16/.bionic/tmp/"preflight-018c3ea1*.state \
+      "$REPO16/.bionic/tmp/"engaged-018c3ea1*.state \
+      "$REPO16/.bionic/tmp/"roster-1dc72c57*.state "$REPO16/.bionic/tmp/"preflight-1dc72c57*.state \
+      "$REPO16/.bionic/tmp/"engaged-1dc72c57*.state \
+      "$REPO16/.bionic/tmp/"roster-aa69dcad*.state "$REPO16/.bionic/tmp/"preflight-aa69dcad*.state \
+      "$REPO16/.bionic/tmp/"engaged-aa69dcad*.state
+OUT16B="$(run_doctor "$HOME16" "$REPO16")"
+N16_AFTER="$(n16_problems "$OUT16B")"
+
+expect_absent "69: with the dead state gone, the fix line goes with it" \
+  "dead sessions left state under .bionic/tmp" "$OUT16B"
+expect_no_match "70: …and no predecessor line remains" "*predecessor *" "$(patrol_block "$OUT16B")"
+expect_nonempty "71: the header states a problem count both times (72 is not vacuous)" "$N16_BEFORE"
+N16_DEAD="$(printf '%s\n' "$OUT16" | sed -n 's/^→ \([0-9][0-9]*\) dead sessions* left state.*$/\1/p' | head -1)"
+expect_eq "71b: …and the fix line named the sessions it stood for (72 reads that number)" \
+  "3" "$N16_DEAD"
+expect_eq "72: …and it counts one problem fewer per dead session it stopped naming" \
+  "$N16_BEFORE" "$((N16_AFTER + N16_DEAD))"
+expect_match "73: …while the live session's attestation is still there (69-72 are not an empty page)" \
+  "*session e96260d1*" "$(printf '%s\n' "$OUT16B" | awk '/^RESOURCES$/{f=1;next} f && /^[A-Z][A-Z]/{exit} f')"
+expect_true "74: …and the unkeyed context-spend.state was never the subject" \
+  test -f "$REPO16/.bionic/tmp/context-spend.state"
 
 finish

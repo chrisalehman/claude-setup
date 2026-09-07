@@ -152,6 +152,114 @@ patrol_live_sessions() {  # -> session=<sid>|pid=<pid>|cwd=<path>, one per line
   done
 }
 
+# ─── SESSION-KEYED STATE UNDER .bionic/tmp ───────────────────────────────────
+#
+# ONE DEFINITION OF WHICH FILES BELONG TO A SESSION, read by both parties that
+# need it: hooks/session-poker.sh's `sweep`, which deletes them once their owner
+# is gone, and scripts/lib/checks.sh's dead-session detector, which is how doctor
+# names the sweep as the repair. Written once here because the two must agree —
+# a class added on the detector's side but not the verb's would put a row on
+# doctor's page whose named cure clears nothing, which is the exact defect shape
+# the check table exists to end.
+#
+# THE CLASSES, each `<class>-<session id>.state` under `<root>/.bionic/tmp`:
+#
+#   roster     hooks/dispatch-preflight.sh   the dispatch ledger
+#   preflight  hooks/preflight-probe.sh      the budget attestation
+#   engaged    scripts/lib/binding.sh        the engagement marker
+#   sweeper    hooks/session-sweeper.sh      the ack ledger
+#   patrol     hooks/session-poker.sh        the Patrol stamp, plus its `.armed` sibling
+#
+# THE FILES THAT ARE NOT SESSION-KEYED ARE UNREACHABLE THROUGH THESE FUNCTIONS,
+# and that is a property of the shape rather than a list anyone maintains:
+# `context-spend.state`, `farm-out.state` and `stop-check.state` carry no session
+# id in their names, so no id derived here can address one. A non-session file
+# added later is safe on arrival for the same reason.
+PATROL_STATE_CLASSES="roster preflight engaged sweeper patrol"
+PATROL_STATE_ARMED_SUFFIX=".armed"
+
+# EVERY SESSION ID WITH STATE HERE, each once, in class-then-name order. Symlinks
+# COUNT (a `-L` test beside `-e`, so a dangling one counts too): a link planted at
+# one of these paths is a thing the reader has to see in order to refuse it out
+# loud, and a walk that skipped it would report a session as clean while an aimed
+# path sat in the directory.
+patrol_state_session_ids() {  # <root> -> one session id per line
+  local d="${1:-}/.bionic/tmp" c f base sid seen=""
+  [ -d "$d" ] || return 0
+  for c in $PATROL_STATE_CLASSES; do
+    for f in "$d/$c"-*.state "$d/$c"-*.state"$PATROL_STATE_ARMED_SUFFIX"; do
+      [ -e "$f" ] || [ -L "$f" ] || continue
+      base="${f##*/}"
+      sid="${base#"$c"-}"
+      sid="${sid%"$PATROL_STATE_ARMED_SUFFIX"}"
+      sid="${sid%.state}"
+      [ -n "$sid" ] || continue
+      case "$sid" in *"/"*|.|..) continue ;; esac
+      case " $seen " in *" $sid "*) continue ;; esac
+      seen="$seen $sid"
+      printf '%s\n' "$sid"
+    done
+  done
+}
+
+# ONE SESSION'S FILES, BY EXACT PATH AND NEVER BY GLOB. The ids come off the
+# filenames above, so building each candidate path back by concatenation means a
+# strange id can only ever address the file it was read from — there is no
+# pattern here for it to widen.
+patrol_session_state_files() {  # <root> <session id> -> one path per line
+  local d="${1:-}/.bionic/tmp" sid="${2:-}" c f
+  [ -n "$sid" ] || return 0
+  for c in $PATROL_STATE_CLASSES; do
+    for f in "$d/$c-$sid.state" "$d/$c-$sid.state$PATROL_STATE_ARMED_SUFFIX"; do
+      [ -e "$f" ] || [ -L "$f" ] || continue
+      printf '%s\n' "$f"
+    done
+  done
+}
+
+# The live set as bare ids. CWD IS DELIBERATELY NOT CONSULTED: a session live in
+# another project still owns its files here — it may have been started in this
+# root and `cd`-ed away — and the pid is the only fact that decides whether
+# anyone can still act on what it left.
+patrol_live_session_ids() {  # -> one live session id per line
+  local l
+  patrol_live_sessions 2>/dev/null | while IFS= read -r l; do
+    case "$l" in
+      session=*) l="${l#session=}"; printf '%s\n' "${l%%|*}" ;;
+    esac
+  done
+}
+
+# THE ANSWER BOTH READERS ACTUALLY WANT: which sessions left state here that
+# nobody can act on any more. Extra ids may be named as live by the caller, and
+# the one caller that does is the session running the verb — it is live by
+# construction, and saying so by hand is what keeps a claude-home this process
+# cannot read (an unreadable sessions directory, a missing jq) from letting a
+# session sweep its own state out from under itself.
+patrol_dead_sessions() {  # <root> [<also-live id>...] -> one session id per line
+  local root="${1:-}" live sid; shift 2>/dev/null || :
+  live="$(patrol_live_session_ids)"
+  for sid in "$@"; do
+    [ -n "$sid" ] && live="${live}${live:+
+}${sid}"
+  done
+  # Newline-delimited containment, so a dead session whose id is a PREFIX of a
+  # live one is not mistaken for it.
+  while IFS= read -r sid; do
+    [ -n "$sid" ] || continue
+    case "
+$live
+" in
+      *"
+$sid
+"*) continue ;;
+    esac
+    printf '%s\n' "$sid"
+  done <<EOF
+$(patrol_state_session_ids "$root")
+EOF
+}
+
 # The transcript file for a session id. Scanned rather than derived from a
 # slugged cwd, the same way hooks/dispatch-preflight.sh's liveness probe scans:
 # the slug rule belongs to the CLI and a copy of it here would be a second

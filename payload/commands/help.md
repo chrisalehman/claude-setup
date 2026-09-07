@@ -28,7 +28,7 @@ Presentation contract — what the user sees from this command:
 Render the page below in full, verbatim, every time this command runs — even if it was
 shown earlier in this session; never summarize it or refer back to an earlier rendering.
 
-bionic 1.5.0 (installed)
+bionic 1.5.1 (installed)
 
 # bionic
 

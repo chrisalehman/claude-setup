@@ -40,7 +40,6 @@
 # network, no hooks, no writes outside $TMP.
 #
 # Usage: bash tests/seam-resolution.test.sh
-# Registered by name in tests/run.sh (tests/*.test.sh is NOT auto-globbed).
 
 set -uo pipefail
 

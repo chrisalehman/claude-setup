@@ -43,7 +43,6 @@
 # itself read-only in --check mode (see that script).
 #
 # Usage: bash tests/docs-pins.test.sh
-# Registered by name in tests/run.sh (tests/*.test.sh is NOT auto-globbed).
 
 set -uo pipefail
 
@@ -130,12 +129,6 @@ if bash "$RENDER_SH" --check >/dev/null 2>&1; then
 else
   no "7: agents-src/render.sh --check reports every rendered final clean" \
      "run 'bash agents-src/render.sh --check' directly for the diff"
-fi
-
-if grep -q 'run "docs-pins.test.sh" bash tests/docs-pins.test.sh' "${REPO}/tests/run.sh"; then
-  ok "8: tests/run.sh names docs-pins.test.sh"
-else
-  no "8: tests/run.sh names docs-pins.test.sh"
 fi
 
 # ── AC-17: the version is one truth rendered at MANY surfaces ────────────────

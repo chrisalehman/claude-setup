@@ -46,10 +46,13 @@
 # eleven absent dependencies and a broken hook channel has been diagnosed
 # *successfully*; reporting that as a non-zero exit would make every caller treat
 # a working doctor as a broken one. The report's content is the signal, never the
-# status. The one exception is an option this script does not know, which has
-# diagnosed nothing: answering a misspelled flag with a clean report and status 0
-# would tell a caller that asked for something, and did not get it, that all was
-# well. That exits 2, before any fact is gathered.
+# status. TWO THINGS ARE NOT DIAGNOSES and both exit 2 before any fact is
+# gathered: an option this script does not know, because answering a misspelled
+# flag with a clean report and status 0 would tell a caller that asked for
+# something, and did not get it, that all was well; and a payload missing a
+# library this script sources, because there is no report to print and the
+# alternative is the interpreter's own error trace. Neither has diagnosed
+# anything, and 2 is this file's word for that.
 #
 # WHY READ-ONLY IS STRUCTURAL AND NOT MERELY INTENDED. Doctor calls only the
 # read-only half of each library — detect.sh's fact functions, env.sh's
@@ -112,6 +115,39 @@ _doctor_self_dir() {
 }
 DOCTOR_LIB="$(cd "$(_doctor_self_dir)" && pwd -P)/lib"
 
+# THE PAYLOAD-INTEGRITY GUARD, WHICH SETUP HAS CARRIED SINCE 1.5.1 AND THIS FILE
+# DID NOT (Step-5 walk, Walk-D3). A payload copy missing lib/checks.sh answered
+# `doctor` with three raw bash diagnostics — `No such file or directory`,
+# `bionic_check_route: command not found`, `BIONIC_WALL_HOOKS: unbound variable`
+# — no report at all, and status 1 under a header stating that a diagnosis always
+# exits 0. Every one of those lines is the SHELL talking about doctor, in a file
+# whose whole job is to talk about the machine; the reader is left holding an
+# interpreter trace instead of the one sentence that would fix it. Setup was
+# already answering the identical damage with a named file and a reinstall
+# route, so the two surfaces disagreed about what a broken payload looks like.
+#
+# THE LIST IS WHAT THIS SCRIPT NEEDS, NOT WHAT SETUP NEEDS, which is why it is
+# spelled here rather than shared. The two scripts source different libraries —
+# setup wants deps/hooks/jit, doctor wants loader/root/run/resources — so there
+# is no one list to own; and a shared CHECKER would have to live in a library
+# that must itself exist before it can be sourced, which is the bootstrap this
+# guard exists to survive. What is shared is the sentence and the route, and
+# those are two echo lines.
+#
+# THE LAST TWO ARE ONE LEVEL DOWN, the way patrol.sh is on setup's list.
+# detect.sh soft-sources deps.sh and shell.sh from its own directory, so a
+# payload without them fails inside a library rather than at a line here — the
+# same trace, one frame deeper — and they are part of what a complete payload
+# means for this script too.
+for _doctor_lib in detect.sh env.sh patrol.sh width.sh loader.sh root.sh run.sh \
+                   resources.sh checks.sh deps.sh shell.sh; do
+  if [ ! -f "${DOCTOR_LIB}/${_doctor_lib}" ]; then
+    echo "doctor.sh: cannot find ${DOCTOR_LIB}/${_doctor_lib} — the payload looks incomplete." >&2
+    echo "           reinstall with: claude plugin install bionic@bionic" >&2
+    exit 2
+  fi
+done
+
 # shellcheck source=/dev/null
 . "${DOCTOR_LIB}/detect.sh"
 # env.sh, for its READ half only — `env_get` (what settings.json says) and
@@ -154,6 +190,17 @@ DOCTOR_LIB="$(cd "$(_doctor_self_dir)" && pwd -P)/lib"
 . "${DOCTOR_LIB}/run.sh"
 # shellcheck source=/dev/null
 . "${DOCTOR_LIB}/resources.sh"
+# checks.sh, THE TABLE OF CHECKS — one row per fact bionic needs true on a
+# machine, and for each row the label this page prints, the party that repairs it
+# and the hint that names that party. setup.sh renders its roster from the same
+# rows. This page keeps its own presentation entirely — the columns, the widths,
+# the collapsed verdict — and gets its FACTS from there, which is what stops a
+# row here from promising a repair setup has no item for (the field defect of
+# 2026-09-05: `16 legacy hook files … → /bionic:setup` over a run that then said
+# "nothing left to do"). checks.sh's detectors are read-only, every one of them,
+# so sourcing it changes nothing about this page's central promise.
+# shellcheck source=/dev/null
+. "${DOCTOR_LIB}/checks.sh"
 
 # The standalone removal door (design D5a: the remover must not depend on the
 # thing it removes). Printed as TEXT for the user to run — doctor never fetches
@@ -258,7 +305,12 @@ _doctor_item() {  # <symbol> <label> <value>
 # top — which is why it is collected rather than echoed where it is found. One
 # line per problem, and the line ENDS with what to type: a problem stated without
 # its command is the half of the job this report used to leave undone.
-FIX_LINES=""
+#
+# THERE USED TO BE A THIRD ACCUMULATOR HERE, `FIX_LINES`, holding every line with
+# its ✗ glyph on the front. Nothing printed it: the verdict renders from the two
+# below, and the count that read it is now summed by `fix` itself. It is gone
+# rather than kept, because a string built on every run and read by nobody is the
+# shape tests/doctor-reads.test.sh §7 exists to refuse.
 # THE VERDICT LINE NAMES THE PROBLEMS, so the problems have to be nameable. Each
 # fix sentence is `<what is wrong> → <what to type>`, and the half before the
 # arrow is already the name — accumulated here rather than re-derived later,
@@ -268,11 +320,39 @@ FIX_LINES=""
 # rest each need their own line or they reach the user as a count with no cure.
 FIX_NAMES_SETUP=""
 FIX_LINES_OTHER=""
-fix() {  # <problem> → <command>
+# THE SUFFIX THIS SORTS ON IS THE TABLE'S, NOT A LITERAL (1.5.1). Which lines fold
+# into the one collapsed sentence at the bottom of the page is decided by whether
+# they end in setup's own route, and that string is spelled once — in
+# lib/checks.sh, where every row that carries it reads it from. Read into a
+# constant because the sort runs once per fix line.
+DOCTOR_SETUP_ROUTE="$(bionic_check_route setup)"
+# HOW MANY ✗ ROWS THIS LINE STANDS FOR, SAID WHERE THE LINE IS WRITTEN (1.5.1,
+# Walk-D1). The headline is a count of the machine's problems and the tables
+# below render one ✗ row per problem, so the two numbers are the same number and
+# a reader who counts the rows must land on the headline. Most fix lines are
+# worth exactly one row, which is the default. A COLLAPSED line — eleven absences
+# under one `/bionic:setup`, three unwritten environment names under one, four
+# dead sessions under one verb — is worth the rows it collapsed, and only the
+# call site knows how many that is.
+#
+# WHICH IS WHY IT IS DECLARED AND NOT RECONSTRUCTED. This was arithmetic at the
+# bottom of the file until now: count the ✗ lines, then subtract each collapsed
+# line and add the ✗ rows of the table it collapsed. That shape has to be
+# extended by hand for every new collapse and every new line, and it was wrong
+# twice at once by the time the Step-5 walk measured it. The dependency line was
+# swapped for EVERY ✗ dependency row, including the rows of `presence is unknown`
+# and `violates constraint` lines that were already counted as themselves, so
+# each of those was worth two problems; and the environment line was swapped for
+# nothing at all, so three unwritten names were worth one. On the walk's fixture
+# the first error was +2 and the second -2 and the page's total came out right
+# over two broken halves. A number declared beside the sentence it belongs to
+# cannot drift from it that way.
+N_FIX=0
+fix() {  # <problem> → <command> [<✗ rows this line stands for; default 1>]
   local line="${1}" name="${1%% → *}"
-  FIX_LINES="${FIX_LINES}  ${DOCTOR_BAD} ${line}"$'\n'
+  N_FIX=$(( N_FIX + ${2:-1} ))
   case "$line" in
-    *"/bionic:setup") FIX_NAMES_SETUP="${FIX_NAMES_SETUP}${FIX_NAMES_SETUP:+; }${name}" ;;
+    *"$DOCTOR_SETUP_ROUTE") FIX_NAMES_SETUP="${FIX_NAMES_SETUP}${FIX_NAMES_SETUP:+; }${name}" ;;
     *)                FIX_LINES_OTHER="${FIX_LINES_OTHER}${line}"$'\n' ;;
   esac
 }
@@ -537,10 +617,8 @@ AGENT_CAUSE="${AGENT_FACT##*cause=}"
 
 TODO_FACT="$(detect_env_todo_tools)";        TODO_STATE="${TODO_FACT##*present=}"
 RC_PROXY_FACT="$(detect_rc_claude_proxy)";   RC_PROXY_STATE="${RC_PROXY_FACT##*present=}"
-LEGACY_FACT="$(detect_zshrc_legacy_block)";  LEGACY_STATE="${LEGACY_FACT##*present=}"
 LEGACY_HOOK_FACT="$(detect_legacy_channel_hooks)"; LEGACY_HOOK_COUNT="${LEGACY_HOOK_FACT##*count=}"
 SKILL_COPY_FACT="$(detect_legacy_skill_copy)"
-SKILL_COPY_STATE="${SKILL_COPY_FACT#*present=}"; SKILL_COPY_STATE="${SKILL_COPY_STATE%% *}"
 SKILL_COPY_PATH="${SKILL_COPY_FACT##*path=}"
 HOOK_FILES_FACT="$(detect_legacy_hook_files)"
 HOOK_FILES_COUNT="${HOOK_FILES_FACT#*count=}"; HOOK_FILES_COUNT="${HOOK_FILES_COUNT%% *}"
@@ -694,59 +772,42 @@ done
 # block; one that has not yet adopted it names its library in the `lib/<name>.sh`
 # path it sources. Either way the answer is the hook's own, so this row keeps
 # telling the truth across the slice that rewrites the hooks.
-BIONIC_WALL_HOOKS="protect-main canonical-sdlc-evidence-gate farm-out-reminder background-suite-guard"
-
-_doctor_wall_want() {  # <hook-file> -> space-separated library basenames
-  local f="${1:-}" want=""
-  want="$(grep -m1 '^[[:space:]]*BIONIC_LIB_WANT=' "$f" 2>/dev/null \
-          | sed -e 's/^[[:space:]]*BIONIC_LIB_WANT=//' -e 's/^["'"'"']//' -e 's/["'"'"']$//')"
-  if [ -z "$want" ]; then
-    # No declaration: read the library out of the source path itself, from the
-    # CODE lines only — a prose mention in a header comment is not a dependency.
-    want="$(grep -v '^[[:space:]]*#' "$f" 2>/dev/null \
-            | grep -oE 'lib/[A-Za-z0-9_.-]+\.sh' \
-            | sed 's|^lib/||' | sort -u | tr '\n' ' ')"
-  fi
-  printf '%s' "$want"
-}
-
-# The idiom, plus one line that reports what it concluded. Built once: the pin is
-# a heredoc `cat`, and paying for it per wall would be four subshells for one
-# constant string.
-_DOCTOR_LOADER_BLOCK="$(bionic_loader_pin 2>/dev/null)"
-_DOCTOR_LOADER_PROBE="${_DOCTOR_LOADER_BLOCK}
-printf 'lib=%s|missing=%s|cands=%s\\n' \"\$BIONIC_LIB\" \"\$BIONIC_LIB_MISSING\" \"\$BIONIC_LIB_CANDS\""
-
-_doctor_wall_probe() {  # <hook-file> <wanted basenames> -> lib=…|missing=…|cands=…
-  BIONIC_LIB_WANT="${2:-}" bash -c "$_DOCTOR_LOADER_PROBE" "$1" 2>/dev/null
-}
+# THE ROSTER AND THE PROBE ARE lib/checks.sh's (1.5.1). A wall missing from the
+# payload is a row of the check table like any other — a fact bionic needs true,
+# with a party that repairs it — so the list of walls, "which libraries does this
+# hook want" and "can it get them" live beside the rest of the table, and this
+# page renders them. The detectors there are the same two questions this loop
+# asks, which is what lets the table say who repairs a broken wall without a
+# second copy of how to find one.
 
 WALLS_TOTAL=0; WALLS_OK=0; WALL_ROWS=""
 for _wall in $BIONIC_WALL_HOOKS; do
   WALLS_TOTAL=$((WALLS_TOTAL + 1))
-  _wall_file="${_doctor_payload_root}/hooks/${_wall}.sh"
-  if [ ! -r "$_wall_file" ]; then
-    WALL_ROWS="${WALL_ROWS}$(_doctor_native_row "$DOCTOR_BAD" "wall" "—" \
-      "${_wall} is not in this payload — reinstall the plugin")"$'\n'
-    fix "the ${_wall} wall is missing from the payload → run /bionic:setup — repair"
-    continue
-  fi
-  _wall_want="$(_doctor_wall_want "$_wall_file")"
-  _wall_probe="$(_doctor_wall_probe "$_wall_file" "$_wall_want")"
-  _wall_lib="$(_doctor_pfield "$_wall_probe" lib)"
-  if [ -n "$_wall_lib" ]; then
-    WALLS_OK=$((WALLS_OK + 1))
-    continue
-  fi
-  # `missing` is the first basename the hook asked for and did not get; with an
-  # empty probe (no bash, no pin) fall back to what the hook declared, so the row
-  # names a library either way rather than an empty string.
-  _wall_missing="$(_doctor_pfield "$_wall_probe" missing)"
-  [ -n "$_wall_missing" ] || _wall_missing="${_wall_want%% *}"
-  [ -n "$_wall_missing" ] || _wall_missing="the bionic library"
-  WALL_ROWS="${WALL_ROWS}$(_doctor_native_row "$DOCTOR_BAD" "wall" "—" \
-    "${_wall} cannot load ${_wall_missing}")"$'\n'
-  fix "the ${_wall} wall cannot load ${_wall_missing} → run /bionic:setup — repair"
+  # ONE VERDICT, ASKED OF THE TABLE (Step-6 review B-2). This loop used to
+  # re-implement `is the file readable` and `does the loader answer` beside the
+  # detectors in lib/checks.sh that ask the same two questions — and those
+  # detectors were never invoked, so the copy doctor ran and the copy the rows
+  # named could drift apart with nothing going red. `bionic_check_wall_state` is
+  # the one implementation; this page renders its answer.
+  # Asked ONCE per wall: the state carries a loader probe, and asking twice would
+  # be a second `bash -c` per row for an answer already in hand.
+  _wall_state="$(bionic_check_wall_state "$_wall")"
+  case "$_wall_state" in
+    (ok)
+      WALLS_OK=$((WALLS_OK + 1))
+      ;;
+    (missing)
+      WALL_ROWS="${WALL_ROWS}$(_doctor_native_row "$DOCTOR_BAD" "wall" "—" \
+        "${_wall} is not in this payload — reinstall the plugin")"$'\n'
+      fix "the ${_wall} wall is missing from the payload → $(bionic_check_hint wall-payload)"
+      ;;
+    (unloadable=*)
+      _wall_missing="${_wall_state#unloadable=}"
+      WALL_ROWS="${WALL_ROWS}$(_doctor_native_row "$DOCTOR_BAD" "wall" "—" \
+        "${_wall} cannot load ${_wall_missing}")"$'\n'
+      fix "the ${_wall} wall cannot load ${_wall_missing} → $(bionic_check_hint wall-library)"
+      ;;
+  esac
 done
 
 INST_AGENT_FACT="$(detect_installed_agent_copies)"
@@ -792,7 +853,7 @@ fi
 # (W6 S15): the registry read runs `jq` over a path that can stall, so it goes
 # through the same `detect_bounded` the listing does, and a stalled read arrives
 # here as one more `dup=unknown` line with the seconds in its cause.
-DUP_LINES="$(detect_plugin_duplicates)"
+DUP_LINES="$(bionic_check_duplicate_lines)"
 
 # ONE PLUGIN, REGISTERED TWICE — READ HERE, PRINTED IN TABLE 1 (AC-23). The scan
 # ran on every invocation and reached no reader at all. Two registrations of one
@@ -949,6 +1010,16 @@ while IFS= read -r dep_name; do
   third_version="$dep_version"
   third_state=""
   third_keep=""
+  # THE ROUTE IS THE ROW'S, NOT THIS FILE'S (1.5.1). Which party repairs this
+  # dependency is a fact about the dependency, and lib/checks.sh holds it: a
+  # `basic` or `extra` row is setup's, a `core` row is the CLI's (deps.sh D1
+  # forbids setup a second installer), and a `when-needed` row has no repair at
+  # all because it is absent by design until a route asks for it. Reading the
+  # hint here instead of spelling it means the four state arms below cannot
+  # disagree with each other about who to send the reader to — which they did:
+  # the violation arm and the unknown arm both said `/bionic:setup` for a core
+  # row that the absent arm correctly sent to the CLI.
+  _doctor_dep_hint="$(bionic_check_dep_hint "$dep_name" 2>/dev/null)" || _doctor_dep_hint=""
   # MULTI-PART ROWS SAY WHAT IS PRESENT (Chris 2026-08-22: "Why is ccstatusline
   # 'ok' for version, with no status?"). The two-half probes return a status word
   # in the version slot — it is not a version and never prints as one. The
@@ -976,7 +1047,7 @@ while IFS= read -r dep_name; do
   case "$present" in
     yes)
       if [ "$verdict" = "violation" ]; then
-        third_state="violates ${constraint} → /bionic:setup"
+        third_state="violates ${constraint}${_doctor_dep_hint:+ → ${_doctor_dep_hint}}"
       elif [ "$third_version" = "unknown" ] && [ -z "$third_state" ]; then
         third_state="$(_doctor_no_version_reason "$kind")"
       fi ;;
@@ -992,16 +1063,16 @@ while IFS= read -r dep_name; do
       # setup's load-failure arm — and rides in the instruction slot so a cut
       # can never reach it.
       if   [ "$dep_class" = "when-needed" ]; then third_state="installs on demand"
-      elif [ "$dep_class" = "core" ]; then third_state="absent"; third_keep=" → $(dep_core_repair_route)"
-      else third_state="not installed → /bionic:setup"; fi ;;
+      elif [ "$dep_class" = "core" ]; then third_state="absent"; third_keep="${_doctor_dep_hint:+ → ${_doctor_dep_hint}}"
+      else third_state="not installed${_doctor_dep_hint:+ → ${_doctor_dep_hint}}"; fi ;;
     stale)
-      third_state="stale against uv.lock — re-sync with /bionic:setup" ;;
+      third_state="stale against uv.lock${_doctor_dep_hint:+ — re-sync with ${_doctor_dep_hint}}" ;;
     *)
       third_state="$(_doctor_unknown_cause "$kind")"
       case "${dep_class}/${kind}" in
         when-needed/*) ;;
         */pnpm-store)  third_state="${third_state} — setup pre-warms it" ;;
-        *)             third_state="${third_state} → /bionic:setup" ;;
+        *)             third_state="${third_state}${_doctor_dep_hint:+ → ${_doctor_dep_hint}}" ;;
       esac ;;
   esac
   case "$third_version" in unknown|-|"") third_version="—" ;; esac
@@ -1068,7 +1139,7 @@ while IFS= read -r dep_name; do
           when-needed)
             fix "${dep_name} ${dep_version} violates constraint ${constraint} → the next route that needs it reinstalls it" ;;
           *)
-            fix "${dep_name} ${dep_version} violates constraint ${constraint} → run /bionic:setup" ;;
+            fix "${dep_name} ${dep_version} violates constraint ${constraint}${_doctor_dep_hint:+ → run ${_doctor_dep_hint}}" ;;
         esac
       fi
       ;;
@@ -1077,7 +1148,7 @@ while IFS= read -r dep_name; do
       # and it is wrong, which is what a violation is. The fix names a re-sync so
       # the reader is not told to install what they already have.
       N_VIOLATION=$((N_VIOLATION + 1))
-      fix "${dep_name} is stale against the shipped uv.lock → run /bionic:setup" ;;
+      fix "${dep_name} is stale against the shipped uv.lock${_doctor_dep_hint:+ → run ${_doctor_dep_hint}}" ;;
     no)
       N_ABSENT=$((N_ABSENT + 1))
       case "$dep_class" in
@@ -1418,24 +1489,57 @@ fi
 # Patrol section above already trusts — and doctor stays a rendering surface that
 # runs nothing which could write. A roster whose session is LIVE is the Patrol
 # section's subject, not this one's; only the ones whose owner is gone are listed.
-_doctor_live_sids=""
-while IFS= read -r _live_line; do
-  [ -n "$_live_line" ] || continue
-  _doctor_live_sids="${_doctor_live_sids} $(_doctor_pfield "$_live_line" session) "
+# ONE LINE PER DEAD SESSION, AND IT COUNTS FILES (1.5.1 T5, defect
+# fixit-1.5.2-dead-session-sweep.md). Two things changed here. The set is now
+# every session with ANY session-keyed state whose owner is gone, taken from
+# `patrol_dead_sessions` — the same walk `session-poker.sh sweep` deletes with,
+# so the row and the cure it names cannot disagree. And the row fires on FILES,
+# not on open rows: the session this defect was filed on had every row landed
+# and six files on disk, so an open-row test rendered nothing while the
+# directory kept growing. The open count still rides on the line when there is
+# one, because a row nobody will close is worth more to a reader than a count of
+# files.
+#
+# THE RESOURCES SECTION READS `_doctor_dead_sids` BELOW and drops the same
+# sessions' attestations, so a dead session costs this page ONE line rather than
+# one per section — the standing owner note (2026-08-23) that the per-session
+# dump is noise, answered by collapsing rather than by hiding.
+_doctor_dead_sids=""
+_doctor_dead_n=0
+while IFS= read -r _dead_sid; do
+  [ -n "$_dead_sid" ] || continue
+  _doctor_dead_sids="${_doctor_dead_sids} ${_dead_sid} "
+  _doctor_dead_n=$((_doctor_dead_n + 1))
+  _dead_files=0
+  while IFS= read -r _dead_f; do
+    [ -n "$_dead_f" ] && _dead_files=$((_dead_files + 1))
+  done <<EOF2
+$(patrol_session_state_files "$DOCTOR_ROOT" "$_dead_sid")
+EOF2
+  _dead_state="$(patrol_roster_state "$DOCTOR_ROOT" "$_dead_sid" 2>/dev/null)"
+  _dead_open="$(_doctor_pfield "$_dead_state" open)"
+  case "$_dead_open" in ''|*[!0-9]*) _dead_open=0 ;; esac
+  if [ "$_dead_open" -gt 0 ]; then
+    _run_add "$(_doctor_item "$DOCTOR_BAD" "predecessor ${_dead_sid%%-*}" \
+      "${_dead_files} leftover $(_doctor_plural "$_dead_files" file files) · ${_dead_open} open $(_doctor_plural "$_dead_open" row rows) — a /clear left them unclosed")"
+  else
+    _run_add "$(_doctor_item "$DOCTOR_BAD" "predecessor ${_dead_sid%%-*}" \
+      "${_dead_files} leftover $(_doctor_plural "$_dead_files" file files) — nothing open; the session is gone")"
+  fi
 done <<EOF
-$(patrol_live_sessions 2>/dev/null)
+$(patrol_dead_sessions "$DOCTOR_ROOT" "${CLAUDE_CODE_SESSION_ID:-}")
 EOF
-for _roster in "${DOCTOR_ROOT}/.bionic/tmp/"roster-*.state; do
-  [ -f "$_roster" ] || continue
-  _r_sid="${_roster##*/roster-}"; _r_sid="${_r_sid%.state}"
-  case "$_doctor_live_sids" in *" ${_r_sid} "*) continue ;; esac
-  _r_state="$(patrol_roster_state "$DOCTOR_ROOT" "$_r_sid" 2>/dev/null)"
-  _r_open="$(_doctor_pfield "$_r_state" open)"
-  case "$_r_open" in ''|*[!0-9]*) _r_open=0 ;; esac
-  [ "$_r_open" -gt 0 ] || continue
-  _run_add "$(_doctor_item "$DOCTOR_NIL" "predecessor ${_r_sid%%-*}" \
-    "${_r_open} open $(_doctor_plural "$_r_open" row rows) — a /clear left them unclosed")"
-done
+
+# THE LINE THAT NAMES THE CURE, from the row rather than from a literal here —
+# the same shape the legacy-symlink row below uses. Until 1.5.1 this state was
+# detected and then left un-named: every row above was a session doctor had
+# already PROVEN dead, printed as an informational dash under a header reading
+# "Nothing to do". A fix line is also what raises N_FIX, so that header stops
+# contradicting the body without anything here special-casing it.
+if [ "$_doctor_dead_n" -gt 0 ]; then
+  fix "${_doctor_dead_n} dead $(_doctor_plural "$_doctor_dead_n" session sessions) left state under .bionic/tmp → $(bionic_check_hint dead-session-state)" \
+      "$_doctor_dead_n"
+fi
 
 # LEGACY `.bionic` SYMLINKS (AC-11). spawn-worktree.sh used to plant
 # `<wt>/.bionic -> <main>/.bionic`. lib/root.sh now steps OVER such a link and
@@ -1576,10 +1680,25 @@ fi
 # not need coreutils to run on the broken machine it exists for.
 _doctor_probe_sh="${_doctor_payload_root}/hooks/preflight-probe.sh"
 _doctor_budgets=0
+# The attestations this loop SKIPPED because their session is gone. Counted, not
+# discarded: the fallback line below is a claim about the directory, and a claim
+# that nothing is here is false while these files are.
+_doctor_att_dead=0
 for _l_att in "${DOCTOR_ROOT}/.bionic/tmp/"preflight-*.state; do
   [ -f "$_l_att" ] || continue
   _l_sid="${_l_att##*/preflight-}"; _l_sid="${_l_sid%.state}"
   [ -n "$_l_sid" ] || continue
+  # A DEAD SESSION'S ATTESTATION IS RESIDUE, NOT A RECORD ANYONE READS (1.5.1
+  # T5). It is already one line in the run section above, where the fix line
+  # names the verb that removes it; a second line here would report the same
+  # session twice and would keep the fallback below from ever saying what it is
+  # for. FIX-DOCTOR/3's rule — that an attestation survives its writer exiting —
+  # is untouched: that is about a session that is gone from the PROCESS TABLE
+  # mid-run, and this drops only the ones whose whole state is being offered for
+  # deletion on the same page.
+  case "$_doctor_dead_sids" in
+    *" ${_l_sid} "*) _doctor_att_dead=$((_doctor_att_dead + 1)); continue ;;
+  esac
   _doctor_budgets=$((_doctor_budgets + 1))
   if ! _l_rec="$(bash "$_doctor_probe_sh" --read "$_l_att" 2>/dev/null)"; then
     _res_add "$(_doctor_item "$DOCTOR_NIL" "session ${_l_sid%%-*}" \
@@ -1593,8 +1712,19 @@ for _l_att in "${DOCTOR_ROOT}/.bionic/tmp/"preflight-*.state; do
     _res_add "$(_doctor_item "$DOCTOR_NIL" "session ${_l_sid%%-*}" "no budget recorded")"
   fi
 done
-[ "$_doctor_budgets" -gt 0 ] || \
+# THE FALLBACK IS A CLAIM ABOUT THIS DIRECTORY, so it has to survive the collapse
+# above (FIX-DOCTOR/3, T3 finding 2: doctor once said "none has taken an
+# attestation in this project" with an attestation file sitting in the directory
+# it was naming). Dropping a dead session's row would have re-created exactly
+# that sentence on a project whose every attestation belongs to a session that
+# has since exited — so when that is why this section is empty, the line says so
+# and sends the reader to the section that names the repair.
+if [ "$_doctor_budgets" -eq 0 ] && [ "$_doctor_att_dead" -gt 0 ]; then
+  _res_add "$(_doctor_item "$DOCTOR_NIL" "no live session" \
+    "${_doctor_att_dead} $(_doctor_plural "$_doctor_att_dead" attestation attestations) here, every one from a session that is gone — see PATROL")"
+elif [ "$_doctor_budgets" -eq 0 ]; then
   _res_add "$(_doctor_item "$DOCTOR_NIL" "no session" "none has taken an attestation in this project")"
+fi
 
 # ─── What is left to fix ─────────────────────────────────────────────────────
 #
@@ -1630,32 +1760,58 @@ esac
 # is given whole underneath it.
 if [ "$HALF_STATE" = "yes" ]; then
   fix "this machine is half-uninstalled — the CLI no longer knows bionic. Finish with:"
-  # The `set -o pipefail` wrapper is not decoration. `curl … | bash` reports
-  # BASH's status, and bash handed an empty stream exits 0 — so a fetch that
-  # 404s (a moved script, no network, a private repo) leaves the user with a
-  # command that looked like it worked and removed nothing. The wrapper is a
-  # subshell, so it fixes the status without touching the options of the shell
-  # the user pasted it into. `-S` inside `-fsSL` is what puts curl's own error
-  # on the terminal; the wrapper is what stops the pipe from swallowing it.
-  FIX_LINES="${FIX_LINES}      bash -c 'set -o pipefail; curl -fsSL ${BIONIC_REMOVE_RAW_URL} | bash'"$'\n'
 fi
+# The command itself is printed by the verdict's render loop, on its own line
+# under this one — see the `HALF_STATE` echo there. It was appended to a third
+# accumulator here until 1.5.1, which nothing printed, so the copy that reached
+# the reader was always that one. The `set -o pipefail` wrapper it carries is not
+# decoration: `curl … | bash` reports BASH's status, and bash handed an empty
+# stream exits 0, so a fetch that 404s (a moved script, no network, a private
+# repo) would leave the user with a command that looked like it worked and
+# removed nothing.
 
 # THE RETIRED INSTALLER'S LEFTOVERS, raised HERE rather than beside the rows they
 # explain — this whole section runs before anything is printed, and a fix raised
 # from inside a render is a fix the verdict has already gone past (AC-23; the
 # rows themselves are in ENVIRONMENT, far below).
-case "$HOOK_FILES_COUNT" in
-  unknown|0) ;;
-  *) fix "${HOOK_FILES_COUNT} legacy hook $(_doctor_plural "$HOOK_FILES_COUNT" file files) in the claude-home → run /bionic:setup" ;;
-esac
-if [ "$INST_AGENT_STATE" = "present" ] && [ "$INST_AGENT_DRIFT" != "0" ]; then
-  fix "${INST_AGENT_DRIFT} installed agent $(_doctor_plural "$INST_AGENT_DRIFT" copy copies) differ from the payload → run /bionic:setup"
+#
+# AND EACH OF THEM IS DECIDED ONCE, HERE (Step-6 recheck part 4, ruling R-2). Five
+# of these leftovers were decided TWICE — once for the fix line in this section and
+# once for the row in ENVIRONMENT below — by re-applying the table's rule to the
+# raw fact instead of asking the table. That is exactly the shape B-1 was in when
+# doctor ticked an environment name setup was still offering to repair: two owners
+# for one question, agreeing until they didn't. The raw facts stay: the lines and
+# rows print COUNTS, NAMES and PATHS out of them, and `unknown` is still read here
+# because "we could not look" is a different question from "it fires". What the
+# raw facts no longer decide is whether the row fires.
+#
+# `legacy-alias` is where the two rules had ALREADY drifted, which is why this is
+# not only tidiness: `bionic_check_legacy_alias` also fires on the pre-marker
+# `alias claude=…--dangerously-skip-permissions` spelling, which no `bionic:start`
+# block wraps, and this file's own test read the marker and nothing else. On such
+# a machine setup offered the removal and this page said nothing. The two names
+# that carried that second rule — and the marker probe behind them, which the
+# detector runs itself — are gone from the fact block above with it.
+#
+# The claude-proxy line 90 lines below is NOT on this list, deliberately; the
+# comment above it says why.
+HOOK_FILES_FIRES=no;   bionic_check_fires legacy-hook-files   && HOOK_FILES_FIRES=yes
+AGENT_COPIES_FIRES=no; bionic_check_fires legacy-agent-copies && AGENT_COPIES_FIRES=yes
+LEGACY_ALIAS_FIRES=no; bionic_check_fires legacy-alias        && LEGACY_ALIAS_FIRES=yes
+LEGACY_HOOKS_FIRES=no; bionic_check_fires legacy-hooks        && LEGACY_HOOKS_FIRES=yes
+SKILL_COPY_FIRES=no;   bionic_check_fires legacy-skill-copy   && SKILL_COPY_FIRES=yes
+
+if [ "$HOOK_FILES_FIRES" = "yes" ]; then
+  fix "${HOOK_FILES_COUNT} legacy hook $(_doctor_plural "$HOOK_FILES_COUNT" file files) in the claude-home → run $(bionic_check_hint legacy-hook-files)"
+fi
+if [ "$AGENT_COPIES_FIRES" = "yes" ]; then
+  fix "${INST_AGENT_DRIFT} installed agent $(_doctor_plural "$INST_AGENT_DRIFT" copy copies) differ from the payload → run $(bionic_check_hint legacy-agent-copies)"
 fi
 
 # jq next: it gates several of the facts above, so acting on anything else while
 # the report is partly unreadable is acting on half a diagnosis.
 if [ "$HAVE_JQ" = "no" ]; then
-  fix "several facts below read unknown without it → install jq (/bionic:setup does)"
+  fix "several facts below read unknown without it → install jq ($(bionic_check_hint tool:jq) does)"
 fi
 
 # THE ABSENCES AS ONE LINE, NAMED. The ACTIONABLE absences, not every absence: a
@@ -1672,7 +1828,12 @@ if [ -n "$ABSENT_NAMES" ]; then
   # says. The line itself is a `/bionic:setup` fix, so it lands on the collapsed
   # verdict line, which bounds the whole sentence at 100 a second time.
   _doctor_absent_list="$(bionic_trunc "$ABSENT_NAMES" 44)"
-  fix "${N_ABSENT_ACTIONABLE} $(_doctor_plural "$N_ABSENT_ACTIONABLE" dependency dependencies) absent (${_doctor_absent_list}) → run /bionic:setup"
+  # AN AGGREGATE LINE READS THE PARTY, NOT A ROW. It stands for many rows at
+  # once, so there is no single row to ask; `bionic_check_route` is where the
+  # party's own command is spelled, and it is the same string every one of those
+  # rows carries.
+  fix "${N_ABSENT_ACTIONABLE} $(_doctor_plural "$N_ABSENT_ACTIONABLE" dependency dependencies) absent (${_doctor_absent_list}) → run $(bionic_check_route setup)" \
+      "$N_ABSENT_ACTIONABLE"
 fi
 
 # THE CORE ABSENCES, ON THEIR OWN LINE AND WITH THEIR OWN COMMAND. Same shape as
@@ -1682,7 +1843,7 @@ fi
 # suffix, so this line lands in FIX_LINES_OTHER and gets its own line under the
 # verdict instead of being folded into the collapsed setup list.
 if [ -n "$ABSENT_CORE_NAMES" ]; then
-  _doctor_core_route="$(dep_core_repair_route)"
+  _doctor_core_route="$(bionic_check_route cli)"
   _doctor_core_head="${N_ABSENT_CORE} core $(_doctor_plural "$N_ABSENT_CORE" dependency dependencies) absent ("
   # THE BUDGET IS THIS LINE'S OWN, AND IT IS MEASURED (1.4.4 fixit phase 4,
   # review-a A-2 / review-c C-2). The first version of this block copied the 44
@@ -1700,20 +1861,30 @@ if [ -n "$ABSENT_CORE_NAMES" ]; then
   # multi-byte dependency name cannot be cut mid-glyph here.
   _doctor_absent_core="$(bionic_trunc "$ABSENT_CORE_NAMES" \
     "$(( BIONIC_LINE_WIDTH - $(bionic_cols "→ ${_doctor_core_head}) → ${_doctor_core_route}") ))")"
-  fix "${_doctor_core_head}${_doctor_absent_core}) → ${_doctor_core_route}"
+  fix "${_doctor_core_head}${_doctor_absent_core}) → ${_doctor_core_route}" "$N_ABSENT_CORE"
 fi
 
-# THE FILE IS WHAT SETUP CAN REPAIR. A name live in this process but absent from
-# settings.json still earns this line: the value dies with the session, and the
-# next one starts without it. A name configured and merely not live earns
-# NOTHING here — that is a restart, which the ENVIRONMENT section names, and
-# setup would find nothing to do.
+# THE TABLE DECIDES WHETHER AN ENVIRONMENT NAME FIRES, and this line counts its
+# answers (Step-6 review B-1). This loop used to ask its own question — "does
+# `env_get` fail", i.e. is the name absent from settings.json — while
+# `bionic_check_env_unwritten` (the predicate setup's environment step runs) asks
+# whether the file's value IS the value bionic sets. The two disagree on exactly
+# one machine: a name written with some other value. There doctor said ✓ with no
+# line while setup offered to rewrite it, which is the 2026-09-05 field defect
+# inverted, and it is why the answer is asked once, of the row.
+#
+# A name live in this process but absent from settings.json still earns this
+# line: the value dies with the session, and the next one starts without it. A
+# name configured with bionic's own value and merely not live earns NOTHING here
+# — that is a restart, which the ENVIRONMENT section names, and setup would find
+# nothing to do.
 ENV_MISSING=0
 for _env_key in $ENV_KEYS; do
-  env_get "$_env_key" >/dev/null 2>&1 || ENV_MISSING=$((ENV_MISSING + 1))
+  bionic_check_fires "env:${_env_key}" && ENV_MISSING=$((ENV_MISSING + 1))
 done
 if [ "$ENV_MISSING" -gt 0 ]; then
-  fix "${ENV_MISSING} of bionic's environment settings $(_doctor_plural "$ENV_MISSING" is are) not written → run /bionic:setup"
+  fix "${ENV_MISSING} of bionic's environment settings $(_doctor_plural "$ENV_MISSING" is are) not what bionic sets → run $(bionic_check_route setup)" \
+      "$ENV_MISSING"
 fi
 
 # A STALE PROXY BLOCK IS THE ONE STATE OF THIS ITEM THAT EARNS A FIX LINE.
@@ -1722,13 +1893,17 @@ fi
 # this payload no longer writes. Setup rewrites the block wholesale, so the
 # repair is the same command as the offer — but this time there is something
 # broken to repair, which is what makes the row ✗ instead of `–`.
-[ "$RC_PROXY_STATE" = "stale" ] && fix "the claude() shell proxy is an older line → run /bionic:setup"
+# WHICH IS ALSO WHY THIS LINE IS NOT ROUTED THROUGH THE TABLE, alone among the six
+# leftovers: the row `claude-proxy` fires on ABSENT and this line fires on STALE,
+# so asking `bionic_check_fires` here would print a fix line on every machine that
+# declined the offer. Ruling A-T6-2 — upheld by the Step-6 recheck for this site,
+# and overturned for the other five, which the block above now decides once each.
+[ "$RC_PROXY_STATE" = "stale" ] && fix "the claude() shell proxy is an older line → run $(bionic_check_hint claude-proxy)"
 
-[ "$LEGACY_STATE" = "yes" ] && fix "the legacy .zshrc alias block is still there → run /bionic:setup"
-case "$LEGACY_HOOK_COUNT" in
-  unknown|0) ;;
-  *) fix "${LEGACY_HOOK_COUNT} legacy-channel managed-hook $(_doctor_plural "$LEGACY_HOOK_COUNT" entry entries) in settings.json → run /bionic:setup" ;;
-esac
+[ "$LEGACY_ALIAS_FIRES" = "yes" ] && fix "the legacy .zshrc alias block is still there → run $(bionic_check_hint legacy-alias)"
+if [ "$LEGACY_HOOKS_FIRES" = "yes" ]; then
+  fix "${LEGACY_HOOK_COUNT} legacy-channel managed-hook $(_doctor_plural "$LEGACY_HOOK_COUNT" entry entries) in settings.json → run $(bionic_check_hint legacy-hooks)"
+fi
 # The skill copy, and the hook files and agent copies beside it — all three now have a
 # consented removal in setup (steps 9, 10 and 11), so all three fix lines name a command that
 # has something to do. Until 1.4.4 only this one did, and the two above it ended `→ run
@@ -1740,7 +1915,22 @@ esac
 # hook files and whose setup summary still reads "nothing to do" — and was deleted at 8582861
 # (epic-18 wave-03) with nothing to replace it. The pin is back, in
 # tests/cross-gate-agreement.test.sh §DS, on the side that can go red.
-[ "$SKILL_COPY_STATE" = "yes" ] && fix "a legacy skill copy is installed, arming the same walls twice → run /bionic:setup"
+[ "$SKILL_COPY_FIRES" = "yes" ] && fix "a legacy skill copy is installed, arming the same walls twice → run $(bionic_check_hint legacy-skill-copy)"
+
+# THE TWO ROWS THAT WERE ONLY EVER SETUP'S (design D-2, 1.5.1). Both are on
+# setup's roster and neither had a surface here — no row, no fix line, nothing —
+# so the repair was offered for a problem this report never said the machine had.
+# Asked ONCE, here, for the same reason every other leftover is: `fix` is
+# collected before anything prints, and the rows in ENVIRONMENT below read these
+# two answers rather than asking a second time. A row with no fix line would also
+# break the rule the headline count is measured against — every ✗ on the page is
+# a problem the count stands for (tests/doctor-reads.test.sh 12f18).
+PERM_BLOCK_STATE=no; bionic_check_fires legacy-permission-block && PERM_BLOCK_STATE=yes
+PERM_MODE_STATE=no;  bionic_check_fires permission-mode         && PERM_MODE_STATE=yes
+[ "$PERM_BLOCK_STATE" = "yes" ] && \
+  fix "bionic's retired permission block is still in settings.json → run $(bionic_check_hint legacy-permission-block)"
+[ "$PERM_MODE_STATE" = "yes" ] && \
+  fix "the default permission mode is not ${BIONIC_DEFAULT_PERMISSION_MODE} → run $(bionic_check_hint permission-mode)"
 
 if [ "$PLUGIN_HOOKS" = "degraded" ] || [ "$PLUGIN_HOOKS" = "absent" ]; then
   # THE HINT IS THE WHOLE TAIL, AND IT KNOWS WHICH STATE IS ASKING (W7 S11,
@@ -1760,41 +1950,20 @@ if [ "$FEED_KIND" = "git" ] && [ "$LATEST_STATE" = "lag" ]; then
   fix "bionic ${LATEST_INSTALLED} installed, ${LATEST_LATEST} available → claude plugin update bionic@bionic"
 fi
 
-# How many problems, for the summary line. Counted from the printed lines rather
-# than from a tally kept alongside them, so the number and the list cannot come
-# to disagree: the continuation line under the half-uninstalled fix is indented
-# and does not carry the symbol, which is exactly why the count keys on it.
-N_FIX=0
-if [ -n "$FIX_LINES" ]; then
-  while IFS= read -r _fix_line; do
-    case "$_fix_line" in "  ${DOCTOR_BAD} "*) N_FIX=$((N_FIX + 1)) ;; esac
-  done <<< "$FIX_LINES"
-fi
 # THE COUNT IS ROWS, NOT CATEGORIES (Chris 2026-08-22: "2 problems" above seven ✗
-# rows). The absent dependencies collapse into ONE fix line below, so that line
-# is swapped for the number of ✗ dependency rows it stands for.
-N_BAD_DEPS=0
-if [ -n "$THIRD_ROWS" ]; then
-  while IFS= read -r _third_line; do
-    case "$_third_line" in "  ${DOCTOR_BAD} "*) N_BAD_DEPS=$((N_BAD_DEPS + 1)) ;; esac
-  done <<< "$THIRD_ROWS"
-fi
+# rows), and it is finished by the time this line is reached. `N_FIX` is summed
+# by `fix` itself, one call at a time, from the row count each call declares —
+# see that function's header for why the number lives beside the sentence rather
+# than being reconstructed here from the page.
 #
-# BOTH COLLAPSED DEPENDENCY LINES ARE SWAPPED, TOGETHER, FOR THE ROWS THEY STAND
-# FOR (bionic 1.4.4 fixit, phase 3). There are two of them since the core
-# absences got a line of their own — `N dependencies absent … → run
-# /bionic:setup` and `N core dependencies absent … → <route>` — and
-# `N_BAD_DEPS` above counts the ✗ rows of BOTH, because it counts rendered rows
-# and a rendered row does not carry its class. Swapping only the first line left
-# the second one counted as a problem in its own right ON TOP of the rows it
-# stands for, so a machine missing two core dependencies reported one problem
-# more than it had: the walk rendered `12 problems` where the same machine had
-# always read 11. Counting the collapse lines and subtracting all of them keeps
-# the original sentence — the count is rows — true for one line or two.
-N_DEP_COLLAPSE=0
-case "$FIX_NAMES_SETUP" in *"dependenc"*) N_DEP_COLLAPSE=$((N_DEP_COLLAPSE + 1)) ;; esac
-[ -n "$ABSENT_CORE_NAMES" ] && N_DEP_COLLAPSE=$((N_DEP_COLLAPSE + 1))
-[ "$N_DEP_COLLAPSE" -gt 0 ] && N_FIX=$((N_FIX - N_DEP_COLLAPSE + N_BAD_DEPS))
+# WHAT USED TO BE HERE. Three swaps in a row, each one written the day a
+# collapse was found to be miscounted: the two dependency lines exchanged for
+# every ✗ dependency row (bionic 1.4.4 fixit phase 3), then the dead-session line
+# for the sessions it names (1.5.1 fix-up batch). The environment line never got
+# its swap, and the exchange counted `presence is unknown` and `violates
+# constraint` rows twice — both measured by the Step-5 walk on one page whose
+# total was nevertheless correct, because the two errors were equal and opposite.
+# There is nothing to swap now: a line is worth what it says it is worth.
 
 # ─── The report ──────────────────────────────────────────────────────────────
 #
@@ -1823,7 +1992,7 @@ if [ "$N_FIX" = "0" ]; then
 else
   _doctor_verdict="→ ${N_FIX} $(_doctor_plural "$N_FIX" problem problems)."
   if [ -n "$FIX_NAMES_SETUP" ]; then
-    _doctor_verdict="${_doctor_verdict} Run /bionic:setup to fix: ${FIX_NAMES_SETUP}"
+    _doctor_verdict="${_doctor_verdict} Run ${DOCTOR_SETUP_ROUTE} to fix: ${FIX_NAMES_SETUP}"
     # TRUNCATED RATHER THAN WRAPPED. The names are what makes this line worth
     # reading, and a cold machine has enough of them to run past a terminal's
     # width — where the line would break into a second one and undo the whole
@@ -2038,22 +2207,42 @@ _doctor_env3() {  # <symbol> <setting> <value> <state> [<instruction>]
     "$(bionic_line "  $1 $(_doctor_cell "$2" 36) $(_doctor_cell "$3" 13) " "${4:-}" "${5:-}")")"
 }
 printf '    %-36s %-13s %s\n' "setting" "value" "state"
+# THE KEYS ARE env.sh's ROSTER and the routes are the table's. `ENV_KEYS` is the
+# one place the names are spelled and lib/checks.sh generates its environment rows
+# from that same list, so the two cannot come to hold different names; what this
+# loop reads from the table is who repairs an unwritten one.
+#
+# AND WHETHER IT IS UNWRITTEN IS THE ROW'S ANSWER TOO (Step-6 review B-1). This
+# loop asked `env_get` and called any configured value ✓; the row's detector asks
+# whether the configured value is the one bionic sets. A name written with some
+# other value is the machine where those two answers differ, and it is the one
+# machine where doctor used to print a tick over a repair setup was still
+# offering. `bionic_check_fires` is asked once per name, here, and the three
+# branches below are the three shapes a firing name comes in.
 for _env_key in $ENV_KEYS; do
+  _env_hint="$(bionic_check_hint "env:${_env_key}" 2>/dev/null)" || _env_hint=""
   _env_configured="$(env_get "$_env_key" 2>/dev/null)" || _env_configured=""
+  if bionic_check_fires "env:${_env_key}"; then _env_fires=yes; else _env_fires=no; fi
   if _env_live_value="$(env_live "$_env_key" 2>/dev/null)"; then _env_is_live=yes; else _env_is_live=no; fi
-  if [ -n "$_env_configured" ]; then
+  if [ "$_env_fires" = "no" ]; then
+    # The row does not fire, which is to say settings.json holds bionic's own
+    # value for this name. The only question left is whether THIS session has it.
     if [ "$_env_is_live" = "yes" ]; then
-      _doctor_env3 "$DOCTOR_OK" "$_env_key" "$_env_configured" "live in session"
+      _doctor_env3 "$DOCTOR_OK" "$_env_key" "${_env_configured:-—}" "live in session"
     else
-      _doctor_env3 "$DOCTOR_NIL" "$_env_key" "$_env_configured" "written, restart to pick it up"
+      _doctor_env3 "$DOCTOR_NIL" "$_env_key" "${_env_configured:-—}" "written, restart to pick it up"
     fi
+  elif [ -n "$_env_configured" ]; then
+    # Written, and written to something else. Setup's environment step rewrites
+    # it wholesale, so the row carries the same route every other firing name does.
+    _doctor_env3 "$DOCTOR_BAD" "$_env_key" "$_env_configured" "not the value bionic sets${_env_hint:+ → ${_env_hint}}"
   elif [ "$_env_is_live" = "yes" ]; then
     # Live and not configured: the state the retired shell export leaves behind.
     # It works right now and dies with this session, which is why setup is still
     # named for it in the verdict above.
-    _doctor_env3 "$DOCTOR_BAD" "$_env_key" "$_env_live_value" "live in session, not written → /bionic:setup"
+    _doctor_env3 "$DOCTOR_BAD" "$_env_key" "$_env_live_value" "live in session, not written${_env_hint:+ → ${_env_hint}}"
   else
-    _doctor_env3 "$DOCTOR_BAD" "$_env_key" "—" "not set → /bionic:setup"
+    _doctor_env3 "$DOCTOR_BAD" "$_env_key" "—" "not set${_env_hint:+ → ${_env_hint}}"
   fi
 done
 # THE THIRD KIND OF ROW IN THIS TABLE, and the only one whose absence is not a
@@ -2070,69 +2259,84 @@ done
 # person is owed the truth and a command, not a green tick: the ✗ here is
 # matched by the fix line gathered above, which is the invariant those symbols
 # are worth anything under.
+_rc_proxy_label="$(bionic_check_label claude-proxy)"
+_rc_proxy_hint="$(bionic_check_hint claude-proxy)"
 if [ "$RC_PROXY_STATE" = "yes" ]; then
-  _doctor_env3 "$DOCTOR_OK" "claude() shell proxy" "on" \
+  _doctor_env3 "$DOCTOR_OK" "$_rc_proxy_label" "on" \
     "in $(_detect_shell_rc)" " — new shells pick it up"
 elif [ "$RC_PROXY_STATE" = "stale" ]; then
-  _doctor_env3 "$DOCTOR_BAD" "claude() shell proxy" "stale" \
-    "in $(_detect_shell_rc)" " — /bionic:setup rewrites it"
+  _doctor_env3 "$DOCTOR_BAD" "$_rc_proxy_label" "stale" \
+    "in $(_detect_shell_rc)" " — ${_rc_proxy_hint} rewrites it"
 else
-  _doctor_env3 "$DOCTOR_NIL" "claude() shell proxy" "—" "not set — /bionic:setup offers it"
+  _doctor_env3 "$DOCTOR_NIL" "$_rc_proxy_label" "—" "not set — ${_rc_proxy_hint} offers it"
 fi
 # THE LEFTOVERS, AND ONLY WHEN THERE ARE ANY. Six checks ask the same kind of
 # question — did the retired installer leave something behind — and on a machine
 # that never ran it, or has been cleaned once, all six answer no. Silence is the
 # right output for that.
 
-[ "$LEGACY_STATE" = "yes" ] && \
-  _doctor_env_row "$DOCTOR_BAD" "legacy .zshrc alias block" "present → /bionic:setup"
-case "$LEGACY_HOOK_COUNT" in
-  unknown|0) ;;
-  *) _doctor_env_row "$DOCTOR_BAD" "legacy-channel managed hooks" \
-       "${LEGACY_HOOK_COUNT} in settings.json → /bionic:setup" ;;
-esac
+# AND EVERY ONE OF THEM READS THE ANSWER GATHERED ABOVE, never its own copy of
+# the rule (Step-6 recheck part 4, R-2). The raw facts are still here for the
+# counts, names and paths these rows print, and for the `unknown` state, which is
+# "we could not look" and not a firing. Whether a row fires was decided once, in
+# the leftovers block of the fix section.
+[ "$LEGACY_ALIAS_FIRES" = "yes" ] && \
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-alias)" \
+    "present → $(bionic_check_hint legacy-alias)"
+if [ "$LEGACY_HOOKS_FIRES" = "yes" ]; then
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-hooks)" \
+    "${LEGACY_HOOK_COUNT} in settings.json → $(bionic_check_hint legacy-hooks)"
+fi
 # HOOK FILES, WHICH ARE NOT THE SETTINGS ENTRIES ABOVE. The row above counts
 # managed-hook ENTRIES in settings.json; this one counts hook SCRIPTS the retired
 # installer copied into the claude-home, which the plugin now ships and which
 # shadow nothing but still sit there. Both were computed on every run; only the
 # first was printed. `detect_legacy_hook_files` also names the directory, which
 # is the one thing a reader needs to go look.
-case "$HOOK_FILES_COUNT" in
-  0) ;;
-  unknown)
-    _doctor_env_row "$DOCTOR_NIL" "legacy hook files" "unknown — ${HOOK_FILES_CAUSE}" ;;
-  *)
-    _doctor_env_row "$DOCTOR_BAD" "legacy hook files" \
-      "${HOOK_FILES_COUNT} in $(_doctor_tilde "$HOOK_FILES_PATH")" " → /bionic:setup" ;;
-esac
+if [ "$HOOK_FILES_FIRES" = "yes" ]; then
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-hook-files)" \
+    "${HOOK_FILES_COUNT} in $(_doctor_tilde "$HOOK_FILES_PATH")" " → $(bionic_check_hint legacy-hook-files)"
+elif [ "$HOOK_FILES_COUNT" = "unknown" ]; then
+  _doctor_env_row "$DOCTOR_NIL" "$(bionic_check_label legacy-hook-files)" "unknown — ${HOOK_FILES_CAUSE}"
+fi
 # THE INSTALLED ROLE FILES, AND WHICH OF THEM NO LONGER MATCH THE PAYLOAD. The
 # probe compares every agent this payload ships against a same-named copy in the
 # claude-home and counts the ones that differ; nothing rendered either half. A
 # drifted copy is the actionable one — it is what a session will read instead of
 # the shipped role — so that is the row, and a clean set of copies stays silent
 # under format rule 4.
-case "$INST_AGENT_STATE" in
-  present)
-    if [ "$INST_AGENT_DRIFT" != "0" ]; then
-      _doctor_env_row "$DOCTOR_BAD" "legacy installed agent copies" \
-        "${INST_AGENT_DRIFT}/${INST_AGENT_TOTAL} differ (${INST_AGENT_NAMES//,/, })" " → /bionic:setup"
-    fi ;;
-  unknown)
-    _doctor_env_row "$DOCTOR_NIL" "legacy installed agent copies" \
-      "unknown — ${INST_AGENT_CAUSE}" ;;
-esac
+if [ "$AGENT_COPIES_FIRES" = "yes" ]; then
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-agent-copies)" \
+    "${INST_AGENT_DRIFT}/${INST_AGENT_TOTAL} differ (${INST_AGENT_NAMES//,/, })" " → $(bionic_check_hint legacy-agent-copies)"
+elif [ "$INST_AGENT_STATE" = "unknown" ]; then
+  _doctor_env_row "$DOCTOR_NIL" "$(bionic_check_label legacy-agent-copies)" \
+    "unknown — ${INST_AGENT_CAUSE}"
+fi
 # AND THE SKILL COPY NAMES ITS DIRECTORY. The path was parsed and dropped; a row
 # that says a stale copy arms the same walls twice, without saying where it is,
 # leaves the reader to go find it.
-[ "$SKILL_COPY_STATE" = "yes" ] && \
-  _doctor_env_row "$DOCTOR_BAD" "legacy installed skill copy" \
-    "$(_doctor_tilde "$SKILL_COPY_PATH")" " → /bionic:setup"
+[ "$SKILL_COPY_FIRES" = "yes" ] && \
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-skill-copy)" \
+    "$(_doctor_tilde "$SKILL_COPY_PATH")" " → $(bionic_check_hint legacy-skill-copy)"
 # THE NPX STATUSLINE COMMAND (epic-21 AC-3, Fix step 5). A machine that ran
 # setup before the fix still has `npx ccstatusline@latest` recorded, and
 # nothing rewrites it but a person re-running setup.
 [ "$STATUSLINE_NPX_STATE" = "yes" ] && \
-  _doctor_env_row "$DOCTOR_BAD" "statusLine command" \
-    "still uses npx — blocks on a network lookup every render" " → /bionic:setup"
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label statusline-npx)" \
+    "still uses npx — blocks on a network lookup every render" " → $(bionic_check_hint statusline-npx)"
+# THE TWO ITEMS THAT HAD NO ROW HERE AT ALL until 1.5.1 (design D-2). Both are on
+# setup's roster and neither was ever diagnosed: the only mention of either in
+# this file was a comment naming a mutation doctor must never call. A repair with
+# no diagnosis is half a pair — the reader is offered a fix for a problem the
+# report never told them they had — so both are rows of the check table now, and
+# both render here from their own read-only detector. Silence when they do not
+# fire, like every other leftover row above.
+[ "$PERM_BLOCK_STATE" = "yes" ] && \
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label legacy-permission-block)" \
+    "present in $(_doctor_tilde "$(_dep_settings_file)")" " → $(bionic_check_hint legacy-permission-block)"
+[ "$PERM_MODE_STATE" = "yes" ] && \
+  _doctor_env_row "$DOCTOR_BAD" "$(bionic_check_label permission-mode)" \
+    "not ${BIONIC_DEFAULT_PERMISSION_MODE}" " → $(bionic_check_hint permission-mode)"
 
 
 # ─── The resources the fleet is running on ───────────────────────────────────

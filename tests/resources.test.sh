@@ -115,8 +115,8 @@ expect_true "CORES_PER_SUITE carries its AC-32 measurement (date, jobs, sha, rec
 expect_true "CORES_PER_SUITE names the full-suite record it was measured from" \
   grep -q 'record/wave-1.4.0/step5-full-suite-report.md' "$LIB"
 # The 8 GB kernel-SIGKILL measurement is the memory term's whole justification.
-expect_true "MEM_PER_SUITE_GB cites the tests/run.sh:63-68 kill datum" \
-  grep -q 'tests/run.sh:63-68' "$LIB"
+expect_true "MEM_PER_SUITE_GB cites the tests/run.sh:81-87 kill datum" \
+  grep -q 'tests/run.sh:81-87' "$LIB"
 
 # ════════════════════════════════════════════════════════════ §B — resources_budget
 

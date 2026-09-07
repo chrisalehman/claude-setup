@@ -370,9 +370,14 @@ section "§D the real tree"
 
 RT_ROOTS="$(oneline "$REPO" tests/lib/resolve-roots.sh)"
 RT_ALL="$(suites "$REPO" tests/lib/resolve-roots.sh | wc -l | tr -d ' ')"
-RT_ROSTER="$(/usr/bin/grep -c '^run "' "$REPO/tests/run.sh" 2>/dev/null || grep -c '^run "' "$REPO/tests/run.sh")"
-# code map §3.5: resolve-roots.sh is sourced by every suite in the roster.
-expect_eq "real: resolve-roots.sh reaches every suite in the roster" \
+# THE ROSTER IS THE DIRECTORY (fixit 1.5.1). This used to count tests/run.sh's
+# `run` lines against this number; the runner hand-lists nothing now, so the
+# reference set is the directory itself — which is also what
+# tests/lib/impact.sh:437 has always globbed, so what this row holds is one
+# derivation against the tree it derives from.
+RT_ROSTER="$(ls "$REPO"/tests/*.test.sh | grep -c . | tr -d ' ')"
+# code map §3.5: resolve-roots.sh is sourced by every suite in the tree.
+expect_eq "real: resolve-roots.sh reaches every suite in tests/" \
   "$RT_ROSTER" "$RT_ALL"
 
 # code map §1.2 rows 5–6: docs-pins doctors hooks/session-poker.sh.
@@ -391,36 +396,14 @@ for s in doctor-fleet doctor-patrol doctor-reads doctor-restart doctor-version \
     "$s.test.sh" "$RT_WIDTH"
 done
 
-# tests/run.sh's readers. Code map §1.4 puts them at 33, from
-# `grep -l 'tests/run\.sh' tests/*.test.sh`. That count is an UPPER BOUND and
-# this suite must not assert it: ten of the thirty-four files that grep finds
-# today mention the runner in a comment or hand its name to a classifier as a
-# string literal (`case_is suite 'bash tests/run.sh'`, cmd-class.test.sh:107),
-# and neither is a read. What IS a read, and what a reader can check by hand, is
-# the registration pin — a suite asserting its own `run "<self>"` line is present
-# in the roster. Every suite carrying one must be derived; the set is computed
-# from the tree here rather than written down, so it cannot go stale.
-RT_PINNED=""
-RT_MISSED=""
-RT_RUNSH_SET="$(suites "$REPO" tests/run.sh)"
-for f in "$REPO"/tests/*.test.sh; do
-  b="$(basename "$f")"
-  /usr/bin/grep -q "run \"$b\"" "$f" 2>/dev/null || continue
-  RT_PINNED="$RT_PINNED $b"
-  case "$RT_RUNSH_SET" in
-    *"$b"*) : ;;
-    *) RT_MISSED="$RT_MISSED $b" ;;
-  esac
-done
-RT_NPIN="$(printf '%s\n' $RT_PINNED | grep -c .)"
-if [ "$RT_NPIN" -lt 10 ]; then
-  no "real: the registration-pin census found suites to check" "found $RT_NPIN"
-elif [ -n "$RT_MISSED" ]; then
-  no "real: every registration-pinned suite is derived from tests/run.sh" \
-    "missing:$RT_MISSED"
-else
-  ok "real: all $RT_NPIN registration-pinned suites are derived from tests/run.sh"
-fi
+# THE REGISTRATION-PIN CENSUS IS GONE (fixit 1.5.1, D-3). It derived the set of
+# suites asserting their own `run "<self>"` line in tests/run.sh and required
+# impact.sh to reach every one of them FROM tests/run.sh. Both halves ceased to
+# exist together: the runner hand-lists nothing, so there are no registration
+# pins left to census — twenty-two were deleted in the same commit — and
+# "reachable from tests/run.sh" is no longer how a suite comes to be run. The
+# property that replaced it is proved once, where the runner lives:
+# tests/runner-roster.test.sh.
 
 # ── §E the output contract ──────────────────────────────────────────────────
 # S13's wall does `cut -f1` on this and writes the result to a roster row, so

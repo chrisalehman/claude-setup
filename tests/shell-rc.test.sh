@@ -26,7 +26,6 @@
 # bash `[[ == * ]]` in-process.
 #
 # Usage: bash tests/shell-rc.test.sh
-# Registered by name in tests/run.sh (tests/*.test.sh is NOT auto-globbed).
 
 set -uo pipefail
 
@@ -135,10 +134,5 @@ for shell_path in /bin/zsh /bin/bash /usr/bin/fish /opt/weird/shell; do
   r="$(run_rm_shell_rc "$shell_path")"
   expect_eq "12/${shell_path##*/}: _detect_shell_rc and _rm_shell_rc agree" "$d" "$r"
 done
-
-section "Section 4: registration"
-
-expect_true "16: tests/run.sh names shell-rc.test.sh" \
-  grep -q 'run "shell-rc.test.sh" bash tests/shell-rc.test.sh' "${BIONIC_SCRIPTS_DIR}/tests/run.sh"
 
 finish

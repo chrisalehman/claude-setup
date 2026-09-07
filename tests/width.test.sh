@@ -166,9 +166,4 @@ case "$LINE" in
   *) no "9: the instruction was eaten by the cut" "$(printf '%.120s' "$LINE")" ;;
 esac
 
-section "Section 5: registration"
-
-expect_true "10: tests/run.sh names width.test.sh" \
-  grep -q 'run "width.test.sh" bash tests/width.test.sh' "${REPO}/tests/run.sh"
-
 finish

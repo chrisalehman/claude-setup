@@ -458,7 +458,7 @@ One evidence artifact per step under `Step N:` in `## SDLC State`. The gate vali
 | 6 | pointer to the 6-axis body + critic findings; matrix re-validated here |
 | 7 | `adr:` OR `rca:` OR `n/a:` |
 | 8 | `merge:`, `worktree-removed:`, and (`cleanup:`, `tmp-wiped:`, `tasks-completed:` OR `cleanup: n/a`) |
-| 9 | `delivered:` always; plus `deployed:`, `verified:`, `monitored:` exactly when `deploy_target` names a live surface |
+| 9 | `delivered:` always, ON the `Step 9:` line itself — the run-closure predicate (`lib/run.sh`) greps that one line, so a `delivered:` written on a continuation line leaves the run open forever; plus `deployed:`, `verified:`, `monitored:` exactly when `deploy_target` names a live surface |
 
 **Placeholder ban.** These exact values are rejected anywhere evidence is required: `todo`, `pending`, `in progress`, `inprogress`, `xxx`, `tbd`, `placeholder`.
 
