@@ -638,6 +638,11 @@ fi
 # authored has not been offered for approval yet. A `current:` whose digits cannot be read
 # leaves the arm unmeasured rather than refusing on a question it cannot ask.
 #
+# AT TASK SCALE (epic-22 K2.5), a plan's `current: T<n>` is read as past Step 3 the same
+# way the evidence gate's `k2_step_num` reads it: there is no "still being authored" state
+# for a task-scale plan, so any `current: T<n>` (n >= 1) binds this arm exactly as
+# `current: 4`+ does on a numbered-step plan.
+#
 # WHY IT SITS HERE, after the Patrol checkpoint and before the roster: the roster below is
 # a LEDGER, and a launch this gate is about to refuse must not be journalled as though it
 # happened.
@@ -656,8 +661,16 @@ case "$DP_SUBAGENT" in
           sub(/^[[:space:]]*current[[:space:]]*:[[:space:]]*/, ""); gsub(/[[:space:]]/, "");
           print; exit }
       ' "$PLAN" 2>/dev/null) || DP_CURRENT=""
-      DP_STEP="${DP_CURRENT%%[!0-9]*}"
-      case "$DP_STEP" in ''|*[!0-9]*) DP_STEP="" ;; esac
+      # epic-22 K2.5: `current: T<n>` (n >= 1) reads as past Step 3 — same rule as the
+      # evidence gate's k2_step_num. Every other `current:` value is read digit-first,
+      # the leftmost run before any letter (`4`, `8b` -> `8`).
+      case "$DP_CURRENT" in
+        T[0-9]*) DP_STEP=4 ;;
+        *)
+          DP_STEP="${DP_CURRENT%%[!0-9]*}"
+          case "$DP_STEP" in ''|*[!0-9]*) DP_STEP="" ;; esac
+          ;;
+      esac
       if [ -n "$DP_STEP" ] && [ "$DP_STEP" -ge 4 ]; then
         DP_APPROVED=$(awk '
           /^## SDLC State/ { st = 1; next }
