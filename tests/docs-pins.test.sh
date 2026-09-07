@@ -1610,6 +1610,20 @@ expect_absent "97c: the Step-3 card's span stops before the Step-5 prose below i
 expect_contains "97d: …and all three of those sentences do exist in the skill file" \
   'Wave shape locks at approval' "$SKILL_BODY"
 
+# --- the authoring half, in operational-rules.md ----------------------------
+#
+# SKILL.md carries the CONTRACT (the six columns, the ladder, the refusal). The authoring
+# guidance lives beside the other Step-2 back-half sections, which is where a writer filling
+# a table in actually looks. That file is hand-written, not a render target, so nothing but
+# this pin holds the two halves together.
+OPRULES_BODY="$(cat "$OPRULES" 2>/dev/null)"
+expect_contains "97f: operational-rules.md carries the Eval design authoring section" \
+  '### The Eval design table' "$OPRULES_BODY"
+expect_contains "97g: …and it states the rule the sixth column exists for" \
+  'PLANTED DEFECT' "$OPRULES_BODY"
+expect_contains "97h: …and sends an unfalsifiable criterion back to Step 1" \
+  'goes back to Step 1' "$OPRULES_BODY"
+
 # The Eval design header is one row, not a swallowed table: the extractor takes the first
 # match only, so a second header row elsewhere cannot be what the column checks read.
 expect_eq "97e: the Eval design column header is a single line" "1" \
