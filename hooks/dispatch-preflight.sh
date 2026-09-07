@@ -613,6 +613,80 @@ else
   esac
 fi
 
+# ========================================= THE APPROVAL CHECKPOINT (epic-22 K2, AC-K2.4)
+#
+# A WRITER IS THE FIRST IRREVERSIBLE ACT OF A PLAN. Steps 0-3 produce documents the user
+# can read and reject; Step 4 produces commits on a branch, in parallel, by agents that do
+# not come back to ask. Design decision 2 of the wave-01-plugin-only interview put one
+# fact between those two worlds — the plan's `approved-by:` line, written on the user's
+# LITERAL `approved` and on nothing else — and this is the dispatch-side half of it. The
+# evidence-gate half refuses the COMMIT; this one refuses the writer that would produce it,
+# which is the half that arrives first and the only one that can stop the work being done.
+#
+# WRITER-CLASS ONLY, BY EXACT NAME. `bionic:implementor` and `bionic:senior-implementor`
+# are the two roles that write into the tree. Researchers, test-runners, auditors and
+# critics read it, and a wave routinely dispatches all four BEFORE the plan is approved —
+# the research that informs the plan is exactly that dispatch. Refusing them would refuse
+# the work that produces the approval. The names are matched whole rather than by
+# substring, so a `general-purpose` agent whose brief merely mentions implementing is not
+# caught, and a fully-qualified name is what the harness actually sends (measured: every
+# `subagent_type=` field in this repo's roster state is `bionic:<role>`).
+#
+# INERT WITHOUT A PLAN, OR BELOW STEP 4. This is a plan-bound arm, the second in this file
+# after the budget ceiling, and it takes the same direction that one does: an engaged
+# session with no plan on disk has no approval to be missing, and a plan still being
+# authored has not been offered for approval yet. A `current:` whose digits cannot be read
+# leaves the arm unmeasured rather than refusing on a question it cannot ask.
+#
+# WHY IT SITS HERE, after the Patrol checkpoint and before the roster: the roster below is
+# a LEDGER, and a launch this gate is about to refuse must not be journalled as though it
+# happened.
+# [WALL: tests/dispatch-preflight.test.sh]
+DP_SUBAGENT=$(_jq '.tool_input.subagent_type')
+case "$DP_SUBAGENT" in
+  bionic:implementor|bionic:senior-implementor)
+    if [ -n "$PLAN" ]; then
+      # `current:` and `approved-by:` out of `## SDLC State`, in one pass each, fence-blind
+      # on purpose: this arm reads two keys, and the gate that owns the section's grammar is
+      # the evidence gate. A key this reader cannot find reads as absent, never as malformed.
+      DP_CURRENT=$(awk '
+        /^## SDLC State/ { st = 1; next }
+        st && /^## / { exit }
+        st && /^[[:space:]]*current[[:space:]]*:/ {
+          sub(/^[[:space:]]*current[[:space:]]*:[[:space:]]*/, ""); gsub(/[[:space:]]/, "");
+          print; exit }
+      ' "$PLAN" 2>/dev/null) || DP_CURRENT=""
+      DP_STEP="${DP_CURRENT%%[!0-9]*}"
+      case "$DP_STEP" in ''|*[!0-9]*) DP_STEP="" ;; esac
+      if [ -n "$DP_STEP" ] && [ "$DP_STEP" -ge 4 ]; then
+        DP_APPROVED=$(awk '
+          /^## SDLC State/ { st = 1; next }
+          st && /^## / { exit }
+          st && /^[[:space:]]*approved-by[[:space:]]*:/ {
+            sub(/^[[:space:]]*approved-by[[:space:]]*:[[:space:]]*/, "");
+            sub(/[[:space:]]+$/, ""); print; exit }
+        ' "$PLAN" 2>/dev/null) || DP_APPROVED=""
+        if [ -z "$DP_APPROVED" ]; then
+          echo "BLOCKED: this ${DP_SUBAGENT} dispatch is refused — the plan it would build carries no 'approved-by:' line." >&2
+          echo "" >&2
+          echo "Plan: ${PLAN}" >&2
+          echo "Step: ${DP_CURRENT} — writers run against an APPROVED plan, and nothing recorded one." >&2
+          echo "" >&2
+          echo "A writer is the first act of a plan that cannot be taken back by closing a file." >&2
+          echo "" >&2
+          echo "Fix: put the Step-3 card to the user and wait for the literal word 'approved'; then" >&2
+          echo "     record it under '## SDLC State' in the plan above:" >&2
+          echo "       approved-by: <user> <ISO-UTC> \"<verbatim reply>\"" >&2
+          echo "     Silence, a question, or a partial reply is never transcribed as approval." >&2
+          echo "" >&2
+          echo "Then retry the dispatch." >&2
+          exit 2
+        fi
+      fi
+    fi
+    ;;
+esac
+
 # ================================================================== THE ROSTER
 # (design D-5 + spec §Design "Roster"; slice 4/3 — the LAUNCH half of AC-1.)
 #
