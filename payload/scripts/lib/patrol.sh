@@ -66,12 +66,15 @@ PATROL_INTERVAL_LAST_RESORT=1200
 # in agreement on the VALUE by tests/patrol-stale.test.sh §4 in the meantime.
 export PATROL_STALE_MULTIPLIER=2
 
-# The CLI's config directory, through the same override chain every other
-# library here reads, so a fixture machine redirects this one with the knob it
-# already uses for the rest.
-_patrol_claude_home() {
-  printf '%s' "${BIONIC_CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"
-}
+_patrol_self_dir() { dirname "${BASH_SOURCE[0]:-$0}"; }
+# roots.sh, THE SOFT SOURCE — the idiom lib/detect.sh uses for lib/deps.sh, taken at source
+# time because this file reaches for four of its roots. Every root resolver in the tree has
+# one definition there (epic-22 wave-01, N1); this file is a caller of `claude_home`,
+# `transcripts_dir`, `tmp_root`, `plugin_root` and `project_root`.
+if ! declare -F claude_home >/dev/null 2>&1; then
+  # shellcheck source=/dev/null
+  . "$( cd "$(_patrol_self_dir)" 2>/dev/null && pwd -P )/roots.sh"
+fi
 
 # Values ride on `|`-delimited lines read BY KEY, so a value carrying a pipe or
 # a newline would forge a field. Same normalisation the roster writer applies to
@@ -99,36 +102,16 @@ EOF
   printf ''
 }
 
-# THE PROJECT ROOT A SESSION'S STATE FILES LIVE UNDER, resolved from that
-# session's cwd through lib/root.sh's `project_root` — the SAME SSoT eleven
-# hooks and scripts, doctor, and the Patrol tick's own candidate listing all
-# render from (lib/root.sh header, spec §3). This used to be a ninth
-# byte-identical copy of the pre-1.4.0 shape `project_root` replaced: git's
-# common dir asked FIRST, and a `.bionic` ancestor walked only when no
-# repository existed at all. That ordering privileges the git root, so a git
-# repo holding a `.bionic` BELOW its root (design-ledger S3, tests/root.test.sh
-# §3) had its roster written under the nested `.bionic/tmp` while this
-# resolver answered with the git toplevel — the session read as blind
-# (FIX-PATROL-ROOT). `project_root` inverts that order: the nearest `.bionic`
-# decides, and git is used only to map a linked worktree onto its main
-# checkout. LAZILY SOURCED, the way lib/worktree.sh loads its sibling
-# git-argv.sh: scripts/lib CAN source across files in the same directory (both
-# worktree.sh and doctor.sh already do), so a caller that has not already
-# pulled in lib/root.sh pays for it exactly once, here, on first use.
-_patrol_self_dir() { dirname "${BASH_SOURCE[0]:-$0}"; }
-
-_patrol_repo_root() {  # <cwd> -> project_root's answer for that cwd
-  local d="${1:-}" lib
-  [ -n "$d" ] || return 1
-  if ! declare -f project_root >/dev/null 2>&1; then
-    lib="$( cd "$(_patrol_self_dir)" 2>/dev/null && pwd -P )/root.sh"
-    [ -r "$lib" ] || { printf '%s' "$d"; return 0; }
-    # shellcheck source=/dev/null
-    . "$lib" 2>/dev/null || { printf '%s' "$d"; return 0; }
-    declare -f project_root >/dev/null 2>&1 || { printf '%s' "$d"; return 0; }
-  fi
-  project_root "$d"
-}
+# THE PROJECT ROOT A SESSION'S STATE FILES LIVE UNDER is `project_root`'s answer, called
+# directly. This file used to carry `_patrol_repo_root`, a lazy-sourcing wrapper that
+# existed only because lib/root.sh might not be loaded; roots.sh pulls root.sh in above, so
+# the wrapper was a second name for one answer and is gone (epic-22 wave-01, N1). Before
+# 1.4.0 it was worse — a ninth byte-identical copy of the pre-`project_root` shape, asking
+# git's common dir FIRST and walking for a `.bionic` ancestor only when no repository
+# existed at all. That ordering privileges the git root, so a git repo holding a `.bionic`
+# BELOW its root (design-ledger S3, tests/root.test.sh §3) had its roster written under the
+# nested `.bionic/tmp` while this resolver answered with the git toplevel — the session read
+# as blind (FIX-PATROL-ROOT).
 
 # Every live CLI process, from the session files it keeps. `kind`/`status` are
 # deliberately not read: a session file describes a process, and whether that
@@ -136,7 +119,7 @@ _patrol_repo_root() {  # <cwd> -> project_root's answer for that cwd
 # builtin, so this survives a machine with no `ps` on PATH.
 patrol_live_sessions() {  # -> session=<sid>|pid=<pid>|cwd=<path>, one per line
   local dir f pid sid cwd
-  dir="$(_patrol_claude_home)/sessions"
+  dir="$(claude_home)/sessions"
   [ -d "$dir" ] || return 0
   command -v jq >/dev/null 2>&1 || return 0
   for f in "$dir"/*.json; do
@@ -184,7 +167,7 @@ PATROL_STATE_ARMED_SUFFIX=".armed"
 # loud, and a walk that skipped it would report a session as clean while an aimed
 # path sat in the directory.
 patrol_state_session_ids() {  # <root> -> one session id per line
-  local d="${1:-}/.bionic/tmp" c f base sid seen=""
+  local d c f base sid seen=""; d="$(tmp_root "${1:-}")"
   [ -d "$d" ] || return 0
   for c in $PATROL_STATE_CLASSES; do
     for f in "$d/$c"-*.state "$d/$c"-*.state"$PATROL_STATE_ARMED_SUFFIX"; do
@@ -207,7 +190,7 @@ patrol_state_session_ids() {  # <root> -> one session id per line
 # strange id can only ever address the file it was read from — there is no
 # pattern here for it to widen.
 patrol_session_state_files() {  # <root> <session id> -> one path per line
-  local d="${1:-}/.bionic/tmp" sid="${2:-}" c f
+  local d sid="${2:-}" c f; d="$(tmp_root "${1:-}")"
   [ -n "$sid" ] || return 0
   for c in $PATROL_STATE_CLASSES; do
     for f in "$d/$c-$sid.state" "$d/$c-$sid.state$PATROL_STATE_ARMED_SUFFIX"; do
@@ -267,7 +250,7 @@ EOF
 patrol_transcript() {  # <sid> -> path, or empty
   local sid="${1:-}" d
   [ -n "$sid" ] || return 1
-  for d in "$(_patrol_claude_home)"/projects/*/; do
+  for d in "$(transcripts_dir)"/*/; do
     [ -f "${d}${sid}.jsonl" ] && { printf '%s' "${d}${sid}.jsonl"; return 0; }
   done
   return 1
@@ -417,7 +400,7 @@ _patrol_scan() {  # <transcript> [<since ISO>] -> JOB/AGENTS/REFUSED records
 # against the number the wall would refuse against.
 patrol_interval() {  # <repo-root> -> "<seconds> <configured|default|last-resort>"
   local repo="${1:-}" poker secs
-  poker="$(_detect_plugin_root 2>/dev/null)/hooks/session-poker.sh"
+  poker="$(plugin_root 2>/dev/null)/hooks/session-poker.sh"
   if [ -f "$poker" ]; then
     secs=$( cd "$repo" 2>/dev/null && bash "$poker" interval 2>/dev/null )
     case "$secs" in ''|*[!0-9]*) secs="" ;; esac
@@ -467,7 +450,7 @@ _patrol_mtime() {  # <file>
 # side by side rather than one verdict merged out of both.
 patrol_stamp_state() {  # <repo-root> <sid> -> state=…|age=…|limit=…|interval=…|source=…|path=…
   local repo="${1:-}" sid="${2:-}" f iv secs src mt age limit state
-  f="${repo}/.bionic/tmp/patrol-${sid}.state"
+  f="$(tmp_root "$repo")/patrol-${sid}.state"
   iv="$(patrol_interval "$repo")"; secs="${iv%% *}"; src="${iv##* }"
   limit=$(( secs * PATROL_STALE_MULTIPLIER ))
   if [ -L "$f" ] || [ ! -f "$f" ]; then
@@ -504,7 +487,7 @@ patrol_stamp_state() {  # <repo-root> <sid> -> state=…|age=…|limit=…|inter
 # an UNMET contract as closed is reporting a wave as finished.
 patrol_roster_state() {  # <repo-root> <sid> -> rows=…|open=…|closed=…|names=…|path=…
   local repo="${1:-}" sid="${2:-}" f rows names closed open swept nm
-  f="${repo}/.bionic/tmp/roster-${sid}.state"
+  f="$(tmp_root "$repo")/roster-${sid}.state"
   if [ ! -f "$f" ] || [ -L "$f" ]; then
     printf 'rows=0|open=0|closed=0|present=no|path=%s' "$f"
     return 0
@@ -543,14 +526,14 @@ patrol_report() {  # -> patrol-session/v1 … patrol-job/v1 … patrol-stamp/v1 
   local sess sid pid cwd repo here_repo tr scan since agents refused cause blind
   local id cron rec kind phead rline dispatches tag a b c d e
 
-  here_repo="$(_patrol_repo_root "$PWD")"
+  here_repo="$(project_root "$PWD")"
 
   while IFS= read -r sess; do
     [ -n "$sess" ] || continue
     sid="$(_patrol_field "$sess" session)"
     pid="$(_patrol_field "$sess" pid)"
     cwd="$(_patrol_field "$sess" cwd)"
-    repo="$(_patrol_repo_root "$cwd")"
+    repo="$(project_root "$cwd")"
 
     tr="$(patrol_transcript "$sid")" || tr=""
     cause=""

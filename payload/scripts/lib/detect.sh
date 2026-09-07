@@ -104,12 +104,16 @@ if ! declare -F shell_rc_file >/dev/null 2>&1; then
   . "$(cd "$(_detect_self_dir)" && pwd -P)/shell.sh"
 fi
 
-_detect_plugin_root() {
-  if [ -n "${BIONIC_PLUGIN_ROOT:-}" ]; then echo "$BIONIC_PLUGIN_ROOT"; return; fi
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then echo "$CLAUDE_PLUGIN_ROOT"; return; fi
-  # lib -> scripts -> payload root
-  ( cd "$(_detect_self_dir)/../.." && pwd -P )
-}
+# roots.sh, THE SAME SOFT SOURCE, FOR `plugin_root` — the one payload-root resolver
+# (epic-22 wave-01, N1). This file carried `_detect_plugin_root` and lib/deps.sh carried
+# `_dep_plugin_root`, byte-identical, each explaining itself by naming the other. Guarded on
+# the function and not on the sibling that usually brings it, because a caller that has
+# check_dep already skips the deps.sh source above.
+if ! declare -F plugin_root >/dev/null 2>&1; then
+  # shellcheck source=/dev/null
+  . "$(cd "$(_detect_self_dir)" && pwd -P)/roots.sh"
+fi
+
 
 # A thin caller of shell.sh's one resolver — see the source guard above.
 _detect_shell_rc() {
@@ -127,7 +131,7 @@ _detect_shell_rc() {
 detect_plugin_integrity() {
   local root version="unknown" hooks_json hooks_state cmd script tok
   local -a toks
-  root="$(_detect_plugin_root)"
+  root="$(plugin_root)"
   hooks_json="${root}/hooks/hooks.json"
 
   if [ -f "${root}/.claude-plugin/plugin.json" ]; then
@@ -191,7 +195,7 @@ detect_plugin_integrity() {
 detect_hook_wiring() {  # -> "hooks: total=<n> resolving=<n>"
   local root hooks_json cmd script tok seen="" total=0 resolving=0
   local -a toks
-  root="$(_detect_plugin_root)"
+  root="$(plugin_root)"
   hooks_json="${root}/hooks/hooks.json"
   [ -f "$hooks_json" ] || { echo "hooks: total=0 resolving=0"; return 0; }
   while IFS= read -r cmd; do
@@ -246,7 +250,7 @@ _detect_sha256() {  # <file> -> hex digest on stdout; nonzero if no tool can ans
 
 detect_agent_integrity() {
   local root manifest line want rel got total=0 modified=0 names=""
-  root="$(_detect_plugin_root)"
+  root="$(plugin_root)"
   manifest="${root}/integrity/rendered.sha256"
 
   if [ ! -f "$manifest" ]; then
@@ -499,7 +503,7 @@ detect_legacy_skill_copy() {
 detect_legacy_hook_files() {
   local root dir f name count=0 names="" payload_total=0
 
-  root="$(_detect_plugin_root)"
+  root="$(plugin_root)"
   dir="${BIONIC_CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/hooks"
 
   for f in "${root}/hooks/"*.sh; do
@@ -580,7 +584,7 @@ detect_statusline_npx_command() {
 detect_installed_agent_copies() {
   local root dir f name total=0 drift=0 names="" payload_total=0 want got
 
-  root="$(_detect_plugin_root)"
+  root="$(plugin_root)"
   dir="${BIONIC_CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/agents"
 
   for f in "${root}/agents/"*.md; do

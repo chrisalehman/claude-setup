@@ -1222,7 +1222,7 @@ expect_empty "ac14_b no shipped surface instructs a context.md write" "$ac14_hit
 # default yes, as in the real artifact) · design=<value> injects a
 # `design:` line · waived=<full line> injects it verbatim.
 build_spec() {
-  local scale=wave section=yes design="OMIT" waived="OMIT" step=2
+  local scale=wave section=yes design="OMIT" waived="OMIT" step=2 adrs="OMIT"
   local arg
   for arg in "$@"; do
     case "$arg" in
@@ -1231,6 +1231,7 @@ build_spec() {
       design=*)  design="${arg#design=}" ;;
       waived=*)  waived="${arg#waived=}" ;;
       step=*)    step="${arg#step=}" ;;
+      adrs=*)    adrs="${arg#adrs=}" ;;
     esac
   done
 
@@ -1245,6 +1246,7 @@ scale: '"$scale"'
 '
   [ "$design" = OMIT ] || out+="design: $design"$'\n'
   [ "$waived" = OMIT ] || out+="$waived"$'\n'
+  [ "$adrs" = OMIT ] || out+="adrs: $adrs"$'\n'
   out+='surface_type: system
 language: bash
 has_ui: false
@@ -1472,6 +1474,67 @@ echo "c15d: in-place '## Design' + a VALID pointer → allow (the documented com
 run_write "$DESIGN_SPECS/w15d.spec.md" \
   "$(build_spec design=specs/epic-01-demo/with-design.spec.md)"
 assert_eq "design_combined_valid exit 0" 0 "$HOOK_EXIT"
+
+# ============================================================
+# K3 F4 / D6: the adrs: pointer arm (AC-K3.3)
+# ============================================================
+#
+# A momentous decision's ADR is drafted at Step 2 alongside the spec and
+# pointed to from the spec's own `adrs:` frontmatter (one path, or several
+# joined by ` · `). The arm only checks the pointer RESOLVES — no in-place
+# alternative, no waiver, unlike the three-way design rule above it — and it
+# is scoped to `sdlc-step >= 3`: below that, the ADR and the pointer are
+# typically authored in the same design pass and the file may not exist yet
+# on the turn the spec names it, so a dangling path is not yet a defect.
+#
+# Fixture: a real ADR at `adrs/epic-01-demo/real.md` (make_project() already
+# creates that directory); every case below points at it, or deliberately
+# does not.
+echo
+section "K3 F4: adrs: pointer arm (AC-K3.3)"
+
+ADRS_DIR="$design_project/.bionic/docs/adrs/epic-01-demo"
+printf '# ADR 001 — a momentous decision\n\nStatus: Accepted\n' > "$ADRS_DIR/real.md"
+
+echo "k3-1: sdlc-step 3, adrs: names a real file → allow"
+run_write "$DESIGN_SPECS/k3-1.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs=adrs/epic-01-demo/real.md)"
+assert_eq "adrs_resolving_step3 exit 0" 0 "$HOOK_EXIT"
+
+echo "k3-2: sdlc-step 3, adrs: names no file → block, naming the raw value and the resolved path"
+run_write "$DESIGN_SPECS/k3-2.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs=adrs/epic-01-demo/nowhere.md)"
+assert_eq "adrs_dangling_step3 exit 2" 2 "$HOOK_EXIT"
+assert_contains "adrs_dangling_step3 names the raw value" "adrs/epic-01-demo/nowhere.md" "$HOOK_STDERR"
+assert_contains "adrs_dangling_step3 names the resolved path" "$ADRS_DIR/nowhere.md" "$HOOK_STDERR"
+
+echo "k3-3: sdlc-step 2, adrs: names no file → allow (arm inert below step 3)"
+run_write "$DESIGN_SPECS/k3-3.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=2 adrs=adrs/epic-01-demo/nowhere.md)"
+assert_eq "adrs_dangling_step2_inert exit 0" 0 "$HOOK_EXIT"
+
+echo "k3-4: sdlc-step 3, no adrs: line at all → allow (a wave with no momentous decision cites none)"
+run_write "$DESIGN_SPECS/k3-4.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3)"
+assert_eq "adrs_absent_step3 exit 0" 0 "$HOOK_EXIT"
+
+echo "k3-5: sdlc-step 3, two adrs: paths joined by ' · ', one real one dangling → block naming the dangling one"
+run_write "$DESIGN_SPECS/k3-5.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 \
+    adrs="adrs/epic-01-demo/real.md · adrs/epic-01-demo/nowhere.md")"
+assert_eq "adrs_multi_one_dangling exit 2" 2 "$HOOK_EXIT"
+assert_contains "adrs_multi_one_dangling names the dangling entry, not the real one" \
+  "adrs/epic-01-demo/nowhere.md" "$HOOK_STDERR"
+
+echo "k3-6: sdlc-step 3, adrs: path with a '..' component → block even though it would resolve to a real file"
+run_write "$DESIGN_SPECS/k3-6.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs=adrs/epic-01-demo/../epic-01-demo/real.md)"
+assert_eq "adrs_dotdot_step3 exit 2" 2 "$HOOK_EXIT"
+
+echo "k3-7: sdlc-step 3, a task-scale spec with a dangling adrs: → allow (arm is wave/epic only, matching the design wall)"
+run_write "$DESIGN_SPECS/k3-7.spec.md" \
+  "$(build_spec section=no scale=task step=3 adrs=adrs/epic-01-demo/nowhere.md)"
+assert_eq "adrs_task_scale_untouched exit 0" 0 "$HOOK_EXIT"
 
 # ============================================================
 # AC-13: the pinned-root wall
@@ -2093,5 +2156,67 @@ assert_contains "v3 a session bound to a closed plan is told, and never falls th
   "governing-skill: bound plan closed — $v_plans/wave-01-old.plan.md; this session has no open run" \
   "$HOOK_STDERR"
 assert_eq "v3 ...and still passes" 0 "$HOOK_EXIT"
+
+section "K5/AC-K5.1: *.requirements.md gets the frontmatter contract, minus the design rule"
+
+# K5: requirements.md is the Step-1 artifact (design ledger K5; ADR-001), living beside the
+# spec under specs/epic-NN-<slug>/. It gets the SAME frontmatter contract *.spec.md gets —
+# but never the three-way design rule (that arm's own case statement keys on *.spec.md only).
+k5_p=$(make_project)
+k5_req="$k5_p/.bionic/docs/specs/epic-01-demo/wave-01-x.requirements.md"
+
+echo "k5a: requirements.md with no frontmatter → block"
+run_write "$k5_req" '# Requirements body, no frontmatter'
+assert_eq "k5a exit 2" 2 "$HOOK_EXIT"
+assert_contains "k5a names the missing frontmatter block" "missing a YAML frontmatter block" "$HOOK_STDERR"
+
+echo "k5b: requirements.md with the full valid contract → allow"
+run_write "$k5_req" "$VALID_FRONTMATTER"
+assert_eq "k5b exit 0" 0 "$HOOK_EXIT"
+assert_eq "k5b silent" "" "$HOOK_STDERR"
+
+echo "k5c: the SAME frontmatter (no '## Design', no 'design:' pointer, no waiver) written to a" \
+     ".spec.md path would block on the design wall (proven in the design-wall section above)" \
+     "— written to .requirements.md instead it is allowed: the design rule never fires here"
+run_write "$k5_req" "$(build_plan)"
+assert_eq "k5c exit 0 (design rule not applied to a requirements file)" 0 "$HOOK_EXIT"
+assert_eq "k5c silent" "" "$HOOK_STDERR"
+
+# k5d: this wave's own requirements.md is the exemplar shape (design ledger K5; the brief
+# says "copy it into a fixture and assert that"). Frontmatter copied byte-for-byte from
+# .bionic/docs/specs/epic-22-plugin-only/wave-01-plugin-only.requirements.md (gitignored,
+# machine-local — not a path this hermetic suite can read live, so the fixture is a literal
+# copy rather than a dynamic read).
+K5_EXEMPLAR_FRONTMATTER='---
+governing-skill: agent-skills:idea-refine
+sdlc-step: 1
+intent: build
+rigor: audited
+scale: wave
+canonical_sdlc_version: 14
+surface_type: cli-plugin
+language: bash
+has_ui: false
+multi_agent: true
+deploy_target: n/a
+cleanup_on_finish: true
+use_worktree: false
+walk: required
+design-interview: true
+model_plan: orchestrator=claude-fable-5-1; implementor=sonnet-high; senior-implementor=opus-high; researcher=opus-high; test-runner=haiku-medium; auditor=opus-high; critic=opus-high
+created: 2026-09-07
+---
+
+# bionic 1.6.0 — plugin-only · requirements (epic-22 wave-01)
+
+## Requirements and acceptance criteria
+
+**REQ-K5 — Three artifacts, three steps.**
+- AC-K5.1 The governing-skill hook validates '"'"'*.requirements.md'"'"' frontmatter under '"'"'specs/'"'"'.'
+echo "k5d: this wave's own requirements.md is the exemplar shape and must pass the arm as-is"
+k5_real_target="$k5_p/.bionic/docs/specs/epic-01-demo/real.requirements.md"
+run_write "$k5_real_target" "$K5_EXEMPLAR_FRONTMATTER"
+assert_eq "k5d exit 0 on the real wave-01 requirements doc's frontmatter" 0 "$HOOK_EXIT"
+assert_eq "k5d silent" "" "$HOOK_STDERR"
 
 finish

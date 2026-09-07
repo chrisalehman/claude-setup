@@ -4,8 +4,14 @@
 # [WALL: tests/canonical-sdlc-governing-skill.test.sh]
 #
 # Scope: files under <project>/docs/bionic/{specs,plans,adrs}/ matching
-#   *.plan.md | *.spec.md | adr-*.md | continuation*.md
+#   *.plan.md | *.spec.md | *.requirements.md | adr-*.md | continuation*.md
 # (epic.plan.md and epic.spec.md are covered by *.plan.md / *.spec.md)
+#
+# K5: *.requirements.md gets the same frontmatter contract as *.spec.md — it
+# is the Step-1 artifact (design ledger K5; ADR-001) and lives beside the spec
+# under specs/epic-NN-<slug>/. It does NOT get the design three-way rule below
+# (that arm's own case statement keys on *.spec.md only, so a requirements
+# file never reaches it).
 #
 # Other files under those paths — README.md, images, supporting notes —
 # pass through unblocked. Rename-to-bypass is discoverable: the skill's
@@ -168,26 +174,6 @@ physicalize() {  # $1=absolute path (need not exist) → folded, ancestors resol
   fi
 }
 
-resolve_docs_root() {
-  local proj="$1"
-  local config="$proj/.bionic/config.yaml"
-  if [ -f "$config" ]; then
-    local override
-    override=$(grep -E '^[[:space:]]*docs-root[[:space:]]*:' "$config" 2>/dev/null \
-      | head -1 \
-      | sed -E 's/^[[:space:]]*docs-root[[:space:]]*:[[:space:]]*//' \
-      | sed -E "s/^['\"]//;s/['\"]\$//" \
-      | sed -E 's/[[:space:]]+$//')
-    if [ -n "$override" ]; then
-      case "$override" in
-        /*) echo "$override" ;;
-        *)  echo "$proj/$override" ;;
-      esac
-      return
-    fi
-  fi
-  echo "$proj/.bionic/docs"
-}
 
 # ---------- the library ----------
 #
@@ -434,7 +420,7 @@ if [ "$EVENT" = "PostToolUse" ]; then
   # through a symlink otherwise disagrees with itself about its own prefix.
   [ -f "$FILE_PATH" ] || exit 0
   GS_BIND_TARGET=$(physicalize "$FILE_PATH")
-  GS_BIND_DOCS=$(physicalize "$(resolve_docs_root "$PROJECT_ROOT_FROM_PATH")")
+  GS_BIND_DOCS=$(physicalize "$(docs_root "$PROJECT_ROOT_FROM_PATH")")
   case "$GS_BIND_TARGET" in
     "$GS_BIND_DOCS"/plans/*|"$GS_BIND_DOCS"/incidents/*) ;;
     *) exit 0 ;;
@@ -497,7 +483,7 @@ esac
 # that repository and leaves at the guard, which is the same answer the deleted clauses
 # gave, reached one test earlier.
 
-DOCS_ROOT=$(resolve_docs_root "$PROJECT_ROOT_FROM_PATH")
+DOCS_ROOT=$(docs_root "$PROJECT_ROOT_FROM_PATH")
 
 # Incident 0001: the audit stream must live where a consuming project cannot
 # commit it, regardless of that project's .gitignore. $HOME-rooted, per-project,
@@ -521,7 +507,7 @@ audit_path() {  # $1=project root → absolute audit-file path; rc 1 if no $HOME
 BASENAME=$(basename "$FILE_PATH")
 ENFORCE=0
 case "$BASENAME" in
-  *.plan.md|*.spec.md|continuation*.md) ENFORCE=1 ;;
+  *.plan.md|*.spec.md|*.requirements.md|continuation*.md) ENFORCE=1 ;;
   adr-*.md) ENFORCE=1 ;;
 esac
 
@@ -672,9 +658,9 @@ FRONTMATTER=$(echo "$CONTENT" | awk '
 if [ "$UNDER_DOCS_ROOT" -eq 0 ]; then
   if echo "$FRONTMATTER" | grep -qE '^[[:space:]]*(canonical_sdlc_version[[:space:]]*:|governing-skill[[:space:]]*:[[:space:]]*canonical-sdlc[[:space:]]*$)'; then
     case "$BASENAME" in
-      *.spec.md) MISPLACED_SUBDIR=specs ;;
-      adr-*.md)  MISPLACED_SUBDIR=adrs ;;
-      *)         MISPLACED_SUBDIR=plans ;;
+      *.spec.md|*.requirements.md) MISPLACED_SUBDIR=specs ;;
+      adr-*.md)                    MISPLACED_SUBDIR=adrs ;;
+      *)                           MISPLACED_SUBDIR=plans ;;
     esac
     echo "BLOCKED: canonical-sdlc artifact '$BASENAME' is misplaced." >&2
     echo "Path: $FILE_PATH" >&2
@@ -1196,6 +1182,80 @@ case "$BASENAME" in
     ;;
 esac
 
+# ---------- adrs: pointer arm (K3 F4 / D6) ----------
+# [WALL: tests/canonical-sdlc-governing-skill.test.sh]
+#
+# D6: a momentous decision gets its ADR drafted at Step 2, filed under
+# `<docs-root>/adrs/…`, and named from the spec's `adrs:` frontmatter — one
+# path, or several joined by ` · ` (the separator env_split_entries in
+# canonical-sdlc-evidence-gate.sh and agents.sh's peer-session parser already
+# use for a multi-value line; reused here rather than reinvented). Resolution
+# copies `resolve_design_path` above one clause up: an absolute path stands,
+# a docs-root artifact-directory leader (`specs/`, `plans/`, `adrs/`,
+# `incidents/`, `record/`) resolves against the docs root, everything else
+# resolves project-relative, and a `..` component is refused outright. Its
+# own function (`resolve_adrs_path`) rather than a call into the design arm's
+# — that function is defined conditionally, inside the design arm's own `if`,
+# and this arm must not assume it ran.
+#
+# SCOPED to `sdlc-step >= 3` only. Below that — Step 2, where the spec first
+# names the ADR it is drafting alongside itself — a dangling path is not yet
+# a defect: the pointer and the file it names are authored in the same
+# design pass, and the file may not exist on the turn the pointer is typed.
+# PRESENCE-ONLY, like `design:`'s pointer check for the target file: unlike
+# `design:`, this arm does not also require a fixed heading inside the
+# target — an ADR has no equivalent section name to grep for, and D6 asks
+# only that the file the pointer names is real.
+#
+# Absence of `adrs:` is never blocked: a wave that ratified no momentous
+# decision cites none, and the arm has nothing to validate.
+case "$BASENAME" in
+  *.spec.md)
+    if [ "$TOOL" = "Write" ] && { [ "$SCALE" = "wave" ] || [ "$SCALE" = "epic" ]; }; then
+      ADRS_STEP=$(yaml_get sdlc-step)
+      case "$ADRS_STEP" in
+        ''|*[!0-9]*) ;;  # non-numeric or empty sdlc-step -> not in scope
+        *)
+          if [ "$ADRS_STEP" -ge 3 ] 2>/dev/null; then
+            ADRS_RAW=$(yaml_get adrs)
+            if [ -n "$ADRS_RAW" ]; then
+              resolve_adrs_path() {  # $1 = one raw adrs: path
+                case "$1" in
+                  /*) printf '%s\n' "$1" ;;
+                  specs/*|plans/*|adrs/*|incidents/*|record/*) printf '%s/%s\n' "$DOCS_ROOT" "$1" ;;
+                  *)  printf '%s/%s\n' "$PROJECT_ROOT_FROM_PATH" "$1" ;;
+                esac
+              }
+              while IFS= read -r ADR_ONE; do
+                [ -n "$ADR_ONE" ] || continue
+                if echo "$ADR_ONE" | grep -qE '(^|/)\.\.(/|$)'; then
+                  echo "BLOCKED: canonical-sdlc spec '$BASENAME' (sdlc-step ${ADRS_STEP}): adrs: '$ADR_ONE' climbs out with a '..' component and is refused." >&2
+                  echo "Path: $FILE_PATH" >&2
+                  exit 2
+                fi
+                ADR_ABS=$(resolve_adrs_path "$ADR_ONE")
+                if [ ! -f "$ADR_ABS" ]; then
+                  echo "BLOCKED: canonical-sdlc spec '$BASENAME' (sdlc-step ${ADRS_STEP}): adrs: '$ADR_ONE' names no file (resolved to $ADR_ABS)." >&2
+                  echo "Path: $FILE_PATH" >&2
+                  echo "Fix: draft the ADR at that path, or correct the adrs: pointer." >&2
+                  exit 2
+                fi
+              done < <(printf '%s\n' "$ADRS_RAW" | awk '{
+                n = split($0, parts, /[ \t]*·[ \t]*/)
+                for (i = 1; i <= n; i++) {
+                  e = parts[i]
+                  gsub(/^[ \t]+|[ \t]+$/, "", e)
+                  if (e != "") print e
+                }
+              }')
+            fi
+          fi
+          ;;
+      esac
+    fi
+    ;;
+esac
+
 # ---------- AC-11 / AC-12: tree creation on first lifecycle use ----------
 # [WALL: tests/canonical-sdlc-governing-skill.test.sh]
 #
@@ -1240,16 +1300,24 @@ esac
 # redirection is performed before `printf` runs, so `printf 2>/dev/null` would
 # silence nothing) is suppressed too — matching the `mkdir -p ... 2>/dev/null`
 # beside it. An allowed tool call must leave stderr clean.
+#
+# THE SCAFFOLD USES `$DOCS_ROOT`, NOT A LITERAL (epic-22 wave-01, N1). This block spelled
+# `$PROJECT_ROOT_FROM_PATH/.bionic/docs/...` while the hook forty lines up had already
+# resolved `docs-root:` into `$DOCS_ROOT` — so a project that set the key got the DEFAULT
+# tree scaffolded and its configured tree never created, and then met this hook's own
+# misplacement refusal for writing into the tree it had asked for. One resolver, one answer:
+# the four leaders hang off `$DOCS_ROOT` and the two state directories off `tmp_root` and
+# `bionic_root`.
 # [WALL: tests/canonical-sdlc-governing-skill.test.sh]
 if [ -n "$SDLC_VERSION" ]; then
   mkdir -p \
-    "$PROJECT_ROOT_FROM_PATH/.bionic/tmp" \
-    "$PROJECT_ROOT_FROM_PATH/.bionic/docs/specs" \
-    "$PROJECT_ROOT_FROM_PATH/.bionic/docs/plans" \
-    "$PROJECT_ROOT_FROM_PATH/.bionic/docs/adrs" \
-    "$PROJECT_ROOT_FROM_PATH/.bionic/docs/incidents" \
+    "$(tmp_root "$PROJECT_ROOT_FROM_PATH")" \
+    "$DOCS_ROOT/specs" \
+    "$DOCS_ROOT/plans" \
+    "$DOCS_ROOT/adrs" \
+    "$DOCS_ROOT/incidents" \
     2>/dev/null
-  BIONIC_GITIGNORE="$PROJECT_ROOT_FROM_PATH/.bionic/.gitignore"
+  BIONIC_GITIGNORE="$(bionic_root "$PROJECT_ROOT_FROM_PATH")/.gitignore"
   [ -f "$BIONIC_GITIGNORE" ] || { printf '*\n' > "$BIONIC_GITIGNORE"; } 2>/dev/null
 fi
 

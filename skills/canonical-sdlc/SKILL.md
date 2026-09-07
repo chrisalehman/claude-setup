@@ -100,7 +100,7 @@ Do not carve a sensitive concern into a tiny unflagged wave to dodge a floor. Th
 ## Artifact layout
 
 ```
-<docs-root>/specs/epic-NN-<slug>/{epic.spec.md, wave-NN-<slug>.spec.md}
+<docs-root>/specs/epic-NN-<slug>/{epic.spec.md, wave-NN-<slug>.spec.md, wave-NN-<slug>.requirements.md}
 <docs-root>/plans/epic-NN-<slug>/{epic.plan.md, wave-NN-<slug>.plan.md}
 <docs-root>/adrs/epic-NN-<slug>/adr-NNN-<slug>.md
 <docs-root>/incidents/NNNN-<slug>/{spec.md, plan.md, rca.md}
@@ -123,6 +123,17 @@ frontmatter on them and blocks a canonical artifact written anywhere else. `reco
 only by citing a path. That is the whole distinction, and it is the boundary test applied to
 this tree: growth in the gated dirs is governed, growth in the operational ones is free.
 
+**Three artifacts, three steps** (design ledger K5; ADR-001) — Steps 1–3 write exactly one
+artifact apiece, chained requirement → criterion → design decision → eval → evidence. Step 1
+writes `wave-NN-<slug>.requirements.md`: numbered requirements/user stories, each with
+provenance and acceptance criteria written so a "fails when" is nameable, plus Not Doing. Step
+2 writes `wave-NN-<slug>.spec.md`: the technical design (domain model, architecture, ownership
+table, rejected alternatives), the Eval design table, and ADR pointers. Step 3 writes
+`wave-NN-<slug>.plan.md`: slices, sequencing, the dispatch ledger, and the verification matrix
+rendered from Step 2's Eval design. Requirements live beside the spec, both under
+`specs/epic-NN-<slug>/` — the governing-skill hook validates `*.requirements.md` frontmatter the
+same way it validates `*.spec.md`, minus the design three-way rule (that stays spec-only).
+
 **Anything the matrix cites as evidence goes in `record/`, never `tmp/`.** Auditor reports,
 critic findings, review-axis artifacts, test-run captures — the matrix names them by path, so
 they must outlive the run that produced them. `tmp/` is wiped at Step 8 and takes its contents
@@ -142,9 +153,9 @@ Every artifact carries frontmatter with `governing-skill:`, `sdlc-step:`, `inten
 | Step | Governing skill | Gate |
 |---|---|---|
 | 0 Configure | `canonical-sdlc` | Frontmatter complete, matrix derived, user confirmed, task list created |
-| 1 Scope | `agent-skills:idea-refine` | Refined idea + explicit "Not Doing" + alternatives lens cites prior art |
-| 2 Design | `agent-skills:spec-driven-development` | Every requirement has an acceptance criterion; every criterion cites its `provenance:`; wave+ carries a governing design |
-| 3 Plan | `superpowers:writing-plans` | No placeholders; `integration-branch:` present; matrix locked; slices tagged; user approved |
+| 1 Scope | `agent-skills:idea-refine` | Refined idea + explicit "Not Doing" + alternatives lens cites prior art; writes `wave-NN-<slug>.requirements.md` — numbered requirements/user stories with provenance and acceptance criteria, plus Not Doing |
+| 2 Design | `agent-skills:spec-driven-development` | Every requirement has an acceptance criterion; every criterion cites its `provenance:`; wave+ carries a governing design; writes `wave-NN-<slug>.spec.md` — the technical design, ownership table, and the Eval design table |
+| 3 Plan | `superpowers:writing-plans` | No placeholders; `integration-branch:` present; matrix locked; slices tagged; user approved; writes `wave-NN-<slug>.plan.md` — slices, sequencing, and the verification matrix rendered from Step 2's Eval design |
 | 4 Implement | `agent-skills:incremental-implementation` | Every slice RED before GREEN; assumptions logged |
 | 5 Verify | `superpowers:verification-before-completion` | Walk artifact in `record/`; tests floor green; every matrix row discharged at tier or waived; auditor CONFIRMED |
 | 6 Review | `agent-skills:code-review-and-quality` | Every axis has a verdict; independent critic attached |
@@ -252,6 +263,48 @@ The list is the user's visible progress surface. Nothing enforces this — no ho
 
 **Evidence:** `Step 0: configured at <ISO> via <reply>; model_plan=<tiers>; integration-branch=<name>; parallel-budget=<writers=N suites=N worktrees=N test_jobs=N source=…>`
 
+### Step 1 — Scope
+
+Step 1 is interactive Q&A and is never skipped. It authors ONE kind of knowledge — what is
+wanted, in the user's terms — and lands it in ONE artifact: `wave-NN-<slug>.requirements.md`,
+beside the spec under `specs/epic-NN-<slug>/`. Numbered requirements, each with its
+`provenance:` and its acceptance criteria; then "Not Doing". No design, no slices, no evals.
+
+**Write every criterion so a "fails when" is nameable.** Step 2 has to be able to say what
+planted defect would turn each criterion's eval red; a criterion that admits no such sentence
+("the code is clean", "performance is good") cannot be evaluated and is rewritten here, where
+it is still cheap. That is a Step-1 quality bar, not a Step-2 discovery.
+
+**The step ends at the card below, rendered in full.** One line per requirement, never a
+paragraph — the artifact path is the depth, and `explain <requirement>` opens one. Ratification
+is against the card, and the card's own question is the gate.
+
+```
+Step 1 · Requirements
+
+  Purpose
+    <one paragraph: what this run ships, and for whom>
+
+  Branches
+    working       <branch>              (from <base> @ <sha>)
+    integration   <branch>              (Step 8 merges here)
+
+  Requirements
+    REQ-<id>   <the requirement in one line>
+               provenance <user quote | spec section | ticket | report>    ACs <n>
+
+  Not Doing
+    <one line per excluded item — what is out, and why>
+
+  Artifacts
+    requirements  <docs-root>/specs/epic-NN-<slug>/wave-NN-<slug>.requirements.md
+
+Do you approve these requirements? Reply "approved" to ratify it.
+explain <requirement>
+```
+
+**Evidence:** `Step 1: requirements: <path>; <how the scope was ratified>`
+
 ### Step 2 — Design
 
 Every acceptance criterion carries a `provenance:` line naming where its requirement came from, authored *with* the criterion. Four forms: `provenance: user <date> "<quote>"` · `spec §N` · `ticket-N` · `report §N`. It is written here because circularity is undetectable downstream by definition — "correctly implements a real requirement" and "requirement transcribed from the code" are observably identical at verification time, so the distinction exists only at authoring. A citation beats a category label: a false citation means fabricating a reference anyone can check by opening the source.
@@ -268,9 +321,28 @@ The citation travels with the criterion into the plan's matrix AC block, where t
 
 Every design decision cites the requirements it serves. That is the middle link of the provenance chain — **requirement → design decision → criterion → evidence** — and the Step-5 auditor walks it whole. Authoring guidance, and what a table row is worth, live in `operational-rules.md`.
 
+**The spec's `## Eval design` section.** Beside `## Design`, a wave-or-epic spec carries a
+flush-left `## Eval design` table — one row per acceptance criterion. It is authored HERE and
+not at Step 3 because the architecture is what decides what is observable: the seams the design
+just chose are the ones an eval can reach. Six columns, in this order:
+
+| Requirement | Approach | Criterion | Eval type | Eval | Fails when |
+|---|---|---|---|---|---|
+| `REQ-<id>` | how this criterion is proven, one line | the acceptance criterion | static / unit / hermetic / live / human | `<command>` → `<expected observation>` | the planted defect this eval must go red on |
+
+`Eval type` is the tier ladder in words — **static · unit · hermetic · live · human** = T0–T4 —
+so the card can count types without teaching the user a code. **An eval with no nameable "Fails
+when" is not an eval**: the row is refused at this step's card, and the criterion goes back to
+Step 1 until a failure can be named. Step 3 RENDERS this table into the plan's matrix, adding
+only sequencing and the matrix's bookkeeping columns; it authors no eval of its own. The writer
+implements the eval first, red on the named failure, then the code.
+
+The evidence gate reads the rendered column: from `current: 4` on, an AC block with no
+`fails-when:` refuses the commit, naming the row.
+
 **The Design Interview — mandatory.** Step 2 is semi-interactive, and this is what that interactivity is for. It runs as an interview: a frame, then a walk, one turn at a time. Two shapes are refuted by dogfood — **batch presentation**, the design delivered whole as a wall of text with an ambiguous call to action, and **question-without-frame**, a fork posed before its terms exist.
 
-**Open with the frame**, before any question: the problem and the goal; your own **Design intuition**, the shape you expect to be right, stated so the user can push on it; **Requirements served**, citing the requirements this design answers — the provenance chain's first link, upstream of every decision's own citation; a decision map naming each choice ahead **strategic** or **tactical**; the capture plan, naming where the design ledger accretes; and the artifact form derived from the form menu. Which views the change touches and which you considered and excluded belong here too, one clause each (the view menu lives in `operational-rules.md`). **Question 1 ratifies the frame**; nothing is walked until it holds.
+**Open with the frame**, before any question. Its first ratification is **Context and Problem, for a stranger**: the problem and the goal, written as if for a reader who has never opened this repo; this comes before your own design intuition and before every decision in the frame below it — a change not yet explainable to someone who was not there is not yet understood. Then your own **Design intuition**, the shape you expect to be right, stated so the user can push on it; **Requirements served**, citing the requirements this design answers — the provenance chain's first link, upstream of every decision's own citation; **Mechanisms inherited**, one line per substrate or mechanism the design builds on, each marked `kept` or `questioned` — a `questioned` line becomes a strategic fork; a decision map naming each choice ahead **strategic** or **tactical**, where placing a test cohort in a tier, a job on a runtime surface, or a workload on hardware is **strategic by rule** and is never defaulted; the capture plan, naming where the design ledger accretes; and the artifact form derived from the form menu. Which views the change touches and which you considered and excluded belong here too, one clause each (the view menu lives in `operational-rules.md`). **Question 1 ratifies the frame, Context and Problem first**; nothing is walked until it holds.
 
 **Then walk the map, one decision per turn.** A strategic choice gets a question stating the tension and your own lean; a tactical choice you may default, but every default is **surfaced at ratification**, never silent. The design ledger accretes visibly — each answer folds in as a named delta the turn it lands, so the user reads a design being built rather than a transcript. Load-bearing assumptions are posed as **questions to the user**, not as statements they must think to challenge.
 
@@ -289,6 +361,42 @@ No new *approval* stop: the binding approval remains the Step-3 checkpoint, whic
 Presence and resolution are the whole check; the five parts are never inspected and their quality never graded. An empty `## Design` clears the wall and fails the Step-3 approval — which is the ratification that was always going to be the one that could tell.
 
 **Scale.** `task` gets a design paragraph per non-trivial task, written in the session plan — a prose obligation the reviewer reads, with **no wall at task scale at all**. `wave` gets a page or two. Nothing gets forty.
+
+**The step ends at the card below, rendered in full.** One row per design decision, the
+ownership table, and the Eval design as ONE ROW PER REQUIREMENT with its type counts — never
+the whole eval table, which is hundreds of lines and was rejected as a display. `show evals
+<req>` renders one requirement's block: its approach, and per criterion the criterion, the type,
+the eval, and its "fails when".
+
+```
+Step 2 · Design
+
+  Branches
+    working       <branch>              (from <base> @ <sha>)
+    integration   <branch>              (Step 8 merges here)
+
+  Decisions
+    D<n>   <the decision in one line>
+           serves <REQ ids>                                    ADR <file | none>
+
+  Ownership
+    <concept>        owner <module>      surfaces <where it renders>     test <suite>
+
+  Eval design                                static  unit  hermetic  live  human
+    REQ-<id>   <how it is proven, one line>       2     1         3     0      1
+    REQ-<id>   <how it is proven, one line>       1     0         2     1      0
+    total                                        3     1         5     1      1
+
+  Open at approval
+    <design question still open>   → <what closes it>
+
+  Artifacts
+    spec  <docs-root>/specs/epic-NN-<slug>/wave-NN-<slug>.spec.md
+    adrs  <docs-root>/adrs/epic-NN-<slug>/adr-NNN-<slug>.md
+
+Do you approve this design? Reply "approved" to ratify it.
+show evals <req> · explain <decision>
+```
 
 ### Step 3 — Plan shape
 
@@ -315,7 +423,61 @@ current: <N>
 
 Tag every Step-4 slice `complexity: standard | complex`. When uncertain, tag `complex`.
 
-**The approval presentation names the governing design.** One line, listing the absolute path(s) of whatever governs — the spec carrying the `## Design` section, the file its `design:` pointer resolves to, or the word `waived` — with an instruction to review them before answering. Do not render the design's content in the display: paths are what the user opens, and a transcribed domain model is ceremony that makes the display longer without making the decision better. The sole gate is approved / not approved.
+**The approval presentation is the Step-3 card.** It names the governing design on one line —
+the absolute path(s) of the spec carrying `## Design`, the file its `design:` pointer resolves
+to, or the word `waived` — and it renders the CONTRACT the approval binds: the problem, both
+branch lines, the slice table, the parallel width and the first batch, the Eval design as one
+counted line, the verification one-liner, and every design question still open with the slice
+that closes it. The domain model is still not transcribed — paths are what the user opens — but
+what the user is agreeing to is on the card, because ratification is against the card.
+
+**The gate is the literal word `approved`, and nothing else is.** Silence, a question, or a
+partial reply is never transcribed as approval. On that word, write into `## SDLC State`:
+
+```
+approved-by: <user> <ISO-UTC> "<verbatim reply>"
+```
+
+While that line is absent the evidence gate refuses every commit at `current: 4` or later, and
+dispatch-preflight refuses every writer-class dispatch (implementor, senior-implementor). The
+Patrol's below-Step-4 fill refusal stays as the second backstop.
+
+```
+Step 3 · Plan
+
+  Problem
+    <the Step-2-era problem in one paragraph — what is wrong now, including the
+     artifact, eval and prototype gaps this plan closes. No Context: it was
+     ratified at Step 1.>
+
+  Branches
+    working       <branch>              (from <base> @ <sha>)
+    integration   <branch>              (Step 8 merges here)
+
+  Slices                                      kind      depends   agent
+    <n>   <the slice in one line>             build     —         senior-implementor
+    <n>   <the slice in one line>             test      <n>       implementor
+
+  Parallel width
+    <n> writers · first batch <slice numbers>
+
+  Eval design
+    <n> criteria · <n> static · <n> unit · <n> hermetic · <n> live · <n> human
+
+  Verification
+    <n> matrix rows · floor <suite> · walk <required | exempt> · auditor <rigor>
+
+  Open at approval
+    <design question still open>   → closed by slice <n>
+
+  Artifacts
+    requirements  <docs-root>/specs/epic-NN-<slug>/wave-NN-<slug>.requirements.md
+    spec          <docs-root>/specs/epic-NN-<slug>/wave-NN-<slug>.spec.md
+    plan          <docs-root>/plans/epic-NN-<slug>/wave-NN-<slug>.plan.md
+
+Do you approve this plan? Reply "approved" to ratify it.
+show evals <req> · show slice <n> · explain <decision>
+```
 
 **Wave shape locks at approval.** Mid-wave discoveries go to `## Assumptions` as W+1 candidates — they do not reshape the current wave. Two exceptions: a discovery that makes the wave structurally impossible (surface a Wake Note and halt — the answer is "this wave cannot ship," not "ship a different wave"), and one-line trivial corrections.
 
@@ -450,6 +612,8 @@ The vehicle is a single-turn close-out report, sent to the user at Step 9 and ne
 
 Where — and only where — `deploy_target` names a live surface this run operates, the close-out also carries `deployed:`, `verified:`, and `monitored:`: the release lands, it is verified on the surface, and it is watched for one cycle before the report claims done. `deploy_target` defaults to `n/a` and is never inferred (Step 0), so this trio is strictly opt-in — the ordinary run owes nothing past delivery.
 
+**Archiving.** Once `delivered:` is written, call `archive_run` (`payload/scripts/lib/archive.sh`) with the closing plan's own directory under `<docs-root>/plans/`: an epic close or a standalone run's close moves that directory's `specs:`/`plans:`/`adrs:` trio to `<archive-root>/<project>/.bionic/<same relative path>`, and a wave inside an open epic moves nothing. `archive-on-close: false` in `.bionic/config.yaml` turns this off for the project. The close-out report's `delivered:` line is followed by an `archived:` line naming what moved, or why nothing did — the line `archive_run` itself printed.
+
 ## Evidence shapes
 
 One evidence artifact per step under `Step N:` in `## SDLC State`. The gate validates the current step only.
@@ -463,7 +627,7 @@ One evidence artifact per step under `Step N:` in `## SDLC State`. The gate vali
 | 6 | pointer to the 6-axis body + critic findings; matrix re-validated here |
 | 7 | `adr:` OR `rca:` OR `n/a:` |
 | 8 | `merge:`, `worktree-removed:`, and (`cleanup:`, `tmp-wiped:`, `tasks-completed:` OR `cleanup: n/a`) |
-| 9 | `delivered:` always, ON the `Step 9:` line itself — the run-closure predicate (`lib/run.sh`) greps that one line, so a `delivered:` written on a continuation line leaves the run open forever; plus `deployed:`, `verified:`, `monitored:` exactly when `deploy_target` names a live surface |
+| 9 | `delivered:` always, ON the `Step 9:` line itself — the run-closure predicate (`lib/run.sh`) greps that one line, so a `delivered:` written on a continuation line leaves the run open forever; `archived:` always, naming what `archive_run` moved or why nothing moved; plus `deployed:`, `verified:`, `monitored:` exactly when `deploy_target` names a live surface |
 
 **Placeholder ban.** These exact values are rejected anywhere evidence is required: `todo`, `pending`, `in progress`, `inprogress`, `xxx`, `tbd`, `placeholder`.
 
@@ -473,7 +637,7 @@ One evidence artifact per step under `Step N:` in `## SDLC State`. The gate vali
 
 **`canonical-sdlc-evidence-gate.sh`** (`PreToolUse|Bash`) fires only on a real `git commit` segment. It finds the newest `*.md` under the plan dirs, and if it has a `## SDLC State` section, validates the current step's evidence, the matrix, and the task ledger. **From `current: 5` onward** it also blocks on `provenance: implementation` in any AC block — read flush left or as a flush-left list item (`AC-1:`, `- AC-1:`, `* AC-1:`, `+ AC-1:`; an indented header is not read) — and, once any row is `discharged` and the plan does not declare `walk: exempt`, on a missing `walk-artifact:` line, a path that does not resolve to a real file under `<docs-root>/record/`, or an AC identifier inside that file. **The gate reads the plan as it is when the call starts, not as it will be once the rest of the command runs** — a Bash call that edits the plan and commits in the same invocation is judged on the pre-edit plan, so edit the plan in one call and commit in a separate one. Log-only (never blocks): the epic merge-target check, and the `refactor`/`tune` intent-scoped Step-5 keys.
 
-**`canonical-sdlc-governing-skill.sh`** (`PreToolUse|Write,Edit`) blocks any artifact under `<docs-root>/{specs,plans,adrs,incidents}/` lacking `governing-skill:` frontmatter, and blocks a `mode:` line, a missing or non-enum triple, a missing flag or `model_plan`, a `walk:` value outside `required|exempt`, or a missing `## Verification Matrix` at `sdlc-step ≥ 3`. On a **spec** artifact at `scale: wave` or `scale: epic` it also blocks a write satisfying no arm of the three-way design rule: no flush-left `## Design` in place, no `design:` pointer resolving to a real file that itself carries a flush-left `## Design` (a dangling path, a target without the section, and a `..` component each fail the arm), and no `design-waived:` token. A `design:` pointer that is present is validated on the unwaived path whether or not the spec also carries its own section. Plans and every task-scale artifact are untouched by it. Floor-consistency checks are log-only, and log `user-overridden` in place of a floor violation when frontmatter carries `rigor-override:` — presence only; the marker's fields are never validated, and it does not quiet a malformed `rigor-floor:` value in `config.yaml`.
+**`canonical-sdlc-governing-skill.sh`** (`PreToolUse|Write,Edit`) blocks any artifact under `<docs-root>/{specs,plans,adrs,incidents}/` lacking `governing-skill:` frontmatter, and blocks a `mode:` line, a missing or non-enum triple, a missing flag or `model_plan`, a `walk:` value outside `required|exempt`, or a missing `## Verification Matrix` at `sdlc-step ≥ 3`. On a **spec** artifact at `scale: wave` or `scale: epic` it also blocks a write satisfying no arm of the three-way design rule: no flush-left `## Design` in place, no `design:` pointer resolving to a real file that itself carries a flush-left `## Design` (a dangling path, a target without the section, and a `..` component each fail the arm), and no `design-waived:` token. A `design:` pointer that is present is validated on the unwaived path whether or not the spec also carries its own section. On the same wave/epic **spec** it also blocks, from `sdlc-step ≥ 3` only, an `adrs:` frontmatter line naming a path (or several, joined by ` · `) that does not resolve to a real file — the momentous-ADR pointer D6 requires; below `sdlc-step 3` the arm is silent, since the ADR is drafted alongside the spec that names it. Plans and every task-scale artifact are untouched by it. Floor-consistency checks are log-only, and log `user-overridden` in place of a floor violation when frontmatter carries `rigor-override:` — presence only; the marker's fields are never validated, and it does not quiet a malformed `rigor-floor:` value in `config.yaml`.
 
 **Known holes — do not mistake these for enforcement.** The governing-skill hook validates `Write` content but not `Edit` content, so one valid write covers every later edit. Flag *values* are never checked, only presence. The evidence gate reads the plan file's text, so an `Edit` that writes evidence for tests never run passes unseen. Proof-shape is a heuristic: a digit plus a `/` satisfies it.
 

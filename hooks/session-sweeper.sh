@@ -131,7 +131,7 @@ esac
 # payload/scripts/lib/loader.sh. FAIL OPEN: nothing this script does is irreversible,
 # and a reporting verb that refused because a file was missing would take the
 # diagnosis down with the thing being diagnosed.
-BIONIC_LIB_WANT="root.sh session.sh"
+BIONIC_LIB_WANT="roots.sh root.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -261,6 +261,7 @@ BIONIC_LOADER_REFUSE
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "session-sweeper"; fi
 # shellcheck source=/dev/null
+. "$BIONIC_LIB/roots.sh"
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/session.sh"
@@ -304,38 +305,19 @@ fi
 # already answered that by writing a duplicate copy at the repo root to appease the gate,
 # which is the failure mode of a gate that is wrong: it teaches the work to be wrong too.
 #
-# `resolve_docs_root` is the evidence gate's, copied whole rather than approximated — the
-# same duplication that helper already lives under, and `tests/cross-gate-agreement.test.sh`
-# holds all three copies to one body so a change to the rule cannot land in only one.
-resolve_docs_root() {
-  local proj="$1"
-  local config="$proj/.bionic/config.yaml"
-  if [ -f "$config" ]; then
-    local override
-    override=$(grep -E '^[[:space:]]*docs-root[[:space:]]*:' "$config" 2>/dev/null \
-      | head -1 \
-      | sed -E 's/^[[:space:]]*docs-root[[:space:]]*:[[:space:]]*//' \
-      | sed -E "s/^['\"]//;s/['\"]\$//" \
-      | sed -E 's/[[:space:]]+$//')
-    if [ -n "$override" ]; then
-      case "$override" in
-        /*) echo "$override" ;;
-        *)  echo "$proj/$override" ;;
-      esac
-      return
-    fi
-  fi
-  echo "$proj/.bionic/docs"
-}
+# THE RULE COMES FROM lib/roots.sh's `docs_root` — one definition for the whole tree, held
+# by tests/cross-gate-agreement.test.sh §Roots. This hook used to carry a copy of the
+# evidence gate's `resolve_docs_root()`, one of four, agreeing by body comparison rather
+# than by being one function (epic-22 wave-01, N1).
 
-# THE PROJECT ROOT, UNDER THE EVIDENCE GATE'S NAME FOR IT, because the resolver below is
-# that gate's body verbatim and a body-for-body wall cannot survive a renamed variable.
+# THE PROJECT ROOT, UNDER THE EVIDENCE GATE'S NAME FOR IT — the names are kept because the
+# two hooks answer the same question about the same shape of path.
 # The VALUE is this hook's own and stays so: the gate folds a linked worktree back to the
 # main repo (its artifacts are written there), while this hook answers for the roster in
 # the tree it was run from. Same rule about which root a path is relative to; different
 # root, deliberately.
 PROJECT_DIR="$REPO_REAL"
-DOCS_ROOT="$(resolve_docs_root "$PROJECT_DIR")"
+DOCS_ROOT="$(docs_root "$PROJECT_DIR")"
 
 BIONIC_DIR="$REPO_REAL/.bionic"
 STATE_DIR="$BIONIC_DIR/tmp"
