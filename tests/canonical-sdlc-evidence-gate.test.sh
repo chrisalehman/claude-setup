@@ -221,6 +221,29 @@ expect_block() {
   fi
 }
 
+# Project-fixture twins of expect_allow/expect_block (run_hook_with_project instead of
+# run_hook) — for cases whose subject needs a real file at a project-relative path
+# (K5's 'requirements:' pointer among them), which a bare HOME sandbox cannot host.
+expect_allow_p() {
+  local label="$1" home_dir="$2" project_dir="$3" command="$4"
+  run_hook_with_project "$home_dir" "$project_dir" "$command"
+  if [ "$HOOK_EXIT" -eq 0 ] && [ -z "$HOOK_STDERR" ]; then
+    ok "$label"
+  else
+    no "$label" "expected allow, exit 0, no stderr; got exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
+  fi
+}
+
+expect_block_p() {
+  local label="$1" home_dir="$2" project_dir="$3" command="$4" expected_substr="${5:-BLOCKED}"
+  run_hook_with_project "$home_dir" "$project_dir" "$command"
+  if [ "$HOOK_EXIT" -eq 2 ] && grep -q "$expected_substr" <<<"$HOOK_STDERR"; then
+    ok "$label"
+  else
+    no "$label" "expected block exit 2 with substring '$expected_substr'; got exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
+  fi
+}
+
 # Minimal valid frontmatter for fixtures whose subject is NOT the frontmatter.
 # scale: wave + rigor: tested keeps the wave-lane machinery (dispatch ledger,
 # rigor lanes) out of the way so each fixture isolates the behavior under test.
@@ -2739,7 +2762,12 @@ d7_wave_plan() {
   local tasks="$1" extra_state="$2" rigor="${3:-audited}" multi="${4:-true}"
   printf '%s\n' "$(d7_wave_frontmatter "$rigor" "$multi")"
   [ -n "$tasks" ] && printf '%s\n\n' "$tasks"
-  printf '## SDLC State\ncurrent: 5\napproved-by: fixture 2026-09-07T00:00Z approved\nStep 5:\n%s\n' "$step5_base"
+  # Both K5 (this slice) and K2 (slice 16) scope-match this fixture (rigor:audited +
+  # multi_agent:true + wave, at current: 5 >= 4): K5/AC-K5.2 needs the Step-1
+  # requirements: pointer (resolves to the plan file itself — project-relative; this
+  # fixture's own subject is D7, not K5, so a real file is all the arm demands, not a
+  # real requirements document); K2/AC-K2.4 needs approved-by: at current >= 4.
+  printf '## SDLC State\ncurrent: 5\nStep 1: requirements: .bionic/docs/plans/active.md\napproved-by: fixture 2026-09-07T00:00Z approved\nStep 5:\n%s\n' "$step5_base"
   [ -n "$extra_state" ] && printf '%s\n' "$extra_state"
   printf '\n%s\n' "$matrix_complete"
 }
@@ -5579,8 +5607,76 @@ expect_block "36l current: 6 still refuses the over-claim (durable prefix)" \
   "$h36l" 'git commit -m "x"' "declares as FOG"
 
 # ============================================================
-# Summary
+section "Section 37: K5/AC-K5.2 — Step-1 'requirements:' pointer"
 # ============================================================
+#
+# K5 (design ledger K5; ADR-001): Step 1 authors wave-NN-<slug>.requirements.md; the
+# Step-1 evidence line records its path once and this arm reads it back at every commit
+# from current: 2 onward — durable, like the Step-5 walk artifact (A5). Scoped to
+# rigor:audited + multi_agent:true + scale wave|epic (mirrors D7's own guard, above) so
+# the suite's FM (rigor: tested) and frontmatter() (no multi_agent:) fixtures stay
+# no-ops — proven directly in 37g below.
+
+# $1 current  $2 raw Step-1 line content (no "Step 1: " prefix)  $3 the CURRENT step's
+# own line content (only emitted when current != 1; a pointer step needs its OWN line
+# non-empty and non-placeholder — "TODO"/"pending"/"in progress" etc. all block upstream
+# of this arm, so every fixture below uses real-shaped prose instead).
+k5_plan() {
+  local current="$1" step1="$2" own="${3:-.bionic/docs/specs/epic-01-demo/wave-01-x.spec.md}"
+  printf '%s\n' "$(d7_wave_frontmatter)"
+  printf '## SDLC State\ncurrent: %s\n' "$current"
+  printf 'Step 1: %s\n' "$step1"
+  [ "$current" = "1" ] || printf 'Step %s: %s\n' "$current" "$own"
+}
+
+k5g_h=$(make_home)
+k5g_p=$(make_project)
+mkdir -p "$k5g_p/.bionic/docs/specs/epic-01-demo"
+k5g_real="$k5g_p/.bionic/docs/specs/epic-01-demo/wave-01-x.requirements.md"
+printf -- '---\ngoverning-skill: agent-skills:idea-refine\ncanonical_sdlc_version: 14\n---\n# reqs\n' \
+  > "$k5g_real"
+
+echo "-- 37a: current: 1 — the arm is inert (Step 1 is still being authored) --"
+write_project_plan "$k5g_p" "$(k5_plan 1 "brief ideas/x.md rev 1; ratified in the terminal")" > /dev/null
+expect_allow_p "37a current: 1, Step 1 has no requirements: field → allow (arm inert)" \
+  "$k5g_h" "$k5g_p" 'git commit -m "x"'
+
+echo "-- 37b: current: 2, Step 1 lacks 'requirements:' → block naming the field --"
+write_project_plan "$k5g_p" "$(k5_plan 2 "in progress")" > /dev/null
+expect_block_p "37b current: 2, no requirements: field → block" \
+  "$k5g_h" "$k5g_p" 'git commit -m "x"' "no 'requirements:' field"
+
+echo "-- 37c: current: 2, 'requirements:' names a file that does not exist → block naming the path --"
+write_project_plan "$k5g_p" "$(k5_plan 2 "requirements: specs/epic-01-demo/nowhere.requirements.md")" > /dev/null
+expect_block_p "37c current: 2, dangling requirements: path → block, names it" \
+  "$k5g_h" "$k5g_p" 'git commit -m "x"' "does not resolve to a real file"
+
+echo "-- 37d: current: 2, 'requirements:' resolves to a real file → allow --"
+write_project_plan "$k5g_p" "$(k5_plan 2 "requirements: specs/epic-01-demo/wave-01-x.requirements.md")" > /dev/null
+expect_allow_p "37d current: 2, requirements: resolves → allow" \
+  "$k5g_h" "$k5g_p" 'git commit -m "x"'
+
+echo "-- 37e: durable — current: 3 (a step past 2) still enforces the same pointer --"
+write_project_plan "$k5g_p" "$(k5_plan 3 "in progress" ".bionic/docs/plans/active.md")" > /dev/null
+expect_block_p "37e current: 3, no requirements: field → block (durable, not just at 2)" \
+  "$k5g_h" "$k5g_p" 'git commit -m "x"' "no 'requirements:' field"
+
+echo "-- 37f: a '..' component in the pointer refuses outright, never resolved --"
+write_project_plan "$k5g_p" "$(k5_plan 2 "requirements: specs/../../../etc/passwd")" > /dev/null
+expect_block_p "37f '..' component → block, never resolved" \
+  "$k5g_h" "$k5g_p" 'git commit -m "x"' "climbs out with a '..' component"
+
+echo "-- 37g: scope guard — rigor: tested (this suite's FM/frontmatter() default) is a no-op --"
+# Same current: 2, same missing field, same project — the only variable is rigor. If the
+# guard were not real this would block exactly like 37b.
+k5g_tested="$(d7_wave_frontmatter tested true)
+## SDLC State
+current: 2
+Step 1: in progress
+Step 2: .bionic/docs/specs/epic-01-demo/wave-01-x.spec.md"
+write_project_plan "$k5g_p" "$k5g_tested" > /dev/null
+expect_allow_p "37g rigor: tested → allow (scope guard makes the arm inert)" \
+  "$k5g_h" "$k5g_p" 'git commit -m "x"'
 
 
 # ============================================================

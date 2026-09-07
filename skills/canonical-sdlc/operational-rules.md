@@ -410,6 +410,16 @@ material risks") rather than a heading with nothing under it. Plain English mean
 plain reader would have to look up, and conceptual altitude means decisions and outcomes, not
 diffs, commands, or file paths.
 
+**Archiving a closed run (epic-22 wave-01, REQ-C; ADR-003).** Two config keys in
+`.bionic/config.yaml`, read by `payload/scripts/lib/roots.sh` and `archive.sh`, sit beside
+`docs-root:` and `rigor-floor:` above: `archive-root:` (default `$HOME/bionic-archive`) names
+where a closed run's directory goes; `archive-on-close:` (default `true`; `false` opts a
+project out entirely) governs whether Step 9 moves anything at all. The move itself —
+`specs:`/`plans:`/`adrs:` for one epic slug, to `<archive-root>/<project>/.bionic/<same
+relative path>`, never `record:` — is `archive_run`'s contract, documented at its own
+definition in `payload/scripts/lib/archive.sh`; SKILL.md §Step 9 names the call and the
+`archived:` evidence line it produces.
+
 ## Evidence gate
 
 - **Canonical-sdlc plan files must include a `## SDLC State` section** — `current: N` (or `T<n>` at task scale) and `Step N: <evidence>` lines. The `canonical-sdlc-evidence-gate.sh` PreToolUse hook blocks `git commit` when the current step's evidence line is missing, empty, or a placeholder (TODO/pending/in progress/XXX/TBD/placeholder). Update `## SDLC State` *before* staging, not after.
