@@ -370,4 +370,61 @@ expect_status "17.12: restoring the library brings the report and exit 0 back" "
 expect_match "17.13: …and the page is there again" \
   "*Bionic Doctor — payload*" "$(cat "$INT_OUT")"
 
+
+section "Section 8: setup's own payload guard, over the same copy (Step-6 recheck A-1/R-1)"
+
+# THE OTHER HALF OF SECTION 7. setup.sh has carried this guard since 2ff47c7 and
+# `lib/checks.sh` was added to its list by the Step-6 review that found the hole
+# — but nothing went red if a future edit dropped the name again, which is the
+# one PARTIAL the recheck called a real gap (review-recheck.md part 1, row A-1).
+# Same payload copy, same deletion, the other script: what a reader gets from a
+# payload with no check table is the reinstall route and a non-zero status, never
+# an empty roster and exit 0. An empty roster is the shape a caller reads as
+# "this machine has nothing to set up", which is the lie the guard exists to stop.
+#
+# THE COPY'S OWN setup.sh RUNS, for the same reason doctor's does above: pointing
+# the repo's script at the copy through BIONIC_LIB_DIR would test the override,
+# not the payload, and the override is not what a broken install has.
+run_copy_setup_list() {  # -> the exit status; stdout in $INT_OUT, stderr in $INT_ERR
+  ( cd "$REPO" && HOME="$TMP" PATH="$BIN" BIONIC_SHELL_RC="$FIXTURE_RC" \
+      BIONIC_CLAUDE_HOME="$TMP/claude-home" BIONIC_PLUGIN_ROOT="$PLUG_INT" \
+      BIONIC_PLUGINS_DIR="$EMPTY_PLUGINS" \
+      bash "$PLUG_INT/scripts/setup.sh" --list < /dev/null > "$INT_OUT" 2> "$INT_ERR" )
+  echo $?
+}
+
+# INTACT FIRST — section 7 restored the copy at 17.12, and this re-establishes it
+# for the script that has not been run against it yet. Without these three, 18.4
+# could pass over a payload that was never able to list anything.
+SET_RC_OK="$(run_copy_setup_list)"
+SET_OUT_OK="$(cat "$INT_OUT")"
+expect_status "18.1: an intact payload copy lists its roster and exits 0" "0" "$SET_RC_OK"
+expect_match "18.2: …with the names on stdout, from the check table" \
+  "*legacy-hook-files*" "$SET_OUT_OK"
+expect_no_regex "18.3: …and nothing shaped like an interpreter diagnostic on stderr" \
+  "line [0-9]+:" "$(cat "$INT_ERR")"
+
+# NOW THE DAMAGE, the same file section 7 deleted.
+rm -f "$PLUG_INT/scripts/lib/checks.sh"
+SET_RC_BAD="$(run_copy_setup_list)"
+SET_ERR_BAD="$(cat "$INT_ERR")"
+expect_ne "18.4: a payload copy without lib/checks.sh does not exit 0" "0" "$SET_RC_BAD"
+expect_match "18.5: …it names the file it could not find" \
+  "*scripts/lib/checks.sh — the payload looks incomplete.*" "$SET_ERR_BAD"
+expect_match "18.6: …and the reinstall route, the same one doctor prints" \
+  "*claude plugin install bionic@bionic*" "$SET_ERR_BAD"
+# THE NEGATIVE THE WHOLE SECTION IS FOR, beside the two positives above it: what
+# the reader gets is the sentence, not `setup.sh: line NNN: …/lib/checks.sh: No
+# such file or directory` followed by `bionic_check_items: command not found`.
+expect_no_regex "18.7: …and no interpreter diagnostic anywhere in it" \
+  "line [0-9]+:" "$SET_ERR_BAD"
+expect_empty "18.8: …and no roster on stdout for a caller to believe" "$(cat "$INT_OUT")"
+
+# AND BACK TO INTACT, so every assertion above is a difference the deletion made.
+cp "${PAYLOAD}/scripts/lib/checks.sh" "$PLUG_INT/scripts/lib/checks.sh"
+SET_RC_BACK="$(run_copy_setup_list)"
+expect_status "18.9: restoring the library brings the roster and exit 0 back" "0" "$SET_RC_BACK"
+expect_match "18.10: …and the names are there again" \
+  "*legacy-hook-files*" "$(cat "$INT_OUT")"
+
 finish
