@@ -1254,4 +1254,172 @@ expect_contains "75: payload/scripts/lib/detect.sh reads integrity/rendered.sha2
 expect_absent "75b: …and names the deleted manifest nowhere" \
   'integrity/agents.sha256' "$(cat "$DETECT_SH")"
 
+
+# ---------------------------------------------------------------------------
+section "Section 12: the Step-1/2/3 cards and the spec's Eval design table (epic-22 K2, AC-K2.1/AC-K2.2)"
+# ---------------------------------------------------------------------------
+#
+# WHAT THIS SECTION OWNS. Steps 0-3 each end at a gate, and since the wave-01-plugin-only
+# design interview each of those gates ends with a CARD: one line per item, never a
+# paragraph, the artifact path for the depth. Step 0's card is slice 15's; this section
+# owns the other three, plus the `## Eval design` table the Step-2 spec authors and the
+# Step-3 card renders.
+#
+# WHY A DOC PIN AND NOT A HOOK ARM. No hook can see a conversation — the cards are
+# printed to a terminal and never written to a file — so the skill's literal template is
+# the whole enforcement, exactly as `SKILL.md`'s own "This layout is literal" defence
+# says of the Step-0 block. What a test CAN hold is that the template is still there and
+# still carries the rows the user ratified; a card silently shortened back into prose is
+# the failure this section is pointed at.
+#
+# ANTI-VACUITY. Every arm below reads the RENDERED, shipped file
+# (`payload/skills/canonical-sdlc/SKILL.md`), never the template, so a template edit that
+# was never rendered cannot make it green; Section 11's `--check` arms are what tie the
+# two together. The two grep helpers are re-run against a DOCTORED copy at the end of the
+# section, and must report the loss — a pin that only ever reads an agreeing file could
+# be vacuously true by extractor bug.
+#
+# HERMETIC. Reads the committed file by path; the doctored copy lives under this file's
+# own mktemp dir.
+
+# card_span <file> <card heading line> -> the fenced block that follows the heading,
+# empty when the heading or its fence is absent. The cards are fenced literals, the same
+# shape Step 0's confirmation display uses, so the extractor follows the fence.
+card_span() {
+  awk -v h="$2" '
+    index($0, h) == 1 { inb = 1 }
+    inb && /^```/ { exit }
+    inb { print }
+  ' "$1" 2>/dev/null
+}
+
+# has_all <text> <needle>... -> 0 when every needle is present
+has_all() {
+  local hay="$1"; shift
+  local n
+  for n in "$@"; do
+    case "$hay" in *"$n"*) : ;; *) return 1 ;; esac
+  done
+  return 0
+}
+
+CARD1="$(card_span "$SKILL_MD" 'Step 1 · Requirements')"
+CARD2="$(card_span "$SKILL_MD" 'Step 2 · Design')"
+CARD3="$(card_span "$SKILL_MD" 'Step 3 · Plan')"
+
+expect_true "76a: the Step-1 card is a fenced literal in the skill file" test -n "$CARD1"
+expect_true "76b: the Step-2 card is a fenced literal in the skill file" test -n "$CARD2"
+expect_true "76c: the Step-3 card is a fenced literal in the skill file" test -n "$CARD3"
+
+# --- the ratified rows, per card -------------------------------------------
+#
+# The row NAMES are the ratification (design ledger §"Cards ratified" and §"Step-3 card
+# ratified"): Step 1 is purpose/requirements/not-doing/artifact, Step 2 is
+# decisions/ownership/eval-design/open/artifacts, Step 3 is
+# problem/branches/slices/width/eval-design/verification/open/artifacts.
+if has_all "$CARD1" "Purpose" "Requirements" "Not Doing" "Artifacts"; then
+  ok "77a: the Step-1 card carries Purpose, Requirements, Not Doing and Artifacts"
+else
+  no "77a: the Step-1 card carries Purpose, Requirements, Not Doing and Artifacts" \
+     "card body: $CARD1"
+fi
+if has_all "$CARD1" "provenance" "ACs"; then
+  ok "77b: …and a requirement row names its provenance and its criteria count"
+else
+  no "77b: …and a requirement row names its provenance and its criteria count" "card body: $CARD1"
+fi
+
+if has_all "$CARD2" "Decisions" "serves" "ADR" "Ownership" "Eval design" "Open at approval" "Artifacts"; then
+  ok "78a: the Step-2 card carries Decisions (serves/ADR), Ownership, Eval design, Open at approval, Artifacts"
+else
+  no "78a: the Step-2 card carries Decisions (serves/ADR), Ownership, Eval design, Open at approval, Artifacts" \
+     "card body: $CARD2"
+fi
+if has_all "$CARD2" "static" "unit" "hermetic" "live" "human" "total"; then
+  ok "78b: …and its Eval design is one row per requirement with the five type counts and a total"
+else
+  no "78b: …and its Eval design is one row per requirement with the five type counts and a total" \
+     "card body: $CARD2"
+fi
+
+if has_all "$CARD3" "Problem" "Branches" "Slices" "kind" "depends" "agent" \
+                    "Eval design" "Verification" "Open at approval" "Artifacts"; then
+  ok "79a: the Step-3 card carries Problem, Branches, Slices (kind/depends/agent), Eval design, Verification, Open at approval, Artifacts"
+else
+  no "79a: the Step-3 card carries Problem, Branches, Slices (kind/depends/agent), Eval design, Verification, Open at approval, Artifacts" \
+     "card body: $CARD3"
+fi
+if has_all "$CARD3" "first batch"; then
+  ok "79b: …and the parallel width names its first batch"
+else
+  no "79b: …and the parallel width names its first batch" "card body: $CARD3"
+fi
+
+# --- both branch lines, on every card --------------------------------------
+#
+# The working branch alone is half an answer: a reader cannot tell where the wave LANDS.
+# Chris corrected exactly this on the Step-0 display (2026-09-07), and the correction is
+# a property of every card, not of one.
+for _pair in "80a:$CARD1:Step-1" "80b:$CARD2:Step-2" "80c:$CARD3:Step-3"; do
+  _n="${_pair%%:*}"; _rest="${_pair#*:}"; _body="${_rest%:*}"; _which="${_rest##*:}"
+  if has_all "$_body" "working" "integration"; then
+    ok "${_n}: the ${_which} card carries BOTH branch lines (working + integration)"
+  else
+    no "${_n}: the ${_which} card carries BOTH branch lines (working + integration)" "card body: $_body"
+  fi
+done
+
+# --- the gate wording, verbatim on all three --------------------------------
+#
+# One word is the gate. The ratified sentence is a QUESTION plus the literal reply, and
+# a look-closer line beneath it; the bare footer menu it replaced was rejected by name.
+expect_contains "81a: the Step-1 card asks the ratified question" \
+  'Do you approve these requirements? Reply "approved" to ratify it.' "$CARD1"
+expect_contains "81b: the Step-2 card asks the ratified question" \
+  'Do you approve this design? Reply "approved" to ratify it.' "$CARD2"
+expect_contains "81c: the Step-3 card asks the ratified question" \
+  'Do you approve this plan? Reply "approved" to ratify it.' "$CARD3"
+expect_contains "81d: the Step-2 card's look-closer line opens one requirement's evals" \
+  'show evals <req>' "$CARD2"
+expect_contains "81e: the Step-3 card's look-closer line opens one slice" \
+  'show slice <n>' "$CARD3"
+
+# --- AC-K2.2: the spec template's Eval design table -------------------------
+SKILL_BODY="$(cat "$SKILL_MD" 2>/dev/null)"
+expect_contains "82a: the skill names the spec's section '## Eval design'" \
+  '## Eval design' "$SKILL_BODY"
+EVAL_HEADER="$(grep -m1 -F '| Requirement | Approach |' "$SKILL_MD" 2>/dev/null)"
+expect_true "82b: …and gives it a column header row" test -n "$EVAL_HEADER"
+for _col in Requirement Approach Criterion "Eval type" Eval "Fails when"; do
+  expect_contains "82c: …carrying the ratified column '$_col'" "$_col" "$EVAL_HEADER"
+done
+expect_contains "82d: …and states the invariant that gives the sixth column its force" \
+  'is not an eval' "$SKILL_BODY"
+
+# --- Anti-vacuity: the spans are BOUNDED, not the whole file -----------------
+#
+# THE FAILURE THIS GUARDS. `card_span` prints from a heading to the next fence. An
+# extractor that lost its terminator — or a card whose closing fence was deleted — would
+# return the REST OF THE FILE, and every `has_all` above would then pass on words found
+# hundreds of lines away in prose that has nothing to do with a card. So each span is
+# asserted to stop where its card stops, by naming text that lives OUTSIDE it: the next
+# card's question, and a Step-3 sentence no card contains. Doctored copies would say the
+# same thing at the cost of two more mutation sites in a file whose census is pinned
+# elsewhere; these rows are the same discrimination, in memory.
+expect_absent "83a: the Step-1 card's span stops before the Step-2 card's question" \
+  'Do you approve this design?' "$CARD1"
+expect_absent "83b: the Step-2 card's span stops before the Step-3 card's question" \
+  'Do you approve this plan?' "$CARD2"
+expect_absent "83c: the Step-3 card's span stops before the Step-5 prose below it" \
+  'Wave shape locks at approval' "$CARD3"
+# …and the positive those three need: the text they say is outside a span really is in the
+# file, so an absence above cannot be an absence from the whole document.
+expect_contains "83d: …and all three of those sentences do exist in the skill file" \
+  'Wave shape locks at approval' "$SKILL_BODY"
+
+# The Eval design header is one row, not a swallowed table: the extractor takes the first
+# match only, so a second header row elsewhere cannot be what the column checks read.
+expect_eq "83e: the Eval design column header is a single line" "1" \
+  "$(printf '%s\n' "$EVAL_HEADER" | wc -l | tr -d ' ')"
+
 finish
