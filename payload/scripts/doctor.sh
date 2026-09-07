@@ -1519,11 +1519,23 @@ EOF2
   _dead_state="$(patrol_roster_state "$DOCTOR_ROOT" "$_dead_sid" 2>/dev/null)"
   _dead_open="$(_doctor_pfield "$_dead_state" open)"
   case "$_dead_open" in ''|*[!0-9]*) _dead_open=0 ;; esac
+  # $DOCTOR_NIL, NOT $DOCTOR_BAD (R2, ticket-30; doctor-reads.test.sh 12f18's
+  # own rule: "every ✗ row is a problem", count >= rows on the whole page).
+  # Before R2 this line WAS the problem — the only cure was the raw script
+  # named below, and every dead session that had one raised N_FIX by one via
+  # the (now-removed) unconditional fix() call, keeping count == rows. Now
+  # hooks/session-start.sh sweeps this routinely (REQ-R2) and the fix() call
+  # below fires only when THAT auto-sweep itself failed — so a predecessor line
+  # with no failure marker is informational history, not a problem nobody can
+  # act on, and marking it ✗ while N_FIX stops counting it would be exactly
+  # the count-less-than-rows defect 12f18 exists to catch. `active run: none`
+  # a few lines above this loop uses the same glyph for the same reason: a
+  # true fact about this project's state that names no action.
   if [ "$_dead_open" -gt 0 ]; then
-    _run_add "$(_doctor_item "$DOCTOR_BAD" "predecessor ${_dead_sid%%-*}" \
+    _run_add "$(_doctor_item "$DOCTOR_NIL" "predecessor ${_dead_sid%%-*}" \
       "${_dead_files} leftover $(_doctor_plural "$_dead_files" file files) · ${_dead_open} open $(_doctor_plural "$_dead_open" row rows) — a /clear left them unclosed")"
   else
-    _run_add "$(_doctor_item "$DOCTOR_BAD" "predecessor ${_dead_sid%%-*}" \
+    _run_add "$(_doctor_item "$DOCTOR_NIL" "predecessor ${_dead_sid%%-*}" \
       "${_dead_files} leftover $(_doctor_plural "$_dead_files" file files) — nothing open; the session is gone")"
   fi
 done <<EOF
@@ -1531,14 +1543,22 @@ $(patrol_dead_sessions "$DOCTOR_ROOT" "${CLAUDE_CODE_SESSION_ID:-}")
 EOF
 
 # THE LINE THAT NAMES THE CURE, from the row rather than from a literal here —
-# the same shape the legacy-symlink row below uses. Until 1.5.1 this state was
-# detected and then left un-named: every row above was a session doctor had
-# already PROVEN dead, printed as an informational dash under a header reading
-# "Nothing to do". A fix line is also what raises N_FIX, so that header stops
-# contradicting the body without anything here special-casing it.
-if [ "$_doctor_dead_n" -gt 0 ]; then
-  fix "${_doctor_dead_n} dead $(_doctor_plural "$_doctor_dead_n" session sessions) left state under .bionic/tmp → $(bionic_check_hint dead-session-state)" \
-      "$_doctor_dead_n"
+# the same shape the legacy-symlink row below uses.
+#
+# R2 NARROWED WHAT RAISES THIS LINE (ticket-30). Before R2 this fired whenever
+# `_doctor_dead_n > 0` — a session doctor had proven dead but nobody had a way to
+# clear, which was true for every predecessor UNTIL hooks/session-start.sh started
+# clearing them itself (REQ-R2). With the auto-sweep in place, "a dead session's
+# residue exists right now" is the ordinary, self-healing state between a `/clear`
+# and the next session start — the ✗ `predecessor …` rows above still say so, every
+# time, because that is still informative — and firing THIS line on the same fact
+# would turn a healthy, temporary gap into a permanent "N problems" count that
+# never reaches zero. What is actually worth a fix line now is the auto-sweep
+# itself failing, which `checks.sh`'s row answers from session-start.sh's own
+# failure marker rather than from `_doctor_dead_n`.
+if bionic_check_fires dead-session-state; then
+  _doctor_sweep_rc="$(bionic_check_sweep_failed_rc)"
+  fix "the automatic dead-session sweep failed (rc=${_doctor_sweep_rc:-?}) → $(bionic_check_hint dead-session-state)"
 fi
 
 # LEGACY `.bionic` SYMLINKS (AC-11). spawn-worktree.sh used to plant

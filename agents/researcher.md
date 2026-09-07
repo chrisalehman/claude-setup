@@ -9,7 +9,7 @@ disallowedTools: Write, Edit, NotebookEdit
 <!-- GENERATED FILE — DO NOT EDIT.
      Rendered by agents-src/render.sh from agents-src/templates/researcher.md.tmpl and the shared
      blocks in agents-src/blocks/. Edit those, then re-run `bash agents-src/render.sh`.
-     tests/agent-render.test.sh goes red whenever this file and its sources disagree. -->
+     tests/docs-pins.test.sh goes red whenever this file and its sources disagree. -->
 
 ## Role
 

@@ -576,4 +576,81 @@ expect_no_match "44: …and with the CLI present that cause is nowhere on the pa
 expect_match "45: …which answers the same row from the CLI instead (the pair is not vacuous)"   "*chrome-devtools*not installed*" "$OUT_WITHCLI"
 expect_all_lines_fit "46: the CLI-absent page still fits the budget" "$OUT_NOCLI"
 
+section "Section 13: the rendered-file integrity manifest doctor reads (wave-02 AC-8)"
+
+# WHAT CHANGED AND WHY IT NEEDS A TEST AT ALL. detect_agent_integrity() has shipped since
+# epic-17 W4 and, until now, NO suite exercised it: the manifest it reads was written by
+# agents-src/render.sh and named by exactly one other file, and a rename of either would
+# have been silent. Wave-02 S2a renames it (integrity/agents.sha256 ->
+# integrity/rendered.sha256) and widens it from the six role files to every rendered
+# plugin file, so the fact function's contract — stock / modified / unknown, with the
+# modified files NAMED — is pinned here where doctor's own rows live.
+#
+# DRIVEN THROUGH THE SEAM detect.sh ALREADY OFFERS. BIONIC_PLUGIN_ROOT points the fact
+# function at a fixture root built from the repo's own rendered files, so this asserts
+# against the SHIPPED manifest rather than a hand-typed one. Sourced in a child /bin/bash
+# so the fixture root never leaks into the rest of this suite.
+
+DETECT_LIB="${PAYLOAD}/scripts/lib/detect.sh"
+RENDERED_MANIFEST="${PAYLOAD}/integrity/rendered.sha256"
+
+expect_true "47: the payload ships payload/integrity/rendered.sha256" test -f "$RENDERED_MANIFEST"
+expect_false "48: …and no longer ships the old integrity/agents.sha256" \
+  test -f "${PAYLOAD}/integrity/agents.sha256"
+
+# make_plugin_root -> a plugin root laid out the way an INSTALLED payload is: the manifest
+# beside agents/, commands/ and skills/, each at the plugin-root-relative path the manifest
+# names (the repo reaches those through payload/agents and payload/skills/* symlinks).
+make_plugin_root() {
+  local dir; dir="$(mktemp -d -p "$TMP")"
+  mkdir -p "$dir/integrity" "$dir/agents" "$dir/commands" "$dir/skills/canonical-sdlc"
+  cp "$RENDERED_MANIFEST" "$dir/integrity/" || return 1
+  cp "${REPO}"/agents/*.md "$dir/agents/" || return 1
+  cp "${REPO}"/payload/commands/*.md "$dir/commands/" || return 1
+  cp "${REPO}/skills/canonical-sdlc/SKILL.md" "$dir/skills/canonical-sdlc/" || return 1
+  printf '%s' "$dir"
+}
+
+# integrity_line <plugin-root> -> detect_agent_integrity's one line
+integrity_line() {
+  BIONIC_PLUGIN_ROOT="$1" /bin/bash -c '. "$0"; detect_agent_integrity' "$DETECT_LIB" 2>/dev/null
+}
+
+PROOT_STOCK="$(make_plugin_root)"
+LINE_STOCK="$(integrity_line "$PROOT_STOCK")"
+expect_match "49: an untouched install reads as stock" "*state=stock*" "$LINE_STOCK"
+expect_match "50: …over all eleven rendered files, not just the six roles" "*total=11*" "$LINE_STOCK"
+expect_match "51: …with nothing named as modified" "*modified=0 names=-*" "$LINE_STOCK"
+
+# THE DEFECT CONTROL. `stock` above is worth nothing unless the same reader turns on a
+# real edit — and the role files are the case the line was written for.
+PROOT_ROLE="$(make_plugin_root)"
+printf '\nlocally added line\n' >> "$PROOT_ROLE/agents/critic.md"
+LINE_ROLE="$(integrity_line "$PROOT_ROLE")"
+expect_match "52: one doctored ROLE file reads as modified" "*state=modified*" "$LINE_ROLE"
+expect_match "53: …and is named" "*names=critic.md*" "$LINE_ROLE"
+
+# THE WIDENING ITSELF: before this slice a doctored skill file or command page was
+# invisible to this line, because the manifest had no row for either.
+PROOT_SKILL="$(make_plugin_root)"
+printf '\nlocally added line\n' >> "$PROOT_SKILL/skills/canonical-sdlc/SKILL.md"
+LINE_SKILL="$(integrity_line "$PROOT_SKILL")"
+expect_match "54: a doctored SKILL.md reads as modified" "*state=modified*" "$LINE_SKILL"
+expect_match "55: …and is named" "*names=SKILL.md*" "$LINE_SKILL"
+
+PROOT_CMD="$(make_plugin_root)"
+printf '\nlocally added line\n' >> "$PROOT_CMD/commands/help.md"
+LINE_CMD="$(integrity_line "$PROOT_CMD")"
+expect_match "56: a doctored command page reads as modified" "*state=modified*" "$LINE_CMD"
+expect_match "57: …and is named" "*names=help.md*" "$LINE_CMD"
+
+# THE THIRD VALUE. A payload with no manifest answers `unknown` with the cause naming the
+# path it looked for — which is how a rename that missed detect.sh would show itself.
+PROOT_NONE="$(make_plugin_root)"
+rm -f "$PROOT_NONE/integrity/rendered.sha256"
+LINE_NONE="$(integrity_line "$PROOT_NONE")"
+expect_match "58: a payload with no manifest answers unknown" "*state=unknown*" "$LINE_NONE"
+expect_match "59: …naming integrity/rendered.sha256 as what it looked for" \
+  "*integrity/rendered.sha256*" "$LINE_NONE"
+
 finish

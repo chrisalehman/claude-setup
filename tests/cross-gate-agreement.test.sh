@@ -4260,6 +4260,148 @@ expect_eq "Roots …a second claude_home planted in a LIBRARY goes red too" "2" 
   "$(roots_defcount "$ROOTS_MUT" claude_home)"
 
 # ============================================================
+section "V — SUPPORTED_SDLC_VERSION: one owner, four carriers, five renderings (AC-19)"
+# ============================================================
+#
+# r3 §1E item 13: one logical constant, five renderings, and the two hooks were not held
+# in agreement by anything until this section — the only prior test hit was a single
+# spot-check literal in tests/canonical-sdlc-evidence-gate.test.sh, and operational-rules.md
+# itself says the pin-sync rows lived in tests/scripts.test.sh, retired at epic-18 W3
+# (8582861). `.claude/rules/hook-authoring.md` said both hooks pinned 12 well after they
+# moved to 14 — a stale literal in a FILE ABOUT the pin, the same failure mode this section
+# exists to catch in the pin's own carriers.
+#
+# THE OWNER is canonical-sdlc-evidence-gate.sh (spec AC-19, provenance table): it is the
+# file operational-rules.md's close-out contract cites by name ("Both hooks check
+# `SUPPORTED_SDLC_VERSION=14`") and the one whose refusal message names the fix. Four
+# carriers restate it: the governing-skill hook's own copy, the value operational-rules.md
+# documents in prose, and two SVG renderings — lifecycle.svg's title and hook-chain.svg's
+# three `class="version-pin"` chips (§1E's SVG count is 2; hook-chain.svg alone carries
+# three of the five total renderings the census counts as "both SVGs"). A per-file suite
+# cannot see this drift: each carrier reads fine on its own while all five disagree.
+
+V_ORIGIN="$PARTY_EG"
+V_GSKILL="$BIONIC_HOOKS_DIR/canonical-sdlc-governing-skill.sh"
+V_RULES="$BIONIC_SKILLS_DIR/canonical-sdlc/operational-rules.md"
+V_LIFECYCLE="$BIONIC_SKILLS_DIR/canonical-sdlc/diagrams/lifecycle.svg"
+V_HOOKCHAIN="$BIONIC_SKILLS_DIR/canonical-sdlc/diagrams/hook-chain.svg"
+
+# extractors — each pulls the bare integer out of its file's own rendering shape.
+v_hook_val() { grep -m1 '^SUPPORTED_SDLC_VERSION=' "$1" 2>/dev/null | cut -d= -f2 | tr -cd '0-9'; }
+v_rules_val() {  # operational-rules.md lists versions newest-first and says so at :17
+                 # ("Every version bullet below v14 in this file is historical record
+                 # only") — the FIRST `SUPPORTED_SDLC_VERSION=` hit is the live value, the
+                 # rest are superseded history. Same first-match convention §N.1's loader
+                 # block extraction and the evidence-gate's own frontmatter reads use.
+  grep -m1 -o 'SUPPORTED_SDLC_VERSION=[0-9]\+' "$1" 2>/dev/null | cut -d= -f2
+}
+v_lifecycle_val() {  # <text class="version-pin" data-pin="lifecycle-title" ...>...(v14)</text>
+  grep -m1 'data-pin="lifecycle-title"' "$1" 2>/dev/null | grep -oE '\(v[0-9]+\)' | tr -cd '0-9'
+}
+v_hookchain_vals() {  # three chips, one per line, in the order they render:
+                      #   "canonical_sdlc_version == 14" (x2) and
+                      #   "canonical_sdlc_version: 14 is the only value either hook accepts."
+  grep 'class="version-pin"' "$1" 2>/dev/null | while IFS= read -r _vline; do
+    printf '%s\n' "$_vline" | grep -oE 'canonical_sdlc_version[=: ]+[0-9]+' | grep -oE '[0-9]+$'
+  done
+}
+
+V_ORIGIN_VAL="$(v_hook_val "$V_ORIGIN")"
+expect_eq "the origin (evidence gate) declares a non-vacuous SUPPORTED_SDLC_VERSION" "yes" \
+  "$([ -n "$V_ORIGIN_VAL" ] && [ "$V_ORIGIN_VAL" -gt 0 ] 2>/dev/null && echo yes || echo no)"
+
+expect_eq "the governing-skill hook's SUPPORTED_SDLC_VERSION agrees with the gate's" \
+  "$V_ORIGIN_VAL" "$(v_hook_val "$V_GSKILL")"
+
+expect_eq "operational-rules.md's live SUPPORTED_SDLC_VERSION value agrees with the gate's" \
+  "$V_ORIGIN_VAL" "$(v_rules_val "$V_RULES")"
+
+expect_eq "lifecycle.svg's title renders the same version" \
+  "$V_ORIGIN_VAL" "$(v_lifecycle_val "$V_LIFECYCLE")"
+
+V_HC_VALS="$(v_hookchain_vals "$V_HOOKCHAIN")"
+expect_eq "hook-chain.svg carries exactly three version-pin chips (not fewer, not more)" "3" \
+  "$(printf '%s\n' "$V_HC_VALS" | grep -c '[0-9]')"
+V_HC_N=0
+for _v in $V_HC_VALS; do
+  V_HC_N=$((V_HC_N + 1))
+  expect_eq "…hook-chain.svg version-pin chip #$V_HC_N agrees with the gate's" \
+    "$V_ORIGIN_VAL" "$_v"
+done
+
+# MUTATION, the discriminator: doctor the governing-skill hook's value on a COPY — the
+# shipped file is never touched — and the comparison above must be provably able to catch
+# it. Without this, the rows above prove only that five renderings exist and currently
+# agree, not that disagreement is detectable. The replacement value is derived from the
+# live one (never a hardcoded "14") so this arm keeps discriminating after the next version
+# bump instead of silently passing over air the way the hook-authoring.md staleness did.
+V_MUT_DIR="$SANDBOX/version-mutant"; mkdir -p "$V_MUT_DIR"
+anchor -E "$V_GSKILL" "^SUPPORTED_SDLC_VERSION=${V_ORIGIN_VAL}\$" 1
+sed "s/^SUPPORTED_SDLC_VERSION=${V_ORIGIN_VAL}\$/SUPPORTED_SDLC_VERSION=$((V_ORIGIN_VAL + 1))/" \
+  "$V_GSKILL" > "$V_MUT_DIR/canonical-sdlc-governing-skill.sh"
+expect_ne "…and a doctored governing-skill copy no longer agrees with the gate" \
+  "$V_ORIGIN_VAL" "$(v_hook_val "$V_MUT_DIR/canonical-sdlc-governing-skill.sh")"
+
+# CONTROL — the same copy, unmutated, still agrees. Without this the RED above could be the
+# `sed`/copy machinery itself rather than the mutation.
+cp "$V_GSKILL" "$V_MUT_DIR/canonical-sdlc-governing-skill.clean.sh"
+expect_eq "control: an UNMUTATED copy still agrees with the gate" \
+  "$V_ORIGIN_VAL" "$(v_hook_val "$V_MUT_DIR/canonical-sdlc-governing-skill.clean.sh")"
+
+# AC-R6.3 — the governing-skill hook's two HINTS (the version-mismatch Fix line and the
+# missing-frontmatter YAML block) read SUPPORTED_SDLC_VERSION; neither one's source states a
+# digit. Both sites went through the hook before: the Fix line always interpolated the
+# variable, and the YAML block's `canonical_sdlc_version: 14` was a literal until this
+# wave's ed78ae3 pick bound the value near the top of the file and interpolated it there too.
+V_HINT_REPO="$(new_repo "v-hint")"
+V_HINT_PLAN="$V_HINT_REPO/.bionic/docs/plans/epic-99/wave-01-x.plan.md"
+
+# -- the version-mismatch Fix line, against the real (unmutated) hook: a planted write
+# declaring canonical_sdlc_version: 13 (one below origin, never hardcoded as 13 anywhere but
+# in this plant) must be told to set the LIVE value, not seed its own doctored one back. --
+V_MISMATCH_STDERR="$(jq -n --arg p "$V_HINT_PLAN" --arg s "$SID_A" \
+    --arg c $'---\ngoverning-skill: canonical-sdlc\ncanonical_sdlc_version: 13\n---\nbody\n' \
+    '{session_id:$s, tool_name:"Write", tool_input:{file_path:$p, content:$c}}' \
+  | env HOME="$V_HINT_REPO" CLAUDE_CODE_SESSION_ID="$SID_A" bash "$V_GSKILL" 2>&1 >/dev/null)"
+expect_contains "…a planted version-13 write's Fix line names the live value, not 13" \
+  "canonical_sdlc_version: ${V_ORIGIN_VAL}" "$V_MISMATCH_STDERR"
+expect_eq "…and never echoes the doctored value back as the fix" "" \
+  "$(printf '%s' "$V_MISMATCH_STDERR" | grep -oE "set 'canonical_sdlc_version: 13'" || true)"
+
+# -- the missing-frontmatter YAML hint: against the real hook it must print the live value,
+# and against the §V mutant built above (SUPPORTED_SDLC_VERSION=origin+1) it must print THAT
+# value instead — proving the hint tracks the variable rather than a baked-in literal. --
+V_MISSING_C='# no frontmatter here
+'
+V_MISSING_STDERR="$(jq -n --arg p "$V_HINT_PLAN" --arg s "$SID_A" --arg c "$V_MISSING_C" \
+    '{session_id:$s, tool_name:"Write", tool_input:{file_path:$p, content:$c}}' \
+  | env HOME="$V_HINT_REPO" CLAUDE_CODE_SESSION_ID="$SID_A" bash "$V_GSKILL" 2>&1 >/dev/null)"
+expect_contains "…the missing-frontmatter hint prints the live value" \
+  "canonical_sdlc_version: ${V_ORIGIN_VAL}" "$V_MISSING_STDERR"
+
+# A hook copied bare into $V_MUT_DIR resolves its libraries via loader.sh's `../scripts/lib`
+# fallback, which is not there — see .claude/rules/lib-changes-in-worktrees.md's trap, the
+# same shape one level down: a hook run standalone needs its sibling library directory, not
+# just its own file. §S.4's S4_MUT builds that sibling once for the whole suite; this arm
+# needs its own copy since it mutates the hook the shared one does not.
+V_EXEC_MUT="$SANDBOX/version-mutant-exec"
+mkdir -p "$V_EXEC_MUT/hooks" "$V_EXEC_MUT/scripts/lib"
+cp "$LIB_DIR_SRC"/*.sh "$V_EXEC_MUT/scripts/lib/" 2>/dev/null
+cp "$V_MUT_DIR/canonical-sdlc-governing-skill.sh" "$V_EXEC_MUT/hooks/canonical-sdlc-governing-skill.sh"
+V_MISSING_MUT_STDERR="$(jq -n --arg p "$V_HINT_PLAN" --arg s "$SID_A" --arg c "$V_MISSING_C" \
+    '{session_id:$s, tool_name:"Write", tool_input:{file_path:$p, content:$c}}' \
+  | env HOME="$V_HINT_REPO" CLAUDE_CODE_SESSION_ID="$SID_A" \
+    bash "$V_EXEC_MUT/hooks/canonical-sdlc-governing-skill.sh" 2>&1 >/dev/null)"
+expect_contains "…and a MUTATED hook's hint prints ITS value, proving the hint follows the variable" \
+  "canonical_sdlc_version: $((V_ORIGIN_VAL + 1))" "$V_MISSING_MUT_STDERR"
+
+# -- static proof: no site in the hook's own source states the value as a bare digit; every
+# rendering of the field name is followed by the variable, never a literal. --
+expect_eq "…no 'canonical_sdlc_version: <digit>' literal anywhere in the hook's source" "" \
+  "$(grep -nE 'canonical_sdlc_version:[[:space:]]*[0-9]' "$V_GSKILL" || true)"
+
+
+# ============================================================
 section "Section P — the Patrol stamp: the poker WRITES exactly the path the gate READS"
 # ============================================================
 #
@@ -8342,18 +8484,24 @@ expect_eq "S19.2 …and the same sweep DOES fire on a copy with the idiom plante
 
 # --- §S19.3 POSITIVE: every doctoring site declares through `anchor` ---
 # The census: a doctoring site in docs-pins is a `DOCTORED…="$TMP/…"` assignment.
-expect_eq "S19.3 docs-pins holds 23 doctoring sites" "23" \
+# 29 since both epic-22 slices landed on the 23 baseline: K1 (plan slice 15, Section 12)
+# added three doctoring sites (DOCTORED_NO_GATES, DOCTORED_MATRIX_BACK,
+# DOCTORED_NO_INTEGRATION), 23 -> 26; K3 (plan slice 17, Section 6) added three more (the
+# order-reversed, Mechanisms-inherited-stripped and strategic-by-rule-stripped mutants),
+# 26 -> 29 — each of the six anchored, lifting both this row and the next by six, all told.
+expect_eq "S19.3 docs-pins holds 29 doctoring sites" "29" \
   "$(/usr/bin/grep -cE '^DOCTORED[A-Z0-9_]*="\$TMP/' "$S19_DOCS_PINS")"
-expect_eq "S19.3 …declared by 24 anchor calls (Section 8's doctoring rewrites two sentences)" "24" \
+expect_eq "S19.3 …declared by 30 anchor calls (Section 8's doctoring rewrites two sentences; Section 12 adds three, K1; Section 6 adds three, K3)" "30" \
   "$(/usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]' "$S19_DOCS_PINS")"
 # 25 since Step 6: §S13.2 lifts the wall's own reduction out of the hook and
-# anchors both lines it lifts (review-b B-3). 24 since epic-22 wave-01 N1: §R retired with
-# the four `resolve_docs_root()` copies it held, and its awk mutant's `anchor` went with it.
-# §Roots replaces it and deliberately carries none. An anchor exists to catch a
-# pattern-based rewrite that silently matched nothing; §Roots' arm APPENDS a heredoc, which
-# cannot no-op, and then asserts the definition count moved from 1 to 2 — a stronger
-# precondition than an anchor, stated as a row a reader can see fail.
-expect_eq "S19.3 …and this suite's own mutant trees and lifts by 24 more" "24" \
+# anchors both lines it lifts (review-b B-3). 26 at epic-21 wave-02 S12, when §V's
+# governing-skill mutation added one. 25 at this merge: epic-22 wave-01 N1 retired §R
+# along with the four `resolve_docs_root()` copies it held, and its awk mutant's `anchor`
+# went with it. §Roots replaces §R and deliberately carries none — an anchor exists to catch
+# a pattern-based rewrite that silently matched nothing, and §Roots' arm APPENDS a heredoc,
+# which cannot no-op, then asserts the definition count moved from 1 to 2. That is a
+# stronger precondition than an anchor, and it is a row a reader can watch fail.
+expect_eq "S19.3 …and this suite's own mutant trees and lifts by 25 more" "25" \
   "$(/usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]' "$S19_TESTS_DIR/cross-gate-agreement.test.sh")"
 # The two suites the waiver used to name. `mutate_guard` anchors per call (its callers pass
 # the shipped line they delete). landing-gate anchors its inverted-guard awk, and — since
@@ -8369,9 +8517,14 @@ expect_eq "S19.3 …and landing-gate by three: the inverted-guard mutant, and th
 # 53 since the fold-in landings (A-44). F1 (item 17) and F2 (item 11) each added two
 # anchors — F1 in this suite, F2 in landing-gate — and each rewrote this total from 49
 # to 51 in BYTE-IDENTICAL text, so the merge was conflict-free and the pin was two short
-# of the tree. 52 since epic-22 wave-01 N1 retired §R and the one anchor its awk mutant
-# declared. Measured at the head, not predicted: 24 + 24 + 1 + 3 = 52.
-expect_eq "S19.3 …52 anchor call sites across the four doctoring suites, all told" "52" \
+# of the tree. 60 once three epic-22 slices landed on the 53 baseline: K1 (plan slice 15)
+# gave docs-pins three more anchor calls (Section 12's anti-vacuity mutants); R6 (plan slice
+# 3) gave this suite one more through §V; K3 (plan slice 17, Section 6) gave docs-pins three
+# more again. 59 at this merge, because N1 retired §R and the one anchor its awk mutant
+# declared (see the row above). 30 + 25 + 1 + 3 = 59, RE-DERIVED BY
+# DIRECT GREP over the merged files — never carried forward from either side, which is the
+# whole reason this literal exists.
+expect_eq "S19.3 …59 anchor call sites across the four doctoring suites, all told" "59" \
   "$(cat "$S19_DOCS_PINS" "$S19_TESTS_DIR/cross-gate-agreement.test.sh" \
         "$S19_TESTS_DIR/agent-context-guard.test.sh" "$S19_TESTS_DIR/landing-gate.test.sh" \
      | /usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]')"
@@ -8552,6 +8705,174 @@ expect_eq "S17c youngest_suite_writer greps the shared constant, not a literal" 
   "0" "$(awk '/^youngest_suite_writer\(\)/,/^\}/' "$PARTY_PK" | grep -cF "grep '^${SWEPT_SCHEMA}|'")"
 expect_eq "S17c …and it does grep the marker, through the constant (the zero is not absence)" \
   "1" "$(awk '/^youngest_suite_writer\(\)/,/^\}/' "$PARTY_PK" | grep -cF 'grep "^${SWEPT_SCHEMA}|"')"
+
+
+# ============================================================
+section "B — no backtick pair hides inside a double-quoted assertion name (AC-B.1/AC-B.2, epic-22 slice 7)"
+# ============================================================
+#
+# THE DEFECT CLASS (seed ideas/fixit-residue-names.md item 3, critic issue 3 / A-S18a-6).
+# `expect_*` calls take their FIRST argument as a human-readable label, always inside double
+# quotes. A label that wraps a literal token in backticks for readability — "the neighbour
+# the `.` would have swallowed" — is not quoted text to bash: a double-quoted string still
+# expands backtick command substitution, so the shell RUNS `.` (the `source` builtin, no
+# argument) on every pass, corrupts the label to whatever it printed, and dumps a usage
+# error to stderr. This landed three times in this wave alone and once executed `uv tool
+# install --force omnigent` for real (critic issue 3) — a machine-mutating class of test
+# defect, not a cosmetic one. The instance live on main is tests/stop-check.test.sh:298,
+# fixed by 8727375 (this slice's cherry-pick, landed in this same tree).
+#
+# THE SCAN. A per-line state machine, not a bare regex: it tracks single/double-quote state,
+# stops at a `#` outside any quote (comments never execute), and skips heredoc BODY lines
+# entirely between an opening `<<[-]DELIM` (quoted or not) and its closing delimiter line —
+# heredoc text is never "inside a double-quoted string" as a shell grammar node. An escaped
+# backtick (`\``) is consumed by its backslash, so no pair forms. THE ONE CASE THAT NEEDS ITS
+# OWN RULE: a legitimate $(...) substitution nested inside a double-quoted string reopens
+# ordinary shell quoting for its own body, so a backtick nested inside a SINGLE-quoted
+# argument of a $(...) call — e.g. "$(printf '```markdown```')" — is inert there for the
+# same reason it is inert anywhere else inside single quotes; the scanner re-enters its own
+# state machine for a $(...) span instead of reading it as flat text. Without that rule, four
+# genuine committed lines (fenced code blocks passed to `printf` inside $(...), in
+# tests/canonical-sdlc-governing-skill.test.sh) false-positive and §B.2 could never be green
+# on this tree. Left alone, by design: a bare backtick pair directly inside a $(...) body,
+# not nested in further quotes, is real intentional legacy substitution nested in the modern
+# form — a style question, not this defect class. A hit prints as `<file>:<line>`, one per
+# PAIR found.
+
+B_AWK="$SANDBOX/backtick-scan.awk"
+cat > "$B_AWK" <<'AWK_EOF'
+function skip_squote(line, i, n,    c) {
+  while (i <= n) { c = substr(line, i, 1); if (c == "'") return i + 1; i++ }
+  return n + 1
+}
+function scan_subshell(line, i, n,    c, r) {
+  while (i <= n) {
+    c = substr(line, i, 1)
+    if (c == "\\") { i += 2; continue }
+    if (c == "'") { i = skip_squote(line, i + 1, n); continue }
+    if (c == "\"") { r = scan_dquote(line, i + 1, n); i = r + 1; continue }
+    if (c == "$" && substr(line, i + 1, 1) == "(") { i = scan_subshell(line, i + 2, n); continue }
+    if (c == ")") return i + 1
+    i++
+  }
+  return n + 1
+}
+function find_second_backtick(line, i, n,    c) {
+  while (i <= n) {
+    c = substr(line, i, 1)
+    if (c == "\\") { i += 2; continue }
+    if (c == "`") return i
+    if (c == "\"") return 0
+    i++
+  }
+  return 0
+}
+function scan_dquote(line, i, n,    c, j) {
+  while (i <= n) {
+    c = substr(line, i, 1)
+    if (c == "\\") { i += 2; continue }
+    if (c == "\"") return i
+    if (c == "$" && substr(line, i + 1, 1) == "(") { i = scan_subshell(line, i + 2, n); continue }
+    if (c == "`") {
+      j = find_second_backtick(line, i + 1, n)
+      if (j > 0) { HIT = 1; i = j + 1; continue }
+      i++; continue
+    }
+    i++
+  }
+  return n + 1
+}
+function scan_line(line,    i, n, c, r) {
+  HIT = 0; i = 1; n = length(line)
+  while (i <= n) {
+    c = substr(line, i, 1)
+    if (c == "#") return HIT
+    if (c == "\\") { i += 2; continue }
+    if (c == "'") { i = skip_squote(line, i + 1, n); continue }
+    if (c == "\"") { r = scan_dquote(line, i + 1, n); i = r + 1; continue }
+    i++
+  }
+  return HIT
+}
+function heredoc_start(line,    tmp) {
+  if (match(line, /<<-?[ \t]*'[A-Za-z_][A-Za-z0-9_]*'/)) {
+    tmp = substr(line, RSTART, RLENGTH); HD_STRIP = (tmp ~ /^<<-/) ? 1 : 0
+    sub(/^<<-?[ \t]*'/, "", tmp); sub(/'$/, "", tmp); HD_DELIM = tmp; return 1
+  }
+  if (match(line, /<<-?[ \t]*"[A-Za-z_][A-Za-z0-9_]*"/)) {
+    tmp = substr(line, RSTART, RLENGTH); HD_STRIP = (tmp ~ /^<<-/) ? 1 : 0
+    sub(/^<<-?[ \t]*"/, "", tmp); sub(/"$/, "", tmp); HD_DELIM = tmp; return 1
+  }
+  if (match(line, /<<-?[ \t]*[A-Za-z_][A-Za-z0-9_]*/)) {
+    tmp = substr(line, RSTART, RLENGTH); HD_STRIP = (tmp ~ /^<<-/) ? 1 : 0
+    sub(/^<<-?[ \t]*/, "", tmp); HD_DELIM = tmp; return 1
+  }
+  return 0
+}
+function is_delim_line(line,    t) {
+  t = line; if (HD_STRIP) sub(/^[ \t]+/, "", t); return (t == HD_DELIM)
+}
+FNR == 1 { IN_HEREDOC = 0 }
+{
+  if (IN_HEREDOC) { if (is_delim_line($0)) IN_HEREDOC = 0; next }
+  if (scan_line($0)) print FILENAME ":" FNR
+  if (heredoc_start($0)) IN_HEREDOC = 1
+}
+AWK_EOF
+
+b_scan() { awk -f "$B_AWK" "$@" 2>/dev/null; }
+
+# (a) §B.2 — GREEN ON THE COMMITTED TREE. The same two roots 8727375's own sweep grep named
+# (minus tests/drill/, which does not exist on main, per plan Assumption A-6).
+B_TESTS_HITS="$(b_scan "$REPO_ROOT"/tests/*.test.sh "$REPO_ROOT"/tests/lib/*.sh)"
+expect_empty "§B.2 the scan is silent on the committed tree (the fix landed, nothing else hides)" \
+  "$B_TESTS_HITS"
+
+# (b) §B.1 — THE MUTATION, the discriminator. A scratch COPY of one suite (the shipped file
+# is never touched), with a fresh backtick pair planted at a known line — line 2, right
+# after the shebang, so no `anchor` precondition is needed: this is an INSERTION at a fixed
+# offset, not a pattern-matched deletion that could silently miss its target.
+B_MUT_DIR="$SANDBOX/backtick-mutant"; mkdir -p "$B_MUT_DIR"
+{
+  head -n 1 "$REPO_ROOT/tests/session-sweeper.test.sh"
+  printf 'expect_eq "a planted `pair` right here" "x" "x"\n'
+  tail -n +2 "$REPO_ROOT/tests/session-sweeper.test.sh"
+} > "$B_MUT_DIR/session-sweeper.test.sh"
+
+B_MUT_HITS="$(b_scan "$B_MUT_DIR/session-sweeper.test.sh")"
+expect_eq "§B.1 a planted pair makes the scan RED naming file:line" \
+  "$B_MUT_DIR/session-sweeper.test.sh:2" "$B_MUT_HITS"
+
+# CONTROL — the same file, unplanted: still silent, or the RED above was the `cp`/`head`/
+# `tail` reshuffle and not the plant.
+B_CTRL_DIR="$SANDBOX/backtick-control"; mkdir -p "$B_CTRL_DIR"
+cp "$REPO_ROOT/tests/session-sweeper.test.sh" "$B_CTRL_DIR/session-sweeper.test.sh"
+expect_empty "…control: the unmutated copy stays silent" \
+  "$(b_scan "$B_CTRL_DIR/session-sweeper.test.sh")"
+
+# (c) THE EXCLUSIONS, individually named — one fixture line per shape, so a future edit that
+# widens the scan (and starts flagging safe text) is caught here rather than being
+# discovered as a false-positive drowning out a real hit. Five shapes: an ESCAPED pair
+# (line 2), a legitimate $(...) with a nested SINGLE-quoted pair (line 3), a pair inside a
+# COMMENT (line 4), a pair inside a bare SINGLE-quoted string (line 5), and a pair inside a
+# HEREDOC body opened with a quoted delimiter (lines 6-8) — the fourth exclusion class
+# 8727375's own commit message named. Only line 9, a real unescaped pair inside a plain
+# double-quoted string, is a hit.
+B_FX="$SANDBOX/backtick-exclusions.sh"
+cat > "$B_FX" <<'FX_EOF'
+#!/bin/bash
+expect_eq "the \`escaped\` pair is inert" "yes" "yes"
+expect_eq "fence" "$(printf '```markdown```')" "x"
+# this comment mentions `a pair` right here
+MSG='the `pair` is inert in single quotes'
+cat <<'HEREDOC_EOF'
+a heredoc body line with a `pair` in it, quoted delimiter
+HEREDOC_EOF
+expect_eq "the neighbour the `.` would have swallowed" "x" "y"
+FX_EOF
+B_FX_HITS="$(b_scan "$B_FX")"
+expect_eq "…the five exclusions (escaped, \$(...) w/ nested single quotes, comment, single-quoted, heredoc body) stay silent; only the real pair on line 9 is a hit" \
+  "$B_FX:9" "$B_FX_HITS"
 
 
 # ============================================================

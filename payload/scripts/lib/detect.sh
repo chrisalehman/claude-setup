@@ -222,7 +222,7 @@ detect_hook_wiring() {  # -> "hooks: total=<n> resolving=<n>"
 # are instructions a dispatched subagent obeys, so a stray edit there changes
 # behaviour everywhere and leaves no trace anywhere else — the machine keeps
 # working, differently. The payload ships a checksum manifest beside them
-# (integrity/agents.sha256, written by agents-src/render.sh), and this compares
+# (integrity/rendered.sha256, written by agents-src/render.sh), and this compares
 # it against what is on disk.
 #
 # REPORTING, NOT POLICING. A user who edited a role file may have meant to; that
@@ -251,10 +251,10 @@ _detect_sha256() {  # <file> -> hex digest on stdout; nonzero if no tool can ans
 detect_agent_integrity() {
   local root manifest line want rel got total=0 modified=0 names=""
   root="$(plugin_root)"
-  manifest="${root}/integrity/agents.sha256"
+  manifest="${root}/integrity/rendered.sha256"
 
   if [ ! -f "$manifest" ]; then
-    echo "agents: state=unknown total=unknown modified=unknown names=- cause=this payload ships no checksum manifest at integrity/agents.sha256"
+    echo "agents: state=unknown total=unknown modified=unknown names=- cause=this payload ships no checksum manifest at integrity/rendered.sha256"
     return 0
   fi
   if ! command -v shasum >/dev/null 2>&1 && ! command -v sha256sum >/dev/null 2>&1; then

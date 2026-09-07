@@ -685,4 +685,106 @@ expect_eq "18.6: the headline agrees with the ✗ rows it stands for, before" \
   "$D10_ROWS_BEFORE" "$D10_N_BEFORE"
 expect_eq "18.7: …and after" "$D10_ROWS_AFTER" "$D10_N_AFTER"
 
+section "Section 19: dead-session state — the fix line follows the auto-sweep's OWN failure, not mere residue (R2, ticket-30, AC-R2.4)"
+
+# THIS ROW'S TEST LIVES HERE, NOT IN tests/doctor-patrol.test.sh's Section 16
+# (plan slice 4/R4's file, which plants dead-session state and — before this
+# slice — asserted the OLD unconditional fix line; slice 4 lands after this one
+# per the plan's own dispatch note and reconciles that section against the
+# behaviour below). This suite already carries the N_FIX/headline mechanics the
+# row participates in — Section 18's own comment names "the dead-session line" as
+# one of the collapses that mechanic covers — so the row's OWN test belongs
+# beside them rather than in doctor-walls.test.sh, which is scoped to the four
+# fail-closed wall hooks and carries no dead-session fixture machinery at all.
+#
+# A PRIVATE PROJECT ROOT, NOT $REPO. Every other section in this file drives
+# doctor from inside the real bionic checkout ($REPO) because none of them reads
+# anything project-scoped; this row does — its detector resolves
+# `_patrol_repo_root "$PWD"` — so driving it from $REPO would plant a marker file
+# inside THIS checkout's own .bionic/tmp and contaminate every other section's
+# read of the same tree, this run and the next. A throwaway repo, `git init`-ed
+# the way tests/session-sweep.test.sh's own fixtures are, keeps this section's
+# one write off the checkout entirely.
+ds_r2_repo() {  # -> a fresh, hermetic project dir with .bionic/tmp
+  local r; r="$(mktemp -d "${TMP}/dsr2-repo.XXXXXX")"
+  mkdir -p "$r/.bionic/tmp"
+  ( cd "$r" && git init -q . 2>/dev/null )
+  printf '%s' "$r"
+}
+
+ds_r2_doctor() {  # <project-cwd> -> doctor's whole report, against a fresh empty claude-home
+  local proj="$1" home; home="$(mktemp -d "${TMP}/dsr2-home.XXXXXX")"; mkdir -p "$home/sessions"
+  ( cd "$proj" && BIONIC_CLAUDE_HOME="$home" BIONIC_PLUGIN_ROOT="$PAYLOAD" \
+      BIONIC_DOCTOR_PROBE_SECONDS=3 bash "$DOCTOR_SH" < /dev/null 2>&1 )
+}
+
+ds_r2_problems() {  # <doctor output> -> the header's problem count, or "0" on "Nothing to do"
+  local n
+  n="$(printf '%s\n' "$1" | sed -n 's/^→ \([0-9][0-9]*\) problems*\..*$/\1/p' | head -1)"
+  printf '%s' "${n:-0}"
+}
+
+# ---------- clean tree: no marker, no row (fails-when: the row prints on success) ----------
+DS_R2_A="$(ds_r2_repo)"
+OUT19A="$(ds_r2_doctor "$DS_R2_A")"
+expect_no_match "19.1: no failure marker → no fix line naming the auto-sweep" \
+  "*automatic dead-session sweep failed*" "$OUT19A"
+expect_no_match "19.2: …and the old unconditional line is gone too" \
+  "*dead session* left state under .bionic/tmp*" "$OUT19A"
+
+# ---------- THE REGRESSION THIS SLICE CLOSES: dead-session RESIDUE alone, no
+# failure marker, must NOT earn a fix line either — this is the exact shape the
+# pre-R2 detector fired on (`[ -n "$(patrol_dead_sessions …)" ]`), which is what
+# made ticket-30's "N problems" never reach zero between one `/clear` and the
+# next session start. The per-session PATROL `predecessor …` line still renders
+# (doctor's per-session listing is untouched by this slice) but no longer as a
+# ✗ row: 12f18/18.6/18.7 above pin "every ✗ row is a problem, count >= rows on
+# the whole page" over THIS repo's own live ambient .bionic/tmp state, and a
+# predecessor line marked ✗ while contributing nothing to N_FIX (once the fix
+# line is conditional) is exactly the count-less-than-rows shape that rule
+# forbids — caught against $REPO's own real dead-session residue from the
+# other agents in this wave, not against this section's private fixtures.
+# `$DOCTOR_NIL` (the same glyph `active run: none` uses a few lines above the
+# predecessor loop in doctor.sh) is the fix: a true fact about this project
+# that names no action is informational, not a ✗.
+DS_R2_D="$(ds_r2_repo)"
+DS_R2_D_SID="018c3ea1-1111-4111-8111-111111111111"
+printf '# bionic session roster — schema roster-state/v1\n' > "$DS_R2_D/.bionic/tmp/roster-${DS_R2_D_SID}.state"
+OUT19D="$(ds_r2_doctor "$DS_R2_D")"
+expect_match "19.8: the per-session PATROL line still names the dead residue" \
+  "*predecessor 018c3ea1*" "$OUT19D"
+expect_no_match "19.9: …but mere residue, with no failure marker, earns no fix line" \
+  "*dead session* left state under .bionic/tmp*" "$OUT19D"
+expect_no_match "19.10: …nor the new-style line — nothing failed here" \
+  "*automatic dead-session sweep failed*" "$OUT19D"
+expect_no_match "19.11: …and the predecessor line itself is not a ✗ row (count >= rows, 12f18)" \
+  "*✗ predecessor*" "$OUT19D"
+
+# ---------- the marker present: exactly one line, naming the rc ----------
+DS_R2_B="$(ds_r2_repo)"
+printf 'sweep-failed/v1|at=2026-09-07T00:00:00Z|rc=2\n' > "$DS_R2_B/.bionic/tmp/sweep-failed.state"
+OUT19B="$(ds_r2_doctor "$DS_R2_B")"
+expect_match "19.3: a failure marker earns exactly one fix line naming the rc" \
+  "*the automatic dead-session sweep failed (rc=2)*" "$OUT19B"
+expect_match "19.4: …with the manual fallback as the hint" \
+  "*the automatic dead-session sweep failed (rc=2) → session-poker.sh sweep*" "$OUT19B"
+DS_R2_B_HITS="$(printf '%s\n' "$OUT19B" | grep -c 'automatic dead-session sweep failed')"
+expect_eq "19.5: …and only once on the page" "1" "$DS_R2_B_HITS"
+
+# THE DELTA, NOT AN ABSOLUTE (Walk-D1 shape, same as 12f11/18.5 above). This
+# machine's own toolchain gaps show up as ✗ rows on EVERY fixture in this file —
+# an empty claude-home is not a clean page — so the baseline is read off a
+# sibling fixture built the identical way (19A, no marker) rather than assumed
+# to be zero. One row, one fix() call, so the delta must be exactly 1.
+expect_eq "19.6: …and it raises the problem count by exactly one over the same baseline" \
+  "1" "$(( $(ds_r2_problems "$OUT19B") - $(ds_r2_problems "$OUT19A") ))"
+
+# ---------- a symlinked marker is refused, not read (hostile-repo posture, S15-style) ----------
+DS_R2_C="$(ds_r2_repo)"
+printf 'not a real marker\n' > "${TMP}/dsr2-decoy.state"
+ln -sf "${TMP}/dsr2-decoy.state" "$DS_R2_C/.bionic/tmp/sweep-failed.state"
+OUT19C="$(ds_r2_doctor "$DS_R2_C")"
+expect_no_match "19.7: a symlinked marker is refused, not followed into a row" \
+  "*automatic dead-session sweep failed*" "$OUT19C"
+
 finish
