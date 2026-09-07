@@ -407,7 +407,8 @@ bionic_check_dead_session_state() {  # <row id>
 #   detector  read-only, returns 0 when the check fires
 #   party     setup | cli | user
 #   item      the setup item that clears it; empty unless party is setup
-#   hint      the repair clause the report must carry — always the party's route
+#   hint      the repair clause the report must carry — the party's route, except
+#             under party `user`, where it is the instruction (contract at the top)
 _bionic_checks_emit() {  # <id> <label> <detector> <party> <item> <hint>
   printf '%s|%s|%s|%s|%s|%s\n' "$1" "$2" "$3" "$4" "$5" "$6"
 }
