@@ -8251,9 +8251,12 @@ expect_eq "S19.2 …and the same sweep DOES fire on a copy with the idiom plante
 
 # --- §S19.3 POSITIVE: every doctoring site declares through `anchor` ---
 # The census: a doctoring site in docs-pins is a `DOCTORED…="$TMP/…"` assignment.
-expect_eq "S19.3 docs-pins holds 23 doctoring sites" "23" \
+# 26 since epic-22 slice 17: K3's Section 6 adds three doctoring sites (the
+# order-reversed, Mechanisms-inherited-stripped and strategic-by-rule-stripped
+# mutants), each anchored, lifting both this row and the next by three.
+expect_eq "S19.3 docs-pins holds 26 doctoring sites" "26" \
   "$(/usr/bin/grep -cE '^DOCTORED[A-Z0-9_]*="\$TMP/' "$S19_DOCS_PINS")"
-expect_eq "S19.3 …declared by 24 anchor calls (Section 8's doctoring rewrites two sentences)" "24" \
+expect_eq "S19.3 …declared by 27 anchor calls (Section 8's doctoring rewrites two sentences)" "27" \
   "$(/usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]' "$S19_DOCS_PINS")"
 # 25 since Step 6: §S13.2 lifts the wall's own reduction out of the hook and
 # anchors both lines it lifts (review-b B-3).
@@ -8270,11 +8273,10 @@ expect_eq "S19.3 …and landing-gate by three: the inverted-guard mutant, and th
 # THE TOTAL AC-30 NAMES. Stated as its own measured literal rather than left to the
 # reader to add up: this is the number that has to move when a doctoring site is
 # added or removed anywhere in the four suites that build mutants.
-# 53 since the fold-in landings (A-44). F1 (item 17) and F2 (item 11) each added two
-# anchors — F1 in this suite, F2 in landing-gate — and each rewrote this total from 49
-# to 51 in BYTE-IDENTICAL text, so the merge was conflict-free and the pin was two short
-# of the tree. Measured at the merged head, not predicted: 24 + 25 + 1 + 3 = 53.
-expect_eq "S19.3 …53 anchor call sites across the four doctoring suites, all told" "53" \
+# 56 since epic-22 slice 17: K3's three new docs-pins doctoring sites (above) each
+# carry their own anchor call, so this total moves by the same three.
+# Measured at this head, not predicted: 27 + 25 + 1 + 3 = 56.
+expect_eq "S19.3 …56 anchor call sites across the four doctoring suites, all told" "56" \
   "$(cat "$S19_DOCS_PINS" "$S19_TESTS_DIR/cross-gate-agreement.test.sh" \
         "$S19_TESTS_DIR/agent-context-guard.test.sh" "$S19_TESTS_DIR/landing-gate.test.sh" \
      | /usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]')"

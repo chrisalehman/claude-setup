@@ -1254,4 +1254,111 @@ expect_contains "75: payload/scripts/lib/detect.sh reads integrity/rendered.sha2
 expect_absent "75b: …and names the deleted manifest nowhere" \
   'integrity/agents.sha256' "$(cat "$DETECT_SH")"
 
+# ── Section 6: K3 — premise text (AC-K3.1, AC-K3.2) ─────────────────────────
+#
+# ideas/bug-premise-decisions-surface-at-the-pr.md F1/F2 (D3 keeps F1/F2, cuts F3;
+# adrs: is F4, covered by tests/canonical-sdlc-governing-skill.test.sh instead — a
+# hook wall, not a doc-text pin). Both ACs are STATIC: docs-pins reads the rendered
+# Step-2 Design Interview frame span (SKILL.md, "Open with the frame" paragraph)
+# byte-for-byte, the same `has_pin` idiom §1-§5 use.
+section "Section 6: K3 — premise text (Context/Problem first, Mechanisms inherited)"
+
+# AC-K3.1: Context and Problem, for a stranger, is the FIRST thing the frame
+# ratifies — ahead of the orchestrator's own design intuition and every decision
+# below it. Pinned as one substring spanning the frame's opening clause straight
+# into the Context-and-Problem sentence, so the pin itself IS an adjacency (hence
+# order) check: it can only match a copy where nothing has been inserted, or
+# swapped in, between "before any question." and "Its first ratification is
+# **Context and Problem".
+PIN_K3_FIRST='**Open with the frame**, before any question. Its first ratification is **Context and Problem, for a stranger**'
+
+# AC-K3.2, half 1: the frame carries a "Mechanisms inherited" item, each line
+# marked kept or questioned.
+PIN_K3_MECH='**Mechanisms inherited**, one line per substrate or mechanism the design builds on, each marked `kept` or `questioned`'
+
+# AC-K3.2, half 2: placement decisions (tier / runtime surface / hardware) are
+# named strategic BY RULE, not left to a default.
+PIN_K3_STRATEGIC='placing a test cohort in a tier, a job on a runtime surface, or a workload on hardware is **strategic by rule**'
+
+if has_pin "$SKILL_MD" "$PIN_K3_FIRST"; then
+  ok "76: SKILL.md's Step-2 frame ratifies Context and Problem, for a stranger, first"
+else
+  no "76: SKILL.md's Step-2 frame ratifies Context and Problem, for a stranger, first" "file: $SKILL_MD"
+fi
+
+if has_pin "$SKILL_MD" "$PIN_K3_MECH"; then
+  ok "77: …and carries a Mechanisms inherited item, each kept or questioned"
+else
+  no "77: …and carries a Mechanisms inherited item, each kept or questioned" "file: $SKILL_MD"
+fi
+
+if has_pin "$SKILL_MD" "$PIN_K3_STRATEGIC"; then
+  ok "78: …and names tier/runtime-surface/hardware placement strategic by rule"
+else
+  no "78: …and names tier/runtime-surface/hardware placement strategic by rule" "file: $SKILL_MD"
+fi
+
+# --- Anti-vacuity: the same pins must discriminate a mutated copy ---
+
+# 79: ORDER REVERSED (AC-K3.1's own fails-when). The doctored copy swaps the
+# Context-and-Problem sentence and the Design-intuition sentence in place — the
+# literal shape of "the order is reversed" — rather than deleting anything, so a
+# pin that merely checked PRESENCE of both phrases would stay green through it.
+anchor -E "$SKILL_MD" 'Its first ratification is \*\*Context and Problem, for a stranger\*\*' 1
+DOCTORED_K3_ORDER="$TMP/skill-k3-order-reversed.md"
+sed -E '
+s/(\*\*Open with the frame\*\*, before any question\. )(Its first ratification is \*\*Context and Problem, for a stranger\*\*: the problem and the goal, written as if for a reader who has never opened this repo; this comes before your own design intuition and before every decision in the frame below it — a change not yet explainable to someone who was not there is not yet understood\. )(Then your own \*\*Design intuition\*\*, the shape you expect to be right, stated so the user can push on it; )/\1\3\2/
+' "$SKILL_MD" > "$DOCTORED_K3_ORDER"
+if has_pin "$DOCTORED_K3_ORDER" "$PIN_K3_FIRST"; then
+  no "79: order-reversed SKILL.md fails the first-ratification pin (pin discriminates)" \
+     "the mutated copy still matched — the pin does not see the reorder"
+else
+  ok "79: order-reversed SKILL.md fails the first-ratification pin (pin discriminates)"
+fi
+# Control: prove the doctored copy really moved Design intuition ahead of
+# Context and Problem, rather than merely mangling the text into something that
+# happens to fail the pin for an unrelated reason.
+expect_contains "79b: …and the doctored copy really does read Design intuition, then Context and Problem" \
+  'Then your own **Design intuition**, the shape you expect to be right, stated so the user can push on it; Its first ratification is **Context and Problem' \
+  "$(cat "$DOCTORED_K3_ORDER")"
+
+# 80: Mechanisms inherited ABSENT (AC-K3.2's fails-when). The strategic-by-rule
+# clause stays untouched in this copy — proof the mutation removed only the
+# Mechanisms-inherited item, not the whole paragraph.
+anchor "$SKILL_MD" 'Mechanisms inherited' 1
+DOCTORED_K3_MECH="$TMP/skill-k3-mechanisms-absent.md"
+sed 's/\*\*Mechanisms inherited\*\*, one line per substrate or mechanism the design builds on, each marked `kept` or `questioned` — a `questioned` line becomes a strategic fork; //' \
+  "$SKILL_MD" > "$DOCTORED_K3_MECH"
+if has_pin "$DOCTORED_K3_MECH" "$PIN_K3_MECH"; then
+  no "80: SKILL.md with Mechanisms inherited stripped still passes the mech pin (pin discriminates)" \
+     "the mutated copy still matched — the pin does not see the removal"
+else
+  ok "80: SKILL.md with Mechanisms inherited stripped still passes the mech pin (pin discriminates)"
+fi
+if has_pin "$DOCTORED_K3_MECH" "$PIN_K3_STRATEGIC"; then
+  ok "80b: …and the strategic-by-rule clause survives untouched in the same copy (isolated mutation)"
+else
+  no "80b: …and the strategic-by-rule clause survives untouched in the same copy (isolated mutation)" \
+     "the mutation removed more than the Mechanisms-inherited clause"
+fi
+
+# 81: "strategic by rule" ABSENT (AC-K3.2's other half). Mechanisms inherited
+# stays untouched here, the mirror-image isolation check of 80b.
+anchor "$SKILL_MD" 'strategic by rule' 1
+DOCTORED_K3_STRAT="$TMP/skill-k3-strategic-absent.md"
+sed "s/is \\*\\*strategic by rule\\*\\* and is never defaulted/is left to the writer's judgment/" \
+  "$SKILL_MD" > "$DOCTORED_K3_STRAT"
+if has_pin "$DOCTORED_K3_STRAT" "$PIN_K3_STRATEGIC"; then
+  no "81: SKILL.md with strategic-by-rule stripped still passes the strategic pin (pin discriminates)" \
+     "the mutated copy still matched — the pin does not see the removal"
+else
+  ok "81: SKILL.md with strategic-by-rule stripped still passes the strategic pin (pin discriminates)"
+fi
+if has_pin "$DOCTORED_K3_STRAT" "$PIN_K3_MECH"; then
+  ok "81b: …and Mechanisms inherited survives untouched in the same copy (isolated mutation)"
+else
+  no "81b: …and Mechanisms inherited survives untouched in the same copy (isolated mutation)" \
+     "the mutation removed more than the strategic-by-rule clause"
+fi
+
 finish
