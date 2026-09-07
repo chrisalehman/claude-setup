@@ -109,7 +109,7 @@ Widen the budget with a C:\slice brief, then re-dispatch.'
 # so the LINE budget fires first and the word budget is never reached — the mutant
 # that removes the word guard still gets refused, by the other guard, and the arm
 # reads green while proving nothing. Two guards that overlap on a fixture leave the
-# narrower one unmeasured. This fact keeps the line at 85 columns so the word count
+# narrower one unmeasured. This fact keeps the line at 86 columns so the word count
 # is the only thing that can refuse it.
 FX_FACT_SHORT="the run arm has no budget"
 FX_FIX_7="add it to the Suites budget line"
