@@ -353,25 +353,55 @@ bionic_check_wall_unloadable() {  # <row id>
 }
 
 # DEAD-SESSION STATE UNDER .bionic/tmp — the one PROJECT-scoped row in this
-# table, and the one whose party is `user` (fixit 1.5.2 defect; plan D-4/D-5).
-# Every other row is a fact about the machine; this one is a fact about the tree
-# doctor was run in, which is why it renders in doctor's project sections rather
-# than in either machine-state table.
+# table, and the one whose party is `user` (fixit 1.5.2 defect; plan D-4/D-5;
+# REWORDED for R2, ticket-30, plan D-4/D-5 amended). Every other row is a fact
+# about the machine; this one is a fact about the tree doctor was run in, which
+# is why it renders in doctor's project sections rather than in either
+# machine-state table.
 #
-# THE ENUMERATION IS THE LIBRARY'S. `patrol_dead_sessions` is the same function
-# hooks/session-poker.sh's `sweep` walks, so what this detector counts and what
-# that verb deletes cannot come apart — the property that makes naming the verb
-# as the repair honest. Read-only, like every detector here: it stats filenames
-# and asks the kernel about pids.
+# WHAT THIS ROW USED TO FIRE ON, AND WHY THAT IS GONE. Before R2 the detector was
+# `[ -n "$(patrol_dead_sessions …)" ]` — any dead session's leftover state, every
+# time — which is exactly the shape ticket-30 filed against: doctor named the raw
+# script `session-poker.sh sweep` as the fix, and nothing in the product could
+# invoke it, so the row was permanent nagging with no button behind it. Now
+# hooks/session-start.sh calls that same verb itself, silently, once per session
+# start (REQ-R2) — so a dead session's residue is routinely gone again within one
+# Patrol interval, and a row that still fired on "any dead session exists" would
+# be reporting the NORMAL, SELF-HEALING gap between a `/clear` and the next
+# session start as a standing problem. The fact worth a row now is not "residue
+# exists" — it is "the thing that is supposed to clear it did not".
 #
-# THE CURRENT SESSION IS NAMED LIVE BY HAND for the reason the library documents:
-# a session running doctor is live by construction, and a claude-home doctor
-# cannot read must not turn its own state into a row telling it to sweep itself.
+# THE ENUMERATION IS THE HOOK'S OWN MARKER, NOT A RE-WALK. session-start.sh writes
+# `.bionic/tmp/sweep-failed.state` only when its own bounded `sweep` call answered
+# something other than "swept" or "nothing to sweep, everyone here is live" (rc 0
+# or 1) — a genuine refusal, or its own bound expiring. Read-only, like every
+# detector here: it stats one path and, on the positive case, reads one line back.
 bionic_check_dead_session_state() {  # <row id>
+  local f
+  f="$(_bionic_check_sweep_failed_marker)"
+  [ -f "$f" ] && [ ! -L "$f" ]
+}
+
+# THE MARKER'S PATH, for the detector above and for the rc reader below — one
+# spelling, because a second copy of `<root>/.bionic/tmp/sweep-failed.state` is
+# exactly the drift this file exists to prevent elsewhere.
+_bionic_check_sweep_failed_marker() {  # -> the marker path for the project at $PWD
   local root
   root="$(_patrol_repo_root "$PWD" 2>/dev/null)" || root=""
   [ -n "$root" ] || root="$PWD"
-  [ -n "$(patrol_dead_sessions "$root" "${CLAUDE_CODE_SESSION_ID:-}")" ]
+  printf '%s/.bionic/tmp/sweep-failed.state' "$root"
+}
+
+# THE RC A READER PUTS IN WORDS (scope constraint: "naming that the automatic
+# sweep failed and the rc"). Read here, once, rather than doctor re-parsing the
+# marker's own line — the same "one reader" rule every fielded value in this file
+# follows. Empty when the marker is absent or unreadable; the caller decides what
+# an empty rc renders as.
+bionic_check_sweep_failed_rc() {  # -> the rc session-start.sh recorded, or empty
+  local f
+  f="$(_bionic_check_sweep_failed_marker)"
+  [ -f "$f" ] && [ ! -L "$f" ] || { printf ''; return 1; }
+  sed -n 's/.*|rc=\([0-9][0-9]*\).*/\1/p' "$f" 2>/dev/null | head -1
 }
 
 # ─── The table ───────────────────────────────────────────────────────────────
@@ -478,11 +508,12 @@ _bionic_checks_build() {
 
   # THE PROJECT-STATE ROW, and the only one whose party is the reader. No item:
   # setup is machine-scoped and has no project concept, so there is nothing for
-  # it to offer — which is exactly what the defect found when `--all` reported
-  # "nothing left to do" over a directory holding five dead sessions. No label
-  # either: like `plugin` and the two wall rows, this check reaches a reader
-  # through a FIX line rather than through a row of its own name, and doctor's
-  # per-session lines carry the session ids instead.
+  # it to offer. No label either: like `plugin` and the two wall rows, this check
+  # reaches a reader through a FIX line rather than through a row of its own name.
+  # R2 (ticket-30) narrowed WHAT fires it — session-start.sh's own auto-sweep is
+  # the ordinary cure now, so this row is silent unless that auto-sweep itself
+  # failed — but the hint stays the manual verb: it is the one thing left for a
+  # reader to type when the automatic cure did not work on its own.
   _bionic_checks_emit "dead-session-state" "" "bionic_check_dead_session_state" "user" "" "session-poker.sh sweep"
 
   # THE WALLS ARE THE CLI'S TO REPAIR, not setup's. A wall missing from the
