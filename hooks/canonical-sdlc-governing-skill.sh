@@ -19,7 +19,7 @@
 #   sdlc-step: 3
 #   epic: epic-02-checkout
 #   wave: wave-01-checkout-refactor
-#   canonical_sdlc_version: 14
+#   canonical_sdlc_version: <SUPPORTED_SDLC_VERSION, bound near the top of this file>
 #   intent: build
 #   rigor: audited
 #   scale: wave

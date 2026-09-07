@@ -4257,6 +4257,58 @@ cp "$V_GSKILL" "$V_MUT_DIR/canonical-sdlc-governing-skill.clean.sh"
 expect_eq "control: an UNMUTATED copy still agrees with the gate" \
   "$V_ORIGIN_VAL" "$(v_hook_val "$V_MUT_DIR/canonical-sdlc-governing-skill.clean.sh")"
 
+# AC-R6.3 — the governing-skill hook's two HINTS (the version-mismatch Fix line and the
+# missing-frontmatter YAML block) read SUPPORTED_SDLC_VERSION; neither one's source states a
+# digit. Both sites went through the hook before: the Fix line always interpolated the
+# variable, and the YAML block's `canonical_sdlc_version: 14` was a literal until this
+# wave's ed78ae3 pick bound the value near the top of the file and interpolated it there too.
+V_HINT_REPO="$(new_repo "v-hint")"
+V_HINT_PLAN="$V_HINT_REPO/.bionic/docs/plans/epic-99/wave-01-x.plan.md"
+
+# -- the version-mismatch Fix line, against the real (unmutated) hook: a planted write
+# declaring canonical_sdlc_version: 13 (one below origin, never hardcoded as 13 anywhere but
+# in this plant) must be told to set the LIVE value, not seed its own doctored one back. --
+V_MISMATCH_STDERR="$(jq -n --arg p "$V_HINT_PLAN" --arg s "$SID_A" \
+    --arg c $'---\ngoverning-skill: canonical-sdlc\ncanonical_sdlc_version: 13\n---\nbody\n' \
+    '{session_id:$s, tool_name:"Write", tool_input:{file_path:$p, content:$c}}' \
+  | env HOME="$V_HINT_REPO" CLAUDE_CODE_SESSION_ID="$SID_A" bash "$V_GSKILL" 2>&1 >/dev/null)"
+expect_contains "…a planted version-13 write's Fix line names the live value, not 13" \
+  "canonical_sdlc_version: ${V_ORIGIN_VAL}" "$V_MISMATCH_STDERR"
+expect_eq "…and never echoes the doctored value back as the fix" "" \
+  "$(printf '%s' "$V_MISMATCH_STDERR" | grep -oE "set 'canonical_sdlc_version: 13'" || true)"
+
+# -- the missing-frontmatter YAML hint: against the real hook it must print the live value,
+# and against the §V mutant built above (SUPPORTED_SDLC_VERSION=origin+1) it must print THAT
+# value instead — proving the hint tracks the variable rather than a baked-in literal. --
+V_MISSING_C='# no frontmatter here
+'
+V_MISSING_STDERR="$(jq -n --arg p "$V_HINT_PLAN" --arg s "$SID_A" --arg c "$V_MISSING_C" \
+    '{session_id:$s, tool_name:"Write", tool_input:{file_path:$p, content:$c}}' \
+  | env HOME="$V_HINT_REPO" CLAUDE_CODE_SESSION_ID="$SID_A" bash "$V_GSKILL" 2>&1 >/dev/null)"
+expect_contains "…the missing-frontmatter hint prints the live value" \
+  "canonical_sdlc_version: ${V_ORIGIN_VAL}" "$V_MISSING_STDERR"
+
+# A hook copied bare into $V_MUT_DIR resolves its libraries via loader.sh's `../scripts/lib`
+# fallback, which is not there — see .claude/rules/lib-changes-in-worktrees.md's trap, the
+# same shape one level down: a hook run standalone needs its sibling library directory, not
+# just its own file. §S.4's S4_MUT builds that sibling once for the whole suite; this arm
+# needs its own copy since it mutates the hook the shared one does not.
+V_EXEC_MUT="$SANDBOX/version-mutant-exec"
+mkdir -p "$V_EXEC_MUT/hooks" "$V_EXEC_MUT/scripts/lib"
+cp "$LIB_DIR_SRC"/*.sh "$V_EXEC_MUT/scripts/lib/" 2>/dev/null
+cp "$V_MUT_DIR/canonical-sdlc-governing-skill.sh" "$V_EXEC_MUT/hooks/canonical-sdlc-governing-skill.sh"
+V_MISSING_MUT_STDERR="$(jq -n --arg p "$V_HINT_PLAN" --arg s "$SID_A" --arg c "$V_MISSING_C" \
+    '{session_id:$s, tool_name:"Write", tool_input:{file_path:$p, content:$c}}' \
+  | env HOME="$V_HINT_REPO" CLAUDE_CODE_SESSION_ID="$SID_A" \
+    bash "$V_EXEC_MUT/hooks/canonical-sdlc-governing-skill.sh" 2>&1 >/dev/null)"
+expect_contains "…and a MUTATED hook's hint prints ITS value, proving the hint follows the variable" \
+  "canonical_sdlc_version: $((V_ORIGIN_VAL + 1))" "$V_MISSING_MUT_STDERR"
+
+# -- static proof: no site in the hook's own source states the value as a bare digit; every
+# rendering of the field name is followed by the variable, never a literal. --
+expect_eq "…no 'canonical_sdlc_version: <digit>' literal anywhere in the hook's source" "" \
+  "$(grep -nE 'canonical_sdlc_version:[[:space:]]*[0-9]' "$V_GSKILL" || true)"
+
 
 # ============================================================
 section "Section P — the Patrol stamp: the poker WRITES exactly the path the gate READS"
