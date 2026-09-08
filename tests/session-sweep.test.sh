@@ -626,4 +626,114 @@ expect_false "7f.2 a stale failure marker is cleared the next time sweeping work
 expect_no_match "7f.3 …and nothing about a failure prints" \
   "*automatic dead-session sweep failed*" "$OUT"
 
+section "7g. the age gate's COST: one stat call for the whole gate, not one per file"
+# =============================================================================
+#
+# Step-6 review F-4. The gate above ran `stat` once per state file per dead session,
+# and it ran BEFORE the bounded sweep rather than inside it — so its cost was neither
+# bounded nor small. Measured by the reviewer: 400 dead sessions took 13.8 s against
+# the 10-second timeout hooks/hooks.json registers for this hook, and
+# BIONIC_SWEEP_BOUND_SECONDS defaults to that same 10, so the internal guard could
+# never fire first. The user-visible consequence is not a slow sweep: the sweep is
+# invoked AFTER the predecessor report is built, so a CLI timeout discards the report
+# the hook exists to print, on exactly the residue-heavy project it is most useful on.
+#
+# PROCESS COUNTS, NOT A CLOCK. A wall-clock assertion on a machine running sibling
+# agents measures the machine as much as the hook, and the margin between the two
+# shapes at a fixture size a hermetic suite can afford is inside that noise. The
+# `stat` execution count is deterministic, is the thing that actually changed, and is
+# what the wall clock was a proxy for. The before/after timings themselves are
+# measured and recorded in record/wave-01-plugin-only/s24-review-fixes.md rather than
+# asserted here.
+
+# A PATH SHIM that counts every `stat` the hook runs and then execs the real one.
+SS_SHIM="$TMPROOT/shim"; mkdir -p "$SS_SHIM"
+SS_STAT_LOG="$TMPROOT/stat-calls.log"
+SS_REAL_STAT="$(command -v stat)"
+{
+  printf '#!/bin/bash\n'
+  printf 'printf "x\\n" >> "%s"\n' "$SS_STAT_LOG"
+  printf 'exec "%s" "$@"\n' "$SS_REAL_STAT"
+} > "$SS_SHIM/stat"
+chmod +x "$SS_SHIM/stat"
+
+# N dead sessions, every file aged past the interval so the gate opens and the real
+# sweep runs. 60 is enough to separate one-call-per-file (which would be ~720) from
+# one-call-for-the-gate, and small enough that the fixture builds in well under a
+# second.
+ss_plant_dead_many() {  # <repo> <n> [class...]
+  local r="$1" n="$2" i=0 sid; shift 2
+  while [ "$i" -lt "$n" ]; do
+    sid="$(printf 'dead-%04d-aaaa-bbbb-cccccccccccc' "$i")"
+    plant_session "$r" "$sid" "$@"
+    i=$(( i + 1 ))
+  done
+  for f in "$r/.bionic/tmp/"*.state "$r/.bionic/tmp/"*.armed; do
+    [ -e "$f" ] && ss_backdate "$f" 60
+  done
+  return 0
+}
+
+R7G="$(ss_make_project r7g 1s)"
+H7G="$TMPROOT/home-r7g"; mkdir -p "$H7G/sessions"
+ss_plant_dead_many "$R7G" 60 roster preflight engaged sweeper patrol
+SS_FILE_COUNT="$(ls "$R7G/.bionic/tmp/" | wc -l | tr -d ' ')"
+SS_STAMPS="$(ls "$R7G/.bionic/tmp/"patrol-*.state 2>/dev/null | wc -l | tr -d ' ')"
+expect_true "7g.0 the fixture really does carry hundreds of dead-session files" \
+  test "$SS_FILE_COUNT" -ge 300
+
+: > "$SS_STAT_LOG"
+ss_drive_start "$HOOK_SESSION_START" "$R7G" "$H7G" "$CUR_SELF" \
+  "PATH=$SS_SHIM:$PATH" BIONIC_SWEEP_BOUND_SECONDS=2
+SS_STATS="$(wc -l < "$SS_STAT_LOG" | tr -d ' ')"
+
+expect_eq "7g.1 session-start still exits 0" "0" "$RC"
+
+# THE BUDGET IS "ONE PER PATROL STAMP, PLUS A HANDFUL", and the stamps are not the
+# gate's. This hook's predecessor-stamp loop reads one mtime per `patrol-*.state` to
+# age it, and has done since before this wave (5740e3f:475) — it is outside F-4 and is
+# not touched here. Everything ABOVE that floor was the age gate spending one process
+# per state file per dead session: 360 of them at this fixture's size, against the 60
+# the stamps account for. The budget refuses to let them come back.
+expect_true "7g.2 the gate spends no stat per state file: $SS_STATS calls over $SS_FILE_COUNT files, against $SS_STAMPS pre-existing stamp reads" \
+  test "$SS_STATS" -le "$(( SS_STAMPS + 5 ))"
+
+# THE SAME SESSIONS, FEWER FILES EACH — the arm that names F-4's property directly and
+# needs no clock to do it. `roster patrol` gives every dead session two classes instead
+# of five, so the PATROL STAMP COUNT (the pre-existing per-stamp read) is identical and
+# the only thing that changed is how many state files the gate would have had to visit.
+# Before the fix that difference was ~180 processes; a gate that reads mtimes in one
+# call cannot notice the difference at all.
+R7G2="$(ss_make_project r7g2 1s)"
+H7G2="$TMPROOT/home-r7g2"; mkdir -p "$H7G2/sessions"
+ss_plant_dead_many "$R7G2" 60 roster patrol
+SS_FILE_COUNT2="$(ls "$R7G2/.bionic/tmp/" | wc -l | tr -d ' ')"
+SS_STAMPS2="$(ls "$R7G2/.bionic/tmp/"patrol-*.state 2>/dev/null | wc -l | tr -d ' ')"
+: > "$SS_STAT_LOG"
+ss_drive_start "$HOOK_SESSION_START" "$R7G2" "$H7G2" "$CUR_SELF" \
+  "PATH=$SS_SHIM:$PATH" BIONIC_SWEEP_BOUND_SECONDS=2
+SS_STATS2="$(wc -l < "$SS_STAT_LOG" | tr -d ' ')"
+
+expect_eq "7g.2a the control fixture has the same stamp count, so only the file count differs" \
+  "$SS_STAMPS" "$SS_STAMPS2"
+expect_true "7g.2b …and the gate costs the same on $SS_FILE_COUNT files as on $SS_FILE_COUNT2 ($SS_STATS vs $SS_STATS2 stat calls)" \
+  test "$(( SS_STATS - SS_STATS2 ))" -le 5
+
+expect_false "7g.4 …no sweep-failure marker: the gate finished, it was not killed" \
+  test -e "$R7G/.bionic/tmp/sweep-failed.state"
+expect_false "7g.5 …and the dead residue is actually gone, so the gate still OPENED" \
+  test -e "$(f_of "$R7G" roster "dead-0000-aaaa-bbbb-cccccccccccc")"
+
+# THE GATE STILL CLOSES ON A YOUNG FILE, at the same scale — the cheap version must
+# not be cheap because it stopped looking. One fresh file among 60 aged sessions
+# defers the whole batch, which is section 7c's rule at 7g's size.
+R7H="$(ss_make_project r7h 3600s)"
+H7H="$TMPROOT/home-r7h"; mkdir -p "$H7H/sessions"
+ss_plant_dead_many "$R7H" 60 roster preflight engaged sweeper patrol
+touch "$(f_of "$R7H" roster "dead-0059-aaaa-bbbb-cccccccccccc")"
+ss_drive_start "$HOOK_SESSION_START" "$R7H" "$H7H" "$CUR_SELF"
+expect_eq "7h.1 session-start exits 0" "0" "$RC"
+expect_true "7h.2 one young file among 60 dead sessions still defers the whole batch" \
+  test -f "$(f_of "$R7H" roster "dead-0000-aaaa-bbbb-cccccccccccc")"
+
 finish

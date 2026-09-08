@@ -116,8 +116,8 @@ _doctor_self_dir() {
 DOCTOR_LIB="$(cd "$(_doctor_self_dir)" && pwd -P)/lib"
 
 # THIS CHECKOUT'S OWN ROOT (W4 4/4), three levels up from DOCTOR_LIB the same way
-# `_detect_plugin_root`'s fallback climbs from lib to the payload directory (lib ->
-# scripts -> payload), one level further still: a marketplace registration's
+# `plugin_root`'s fallback (lib/roots.sh) climbs from lib to the payload directory
+# (lib -> scripts -> payload), one level further still: a marketplace registration's
 # `source.path` names a REPO root — it holds `.claude-plugin/marketplace.json`
 # beside `payload/`, not the payload directory by itself. Resolved from doctor's
 # own location, never from BIONIC_PLUGIN_ROOT: the "which tree" question this line
@@ -651,8 +651,8 @@ STATUSLINE_NPX_STATE="${STATUSLINE_NPX_FACT##*present=}"
 # which is the only directory the comparison means anything against.
 #
 # THE FALLBACK IS THE SAME ANSWER BY THE OTHER ROUTE, never the cwd:
-# `_detect_plugin_root` honours BIONIC_PLUGIN_ROOT / CLAUDE_PLUGIN_ROOT and
-# otherwise resolves from this script's own location. A registry that names no
+# `plugin_root` (lib/roots.sh) honours BIONIC_PLUGIN_ROOT / CLAUDE_PLUGIN_ROOT and
+# otherwise resolves from the library's own location. A registry that names no
 # installPath at all is a registry `detect_registry_sha_lag` will answer
 # `unknown` about anyway, so nothing is lost and nothing is guessed.
 # AND THE CANDIDATE THAT IS A REPOSITORY WINS, measured rather than assumed.
