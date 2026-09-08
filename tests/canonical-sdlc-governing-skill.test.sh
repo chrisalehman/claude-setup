@@ -1627,6 +1627,51 @@ run_write "$DESIGN_SPECS/k3-7.spec.md" \
   "$(build_spec section=no scale=task step=3 adrs=adrs/epic-01-demo/nowhere.md)"
 assert_eq "adrs_task_scale_untouched exit 0" 0 "$HOOK_EXIT"
 
+# ── THE TWO POINTERS AGREE ABOUT AN ABSOLUTE PATH (Step-6 review F-2) ─────────
+#
+# F-2 read `adrs:` refusing `..` while letting `/etc/passwd` through and called the
+# pair inconsistent. It is not: `resolve_adrs_path` copies `resolve_design_path`
+# clause for clause, and "absolute stands as written" is the project's rule for
+# every frontmatter pointer — the `design:` arm pins it at c3c above
+# ("the same pointer spelled absolute → allow"), and the evidence gate's
+# `resolve_walk_path` and `resolve_requirements_path` open with the same `/*)` case.
+# Absolute is not a hole in the `..` refusal, it is the OTHER spelling of a path the
+# author states outright: `..` is refused because a climbing path is a spelling
+# nobody should have to audit, not because the target must live under the docs root.
+# The arm is presence-only — it neither reads nor writes the file it names — so a
+# spec pointing `adrs:` at an unrelated readable file gets a green light and nothing
+# else, which is the same thing `design:` has always done.
+#
+# CONSISTENT BY DESIGN, so these rows pin the agreement rather than change it. They
+# are the two halves that F-2 saw separately, asserted side by side, so a later
+# hardening pass moves both resolvers or fails here.
+echo "k3-8: sdlc-step 3, adrs: spelled ABSOLUTE to a real file → allow (same as design: c3c)"
+run_write "$DESIGN_SPECS/k3-8.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs="$ADRS_DIR/real.md")"
+assert_eq "adrs_absolute_real exit 0" 0 "$HOOK_EXIT"
+
+echo "k3-8b: …and the design: pointer, spelled absolute in the same spec, agrees"
+run_write "$DESIGN_SPECS/k3-8b.spec.md" \
+  "$(build_spec section=no design="$DESIGN_SPECS/with-design.spec.md" step=3 adrs="$ADRS_DIR/real.md")"
+assert_eq "adrs_and_design_absolute_agree exit 0" 0 "$HOOK_EXIT"
+
+echo "k3-9: sdlc-step 3, adrs: spelled ABSOLUTE to a file that does not exist → block"
+run_write "$DESIGN_SPECS/k3-9.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs="$ADRS_DIR/nowhere-abs.md")"
+assert_eq "adrs_absolute_dangling exit 2" 2 "$HOOK_EXIT"
+assert_contains "adrs_absolute_dangling names the path it could not find" \
+  "$ADRS_DIR/nowhere-abs.md" "$HOOK_VSTDERR"
+
+echo "k3-9b: …and the design: pointer, spelled absolute and dangling, blocks the same way"
+run_write "$DESIGN_SPECS/k3-9b.spec.md" \
+  "$(build_spec section=no design="$DESIGN_SPECS/nowhere-abs.spec.md" step=3)"
+assert_eq "design_absolute_dangling exit 2" 2 "$HOOK_EXIT"
+
+echo "k3-10: sdlc-step 3, adrs: spelled ABSOLUTE with a '..' component → still refused (the climb rule is not about the leader)"
+run_write "$DESIGN_SPECS/k3-10.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs="$ADRS_DIR/../epic-01-demo/real.md")"
+assert_eq "adrs_absolute_dotdot exit 2" 2 "$HOOK_EXIT"
+
 # ============================================================
 # AC-13: the pinned-root wall
 # ============================================================

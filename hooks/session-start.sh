@@ -472,7 +472,7 @@ done
 # lib/patrol.sh's `patrol_interval` takes — the project's configured value, then
 # the script's built-in default, then the last resort. It is asked HERE rather than
 # through `patrol_interval` because that function resolves the poker through
-# `_detect_plugin_root`, i.e. the plugin installed on the machine, while a
+# `plugin_root` (lib/roots.sh), i.e. the plugin installed on the machine, while a
 # SessionStart hook must measure against the tree it was actually launched from.
 ss_interval() {
   local poker="$HOOK_ROOT/hooks/session-poker.sh" s=""
@@ -604,20 +604,47 @@ if [ -d "$TMP" ] && [ ! -L "$TMP" ]; then
   if [ -n "$SS_DEAD_IDS" ]; then
     SS_LIMIT="$(ss_interval)"
     SS_NOW="$(date -u +%s 2>/dev/null || echo 0)"
-    while IFS= read -r SS_SID; do
-      [ -n "$SS_SID" ] || continue
-      while IFS= read -r SS_F; do
-        [ -n "$SS_F" ] || continue
-        SS_MT="$(stat -f %m "$SS_F" 2>/dev/null || stat -c %Y "$SS_F" 2>/dev/null)"
-        case "$SS_MT" in ''|*[!0-9]*) continue ;; esac
-        SS_AGE=$(( SS_NOW - SS_MT )); [ "$SS_AGE" -ge 0 ] || SS_AGE=0
-        [ "$SS_AGE" -lt "$SS_LIMIT" ] && SS_YOUNG=yes
+    # ONE `stat` CALL FOR THE WHOLE GATE, not one per file (Step-6 review F-4).
+    # The shape this replaces ran a `stat` process per state file per dead session,
+    # ahead of the bounded sweep rather than inside it, so its cost was neither
+    # small nor bounded: 400 dead sessions measured 13.8 s against the 10-second
+    # timeout hooks/hooks.json registers for this hook, and BIONIC_SWEEP_BOUND_SECONDS
+    # defaults to that same 10 so the guard below could never fire first. The sweep
+    # runs AFTER the report is built, so a CLI timeout here discards the report — on
+    # exactly the residue-heavy project the report is most useful on.
+    #
+    # THE FILE LIST IS STILL THE LIBRARY'S ANSWER. `patrol_session_state_files` is
+    # asked the same question about the same sessions; only the mtime read is
+    # batched, so "who is dead and what did they leave" cannot come apart between
+    # this hook, the verb and doctor. The collection loop is ONE subshell for the
+    # whole set rather than one per session.
+    SS_FILES="$(while IFS= read -r SS_SID; do
+        [ -n "$SS_SID" ] || continue
+        patrol_session_state_files "$ROOT" "$SS_SID"
       done <<EOF
-$(patrol_session_state_files "$ROOT" "$SS_SID")
-EOF
-    done <<EOF
 $SS_DEAD_IDS
 EOF
+)"
+    if [ -n "$SS_FILES" ]; then
+      # THE FLAVOUR PROBE RUNS ONCE, not per file: BSD `stat -f %m` first, GNU
+      # `-c %Y` second. `tr` + `xargs -0` rather than `stat $SS_FILES` so a residue
+      # far larger than this one cannot overflow the argument list, and so a path
+      # carrying a space is one operand rather than two.
+      SS_MTS="$(printf '%s\n' "$SS_FILES" | tr '\n' '\0' | xargs -0 stat -f %m 2>/dev/null)"
+      [ -n "$SS_MTS" ] || SS_MTS="$(printf '%s\n' "$SS_FILES" | tr '\n' '\0' | xargs -0 stat -c %Y 2>/dev/null)"
+      # A mtime NEWER than the cutoff is a file inside the interval. Spelled as a
+      # comparison against the cutoff rather than as an age subtraction because the
+      # two are the same statement and this one needs no clamp: a mtime in the
+      # future is newer than the cutoff, which is the deferring answer the age
+      # form reached by clamping a negative age to zero.
+      SS_CUTOFF=$(( SS_NOW - SS_LIMIT ))
+      while IFS= read -r SS_MT; do
+        case "$SS_MT" in ''|*[!0-9]*) continue ;; esac
+        if [ "$SS_MT" -gt "$SS_CUTOFF" ]; then SS_YOUNG=yes; break; fi
+      done <<EOF
+$SS_MTS
+EOF
+    fi
   fi
 
   if [ "$SS_YOUNG" = no ]; then

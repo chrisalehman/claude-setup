@@ -41,9 +41,18 @@
 # roots.sh has project_root, and there is still exactly one `project_root()` in the
 # tree.
 #
-# SOURCED, NEVER EXECUTED. Nothing here runs at source time except that one soft
-# source of a sibling, which defines functions and reads nothing — the idiom
-# lib/detect.sh already uses for lib/deps.sh and lib/checks.sh for lib/patrol.sh.
+# SOURCED, NEVER EXECUTED. Two things run at source time and nothing else prints:
+# the soft source of a sibling, which defines functions and reads nothing (the idiom
+# lib/detect.sh already uses for lib/deps.sh and lib/checks.sh for lib/patrol.sh),
+# and the resolution of this file's own directory to an absolute path — see C-3 at
+# `_ROOTS_LIB_DIR` below for why that cannot wait until a resolver is called.
+#
+# ONE OUTPUT CONTRACT: every resolver here prints its answer with `printf '%s\n'`,
+# one line, trailing newline included. Callers read through `$( )`, which strips it,
+# so the rule costs nothing and buys a reader one shape to learn instead of three
+# (Step-6 review R-2, which found `printf '%s'`, `echo` and a bare `pwd -P` sharing
+# this file). tests/roots.test.sh §1d holds it, WITHOUT command substitution — the
+# byte under test is the one `$( )` removes.
 #
 # BASH 3.2. No associative arrays, no `${var^^}`, no `mapfile`.
 #
@@ -58,11 +67,22 @@ _roots_self_dir() {
   case "$self" in */*) echo "${self%/*}" ;; *) echo "." ;; esac
 }
 
+# THE TWO ABSOLUTE PATHS THIS FILE NEEDS, RESOLVED AT SOURCE TIME (Step-6 review C-3).
+# `_roots_self_dir` returns `${BASH_SOURCE[0]%/*}`, which is RELATIVE when the file was
+# sourced by a relative path; a resolver that re-ran it at CALL time answered against
+# whatever the caller's cwd had become — `/` after a `cd`, silently, which is the
+# fail-dangerous direction for a root. The four sibling libraries (refuse.sh, patrol.sh,
+# worktree.sh, detect.sh) all resolve theirs on the way in, and this file now does too.
+# UNCONDITIONAL, and deliberately not inside the soft-source guard below: a caller that
+# already sourced root.sh still needs `plugin_root` to have an answer.
+_ROOTS_LIB_DIR="$(cd "$(_roots_self_dir)" && pwd -P)"
+_ROOTS_PAYLOAD_DIR="$(cd "$_ROOTS_LIB_DIR/../.." && pwd -P)"
+
 # root.sh, THE SOFT SOURCE — see the header. Guarded on the function and not on the
 # file, so a caller that already sourced root.sh pays nothing.
 if ! declare -F project_root >/dev/null 2>&1; then
   # shellcheck source=/dev/null
-  . "$(cd "$(_roots_self_dir)" && pwd -P)/root.sh"
+  . "$_ROOTS_LIB_DIR/root.sh"
 fi
 
 # ─── The one config reader ───────────────────────────────────────────────────
@@ -162,18 +182,21 @@ archive_root() {
 # ─── The machine's roots ─────────────────────────────────────────────────────
 
 # claude_home -> the CLI's config directory, through the override chain every
-# library here already read. RETIRES `_wt_claude_home` (worktree.sh),
-# `_patrol_claude_home` (patrol.sh) and `_dep_claude_home` (deps.sh) — three
-# byte-identical copies, none of them held by any pin.
+# library here already read. DELETES `_wt_claude_home` (worktree.sh) and
+# `_patrol_claude_home` (patrol.sh); `_dep_claude_home` (deps.sh) SURVIVES as a
+# one-line shim that calls this function, kept for its nine call sites in that file
+# rather than re-spelled at each of them. So there are two NAMES for this question
+# and still one ANSWER — which is the property that mattered — and a reader who greps
+# for the second name finds a delegation rather than a second copy (Step-6 review R-1).
 claude_home() {
-  printf '%s' "${BIONIC_CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"
+  printf '%s\n' "${BIONIC_CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}"
 }
 
 # transcripts_dir -> where the CLI writes session transcripts, one directory per
 # slugged cwd. The slug rule belongs to the CLI and is deliberately not reproduced:
 # callers SCAN this directory rather than derive a path into it.
 transcripts_dir() {
-  printf '%s' "$(claude_home)/projects"
+  printf '%s\n' "$(claude_home)/projects"
 }
 
 # plugin_root -> THIS PAYLOAD's own root: the override if one is set, else the
@@ -188,9 +211,9 @@ transcripts_dir() {
 # differ, and collapsing them would make doctor report the registry's answer for the
 # files it is actually reading. See this slice's report, Assumptions.
 plugin_root() {
-  if [ -n "${BIONIC_PLUGIN_ROOT:-}" ]; then echo "$BIONIC_PLUGIN_ROOT"; return; fi
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then echo "$CLAUDE_PLUGIN_ROOT"; return; fi
-  ( cd "$(_roots_self_dir)/../.." && pwd -P )
+  if [ -n "${BIONIC_PLUGIN_ROOT:-}" ]; then printf '%s\n' "$BIONIC_PLUGIN_ROOT"; return; fi
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then printf '%s\n' "$CLAUDE_PLUGIN_ROOT"; return; fi
+  printf '%s\n' "$_ROOTS_PAYLOAD_DIR"
 }
 
 # worktree_root [dir] -> the MAIN checkout's root from anywhere inside the

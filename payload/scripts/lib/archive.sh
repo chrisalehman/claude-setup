@@ -198,7 +198,10 @@ archive_run() {
     i=$((i + 1))
   done
 
-  mkdir -p "$dest_base" || {
+  # `2>/dev/null` and not a capture: the shell's own `mkdir: ...: Permission denied`
+  # would print AHEAD of the line below, and a refusal that says one thing says it
+  # once (Step-6 review F-6). The path and the reason are already in the line.
+  mkdir -p "$dest_base" 2>/dev/null || {
     printf 'bionic: archive refused — could not create %s\n' "$dest_base"
     return 1
   }

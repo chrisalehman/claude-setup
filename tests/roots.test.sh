@@ -188,6 +188,85 @@ expect_eq "worktree_root outside a repository exits non-zero" "1" \
   "$(call worktree_root "$SANDBOX/home" >/dev/null 2>&1; echo $?)"
 
 # ============================================================
+section "1d — the output contract: absolute at source time, one trailing newline"
+# ============================================================
+#
+# TWO STEP-6 REVIEW FINDINGS, both about the SHAPE of an answer rather than its value.
+#
+# C-3: `plugin_root`'s fallback resolved its self-locator at CALL time, so a caller that
+# sourced the library by a relative path and then `cd`-ed away got `/` — a root, silently
+# wrong, in the fail-dangerous direction. The four sibling libraries (refuse.sh, patrol.sh,
+# worktree.sh, detect.sh) all resolve theirs at SOURCE time; this pins that roots.sh does
+# too. Not reachable through today's callers — every one sources absolutely — which is
+# exactly why it needs a pin rather than a caller.
+#
+# R-2: the resolvers disagreed about the trailing newline. Harmless under `$( )`, which
+# strips it, and therefore invisible to every other row in this file — so a caller that
+# ever reads a resolver WITHOUT command substitution gets a different shape per resolver.
+# One rule, `printf '%s\n'`, and this section is what holds it.
+
+# THE RELATIVE-SOURCE DRIVE. `cd` into the library's own directory, source `./roots.sh`,
+# leave, and ask. The expected answer is the same payload root §1b already pins for the
+# absolute-source case — the point is that the two agree.
+expect_eq "plugin_root survives a relative source followed by a cd" \
+  "$(cd "$LIB_DIR/../.." && pwd -P)" \
+  "$( /bin/bash -c 'unset BIONIC_PLUGIN_ROOT CLAUDE_PLUGIN_ROOT
+                    cd "$1" || exit 1
+                    . ./roots.sh || exit 1
+                    cd / || exit 1
+                    plugin_root' _ "$LIB_DIR" 2>/dev/null )"
+
+# THE PAIRED NEGATIVE, so the row above cannot pass on a resolver that ignores its
+# self-locator entirely: the same drive against a COPY of the library two directories
+# deeper answers with that copy's payload root, not with the shipped one.
+DEEP="$SANDBOX/deep/payload/scripts/lib"
+mkdir -p "$DEEP"
+cp "$LIB_DIR/roots.sh" "$LIB_DIR/root.sh" "$DEEP/"
+expect_eq "…and it is genuinely the SOURCED file's location, not a constant" \
+  "$SANDBOX/deep/payload" \
+  "$( /bin/bash -c 'unset BIONIC_PLUGIN_ROOT CLAUDE_PLUGIN_ROOT
+                    cd "$1" || exit 1
+                    . ./roots.sh || exit 1
+                    cd / || exit 1
+                    plugin_root' _ "$DEEP" 2>/dev/null )"
+
+# trailing_nl <fn> <args...> -> yes|no. NOT `$( )` anywhere near the resolver's own
+# output: command substitution strips the very byte under test, which is why no existing
+# row in this file could have caught R-2.
+trailing_nl() {
+  local fn="$1"; shift
+  bash -c '. "$1" || exit 1; fn="$2"; shift 2; "$fn" "$@"' _ "$LIB" "$fn" "$@" \
+    >"$SANDBOX/.nl" 2>/dev/null
+  if [ ! -s "$SANDBOX/.nl" ]; then printf 'empty'; return 0; fi
+  case "$(tail -c 1 "$SANDBOX/.nl" | od -An -tu1 | tr -d ' ')" in
+    10) printf 'yes' ;;
+    *)  printf 'no'  ;;
+  esac
+}
+
+NLP="$SANDBOX/nlproj"; mkdir -p "$NLP/.bionic"
+expect_eq "bionic_root ends with one newline"     "yes" "$(trailing_nl bionic_root "$NLP")"
+expect_eq "docs_root ends with one newline"       "yes" "$(trailing_nl docs_root "$NLP")"
+expect_eq "tmp_root ends with one newline"        "yes" "$(trailing_nl tmp_root "$NLP")"
+expect_eq "archive_root ends with one newline"    "yes" "$(trailing_nl archive_root "$NLP")"
+expect_eq "config_value ends with one newline"    "yes" "$(trailing_nl config_value "$NLP" nope dflt)"
+expect_eq "claude_home ends with one newline"     "yes" "$(trailing_nl claude_home)"
+expect_eq "transcripts_dir ends with one newline" "yes" "$(trailing_nl transcripts_dir)"
+expect_eq "plugin_root ends with one newline"     "yes" "$(trailing_nl plugin_root)"
+
+# THE OVERRIDE PATHS TOO — plugin_root had three exits and R-2 named all three.
+expect_eq "…with BIONIC_PLUGIN_ROOT set" "yes" \
+  "$(BIONIC_PLUGIN_ROOT=/opt/bionic trailing_nl plugin_root)"
+expect_eq "…with CLAUDE_PLUGIN_ROOT set" "yes" \
+  "$(CLAUDE_PLUGIN_ROOT=/opt/from-cli trailing_nl plugin_root)"
+
+# AND THE VALUES ARE UNCHANGED BY THE NEWLINE RULE. Every caller reads through `$( )`,
+# so this is the row that says so out loud rather than assuming it.
+expect_eq "claude_home's VALUE is untouched by the newline rule" "$CLAUDE_CONFIG_DIR" \
+  "$(call claude_home)"
+expect_eq "…and transcripts_dir's" "$CLAUDE_CONFIG_DIR/projects" "$(call transcripts_dir)"
+
+# ============================================================
 section "1c — config_value is the one reader, and docs_root goes through it"
 # ============================================================
 #

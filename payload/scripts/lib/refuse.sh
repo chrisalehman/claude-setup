@@ -171,6 +171,22 @@ _refuse_words() {
 
 # _refuse_json_escape <string> -> the string as a JSON string body (no quotes).
 # Backslash FIRST, or every escape this function adds is escaped again.
+#
+# EVERY CODE POINT BELOW U+0020, not just the five with a short spelling (Step-6
+# review F-1). JSON forbids all of them unescaped, and `detail` is not a field this
+# library controls: farm-out-reminder.sh interpolates the model's own Bash command
+# text into it, scrubbed for secrets and truncated but never filtered for control
+# bytes. One raw 0x01 makes the whole `deny` verdict unparseable, and `deny` exits 0
+# — so the wall would report success while telling the CLI nothing, which is the
+# fail-OPEN direction. The five keep their short forms because a reader of a hook log
+# should see `\n` rather than `\u000a`; the rest go to `\u00XX`.
+#
+# STILL PARAMETER EXPANSION, NEVER `jq` — the header's reason stands, and the sweep
+# adds no external process either: `printf -v` is a builtin and every test below is a
+# glob. NO `[[:cntrl:]]` FAST PATH GUARDING THE LOOP: the class is locale-defined and
+# a locale in which it stopped matching would put us back to emitting invalid JSON,
+# silently. 28 substring globs on the REFUSAL path is not a cost worth that risk.
+# NUL needs no arm: bash cannot hold one in a variable.
 _refuse_json_escape() {
   local s="${1:-}"
   s="${s//\\/\\\\}"
@@ -178,6 +194,13 @@ _refuse_json_escape() {
   s="${s//$'\t'/\\t}"
   s="${s//$'\r'/\\r}"
   s="${s//$'\n'/\\n}"
+  local _c _e _i
+  for _i in 1 2 3 4 5 6 7 8 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31; do
+    printf -v _c "\\$(printf '%03o' "$_i")"
+    case "$s" in *"$_c"*) ;; *) continue ;; esac
+    printf -v _e '\\u%04x' "$_i"
+    s="${s//$_c/$_e}"
+  done
   printf '%s' "$s"
 }
 
