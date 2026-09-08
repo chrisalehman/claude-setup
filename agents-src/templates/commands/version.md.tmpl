@@ -1,0 +1,23 @@
+---
+allowed-tools: Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/version.sh:*)
+description: One line — the installed bionic version, its commit or feed, the install path, and whether this session is running the checkout that line describes.
+---
+<!-- GENERATED-HEADER -->
+
+<!-- INJECT: voice-contract -->
+
+Run:
+
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/version.sh
+```
+
+The printed line begins with:
+
+```
+bionic @@PLUGIN_VERSION@@ (installed)
+```
+
+and continues with the commit or feed, the install path, and whether this session is
+running from the checkout the line describes. Show it exactly as printed, inside a
+single fenced code block. Ask nothing afterwards.
