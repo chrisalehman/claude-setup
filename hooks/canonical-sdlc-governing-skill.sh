@@ -684,15 +684,12 @@ if [ "$UNDER_DOCS_ROOT" -eq 0 ]; then
       adr-*.md)                    MISPLACED_SUBDIR=adrs ;;
       *)                           MISPLACED_SUBDIR=plans ;;
     esac
-    _gs_detail="$(cat <<GS_REFUSE_DETAIL
-canonical-sdlc artifact '$BASENAME' is misplaced.
+    _gs_detail="canonical-sdlc artifact '$BASENAME' is misplaced.
 Path: $FILE_PATH
 It declares canonical-sdlc frontmatter but does not live under this project's docs root.
 Docs root: $DOCS_ROOT
 Fix: write it under $DOCS_ROOT/$MISPLACED_SUBDIR/ instead.
-     (the docs root is <project>/.bionic/docs by default; override with 'docs-root:' in $PROJECT_ROOT_FROM_PATH/.bionic/config.yaml)
-GS_REFUSE_DETAIL
-    )"
+     (the docs root is <project>/.bionic/docs by default; override with 'docs-root:' in $PROJECT_ROOT_FROM_PATH/.bionic/config.yaml)"
     refuse exit2 write "this artifact is outside the docs root" "write it under the docs root" "$_gs_detail"
   fi
   # R9/AC-13: the frontmatter arm above only catches artifacts that
@@ -704,31 +701,24 @@ GS_REFUSE_DETAIL
   # is untouched: TARGET_BIONIC is empty and this arm is silent.
   # [WALL: tests/canonical-sdlc-governing-skill.test.sh]
   if [ -n "$TARGET_BIONIC" ] && [ "$TARGET_BIONIC" != "$PINNED_BIONIC" ]; then
-    _gs_detail="$(cat <<GS_REFUSE_DETAIL
-artifact write targets '$TARGET_BIONIC', not this project's pinned .bionic root.
+    _gs_detail="artifact write targets '$TARGET_BIONIC', not this project's pinned .bionic root.
 Path: $FILE_PATH
 Pinned root: $PINNED_BIONIC
-Fix: write under $PINNED_BIONIC instead — the .bionic tree is pinned to the main repository root at Step 0 and is never re-derived from a worktree or subdirectory copy.
-GS_REFUSE_DETAIL
-    )"
+Fix: write under $PINNED_BIONIC instead — the .bionic tree is pinned to the main repository root at Step 0 and is never re-derived from a worktree or subdirectory copy."
     refuse exit2 write "this write targets an unpinned .bionic root" "write under the pinned root" "$_gs_detail"
   fi
   exit 0
 fi
 
 if [ -z "$CONTENT" ]; then
-  _gs_detail="$(cat <<GS_REFUSE_DETAIL
-canonical-sdlc artifact '$BASENAME' has no content to validate.
+  _gs_detail="canonical-sdlc artifact '$BASENAME' has no content to validate.
 Path: $FILE_PATH
-Fix: use Write to create the artifact with governing-skill frontmatter.
-GS_REFUSE_DETAIL
-  )"
+Fix: use Write to create the artifact with governing-skill frontmatter."
   refuse exit2 write "this artifact has no content to validate" "create it with Write" "$_gs_detail"
 fi
 
 if [ -z "$FRONTMATTER" ]; then
-  _gs_detail="$(cat <<GS_REFUSE_DETAIL
-canonical-sdlc artifact '$BASENAME' is missing a YAML frontmatter block.
+  _gs_detail="canonical-sdlc artifact '$BASENAME' is missing a YAML frontmatter block.
 Path: $FILE_PATH
 Fix: prepend:
   ---
@@ -740,9 +730,7 @@ Fix: prepend:
   intent: <build|bugfix|refactor|tune|spike|incident-response>
   rigor: <tested|peer-reviewed|audited>
   scale: <task|wave|epic>
-  ---
-GS_REFUSE_DETAIL
-  )"
+  ---"
   refuse exit2 write "this artifact has no frontmatter block" "prepend a frontmatter block" "$_gs_detail"
 fi
 
@@ -755,12 +743,9 @@ GOVERNING=$(echo "$FRONTMATTER" \
             | sed -E 's/[[:space:]]+$//')
 
 if [ -z "$GOVERNING" ]; then
-  _gs_detail="$(cat <<GS_REFUSE_DETAIL
-canonical-sdlc artifact '$BASENAME' is missing a 'governing-skill:' frontmatter field.
+  _gs_detail="canonical-sdlc artifact '$BASENAME' is missing a 'governing-skill:' frontmatter field.
 Path: $FILE_PATH
-Fix: add a non-empty 'governing-skill: <skill-id>' line to the frontmatter block.
-GS_REFUSE_DETAIL
-  )"
+Fix: add a non-empty 'governing-skill: <skill-id>' line to the frontmatter block."
   refuse exit2 write "this artifact declares no governing skill" "add a 'governing-skill:' line" "$_gs_detail"
 fi
 
@@ -788,12 +773,9 @@ SDLC_VERSION=$(yaml_get canonical_sdlc_version)
 # line and no path that reaches `exit 0` without passing the whole contract.
 # [WALL: tests/canonical-sdlc-governing-skill.test.sh]
 if [ "$SDLC_VERSION" != "$SUPPORTED_SDLC_VERSION" ]; then
-  _gs_detail="$(cat <<GS_REFUSE_DETAIL
-canonical-sdlc artifact '$BASENAME' declares canonical_sdlc_version: '$SDLC_VERSION'.
+  _gs_detail="canonical-sdlc artifact '$BASENAME' declares canonical_sdlc_version: '$SDLC_VERSION'.
 Path: $FILE_PATH
-Fix: set 'canonical_sdlc_version: ${SUPPORTED_SDLC_VERSION}' — the only supported version.
-GS_REFUSE_DETAIL
-  )"
+Fix: set 'canonical_sdlc_version: ${SUPPORTED_SDLC_VERSION}' — the only supported version."
   refuse exit2 write "this artifact declares an unsupported version" "set the supported version" "$_gs_detail"
 fi
 
@@ -990,8 +972,7 @@ case "$BASENAME" in
         LEASE_MAIN=""
         [ -n "$LEASE_COMMON" ] && LEASE_MAIN=$( cd "$LEASE_COMMON/.." 2>/dev/null && pwd -P )
         if [ -n "$LEASE_MAIN" ] && [ "$LEASE_MAIN" != "$LEASE_TOP" ]; then
-          _gs_detail="$(cat <<GS_REFUSE_DETAIL
-canonical-sdlc plan '$BASENAME' is being written from inside a linked worktree.
+          _gs_detail="canonical-sdlc plan '$BASENAME' is being written from inside a linked worktree.
 
     cwd:           $LEASE_CWD
     worktree:      $LEASE_TOP
@@ -1002,9 +983,7 @@ it lands on the tree's branch, where every hook that reads the active run cannot
 see it until the lease ends.
 
 Fix: write the plan from $LEASE_MAIN. A dispatched agent working in its own tree
-may write there — this refusal is the main thread's alone.
-GS_REFUSE_DETAIL
-          )"
+may write there — this refusal is the main thread's alone."
           refuse exit2 write "this plan is written from a worktree" "write it from the main checkout" "$_gs_detail"
         fi
       fi
@@ -1044,15 +1023,12 @@ if ! echo "$FRONTMATTER" | grep -qE "^[[:space:]]*model_plan[[:space:]]*:"; then
 fi
 
 if [ "${#MISSING[@]}" -gt 0 ]; then
-  _gs_detail="$(cat <<GS_REFUSE_DETAIL
-canonical-sdlc plan '$BASENAME' is missing required frontmatter flags: ${MISSING[*]}
+  _gs_detail="canonical-sdlc plan '$BASENAME' is missing required frontmatter flags: ${MISSING[*]}
 Path: $FILE_PATH
 Fix: run Step 0 (Configure) to set these explicitly. See SKILL.md §Step 0.
 Required opt-in flags:        ${REQUIRED_OPT_IN[*]}
 Required discriminator flags: ${REQUIRED_DISCRIMINATORS[*]}
-Required:                     model_plan
-GS_REFUSE_DETAIL
-  )"
+Required:                     model_plan"
   refuse exit2 write "this plan is missing frontmatter flags" "run Step 0 to set them" "$_gs_detail"
 fi
 
@@ -1078,12 +1054,9 @@ case "$BASENAME" in
       *)
         if [ "$SDLC_STEP" -ge 3 ] 2>/dev/null && [ "$SCALE" != "task" ]; then
           if ! echo "$CONTENT" | grep -qE '^## Verification Matrix'; then
-            _gs_detail="$(cat <<GS_REFUSE_DETAIL
-canonical-sdlc plan '$BASENAME' (sdlc-step ${SDLC_STEP}) is missing a '## Verification Matrix' section.
+            _gs_detail="canonical-sdlc plan '$BASENAME' (sdlc-step ${SDLC_STEP}) is missing a '## Verification Matrix' section.
 Path: $FILE_PATH
-Fix: derive the matrix at Step 0 (see SKILL.md §Step 0 'the Verification Matrix') and lock it at Step 3 approval.
-GS_REFUSE_DETAIL
-            )"
+Fix: derive the matrix at Step 0 (see SKILL.md §Step 0 'the Verification Matrix') and lock it at Step 3 approval."
             refuse exit2 write "this plan has no Verification Matrix" "add the Verification Matrix" "$_gs_detail"
           fi
         fi
@@ -1291,21 +1264,15 @@ case "$BASENAME" in
               while IFS= read -r ADR_ONE; do
                 [ -n "$ADR_ONE" ] || continue
                 if echo "$ADR_ONE" | grep -qE '(^|/)\.\.(/|$)'; then
-                  _gs_detail="$(cat <<GS_REFUSE_DETAIL
-canonical-sdlc spec '$BASENAME' (sdlc-step ${ADRS_STEP}): adrs: '$ADR_ONE' climbs out with a '..' component and is refused.
-Path: $FILE_PATH
-GS_REFUSE_DETAIL
-                  )"
+                  _gs_detail="canonical-sdlc spec '$BASENAME' (sdlc-step ${ADRS_STEP}): adrs: '$ADR_ONE' climbs out with a '..' component and is refused.
+Path: $FILE_PATH"
                   refuse exit2 write "the adrs: path climbs out with '..'" "name it under the docs root" "$_gs_detail"
                 fi
                 ADR_ABS=$(resolve_adrs_path "$ADR_ONE")
                 if [ ! -f "$ADR_ABS" ]; then
-                  _gs_detail="$(cat <<GS_REFUSE_DETAIL
-canonical-sdlc spec '$BASENAME' (sdlc-step ${ADRS_STEP}): adrs: '$ADR_ONE' names no file (resolved to $ADR_ABS).
+                  _gs_detail="canonical-sdlc spec '$BASENAME' (sdlc-step ${ADRS_STEP}): adrs: '$ADR_ONE' names no file (resolved to $ADR_ABS).
 Path: $FILE_PATH
-Fix: draft the ADR at that path, or correct the adrs: pointer.
-GS_REFUSE_DETAIL
-                  )"
+Fix: draft the ADR at that path, or correct the adrs: pointer."
                   refuse exit2 write "the adrs: path names no file" "draft the ADR at that path" "$_gs_detail"
                 fi
               done < <(printf '%s\n' "$ADRS_RAW" | awk '{
@@ -1381,22 +1348,16 @@ case "$BASENAME" in
             ingoal { print }
           ')
           if ! printf '%s\n' "$GOAL_SECTION_BODY" | grep -qE '[^[:space:]]'; then
-            _gs_detail="$(cat <<GS_REFUSE_DETAIL
-canonical-sdlc artifact '$BASENAME' (scale: $SCALE): the 'Goal' section is empty.
+            _gs_detail="canonical-sdlc artifact '$BASENAME' (scale: $SCALE): the 'Goal' section is empty.
 Path: $FILE_PATH
-Fix: write one concise paragraph describing the goal under '## Goal'.
-GS_REFUSE_DETAIL
-            )"
+Fix: write one concise paragraph describing the goal under '## Goal'."
             refuse exit2 write "this artifact's Goal section is empty" "write a paragraph under '## Goal'" "$_gs_detail"
           fi
           ;;
         *)
-          _gs_detail="$(cat <<GS_REFUSE_DETAIL
-canonical-sdlc artifact '$BASENAME' (scale: $SCALE): the first section after the title is not '## Goal'.
+          _gs_detail="canonical-sdlc artifact '$BASENAME' (scale: $SCALE): the first section after the title is not '## Goal'.
 Path: $FILE_PATH
-Fix: open with a '## Goal' section — one concise paragraph — immediately after the title.
-GS_REFUSE_DETAIL
-          )"
+Fix: open with a '## Goal' section — one concise paragraph — immediately after the title."
           refuse exit2 write "the first section is not '## Goal'" "open with a '## Goal' section" "$_gs_detail"
           ;;
       esac

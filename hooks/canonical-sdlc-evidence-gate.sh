@@ -514,15 +514,12 @@ if [ -z "$PLAN" ]; then
   fi
 
   if [ -n "$MISPLACED_PLAN" ]; then
-    _eg_detail="$(cat <<EG_REFUSE_DETAIL
-a canonical-sdlc plan is misplaced — this commit would pass ungated.
+    _eg_detail="a canonical-sdlc plan is misplaced — this commit would pass ungated.
 Misplaced plan: $MISPLACED_PLAN
 Docs root:      $DOCS_ROOT
 The evidence gate searches only the plan directories for this project, so a plan
 outside them silently disables it — no step evidence is checked at all.
-Fix: move it under $DOCS_ROOT/plans/ (or $DOCS_ROOT/incidents/ for an incident run).
-EG_REFUSE_DETAIL
-    )"
+Fix: move it under $DOCS_ROOT/plans/ (or $DOCS_ROOT/incidents/ for an incident run)."
     refuse exit2 commit "a plan sits outside the docs root" "move the plan under docs root" "$_eg_detail"
   fi
 
@@ -623,12 +620,9 @@ MULTI_AGENT=$(frontmatter_get multi_agent)
 SUPPORTED_SDLC_VERSION=14
 
 if [ "$SDLC_VERSION" != "$SUPPORTED_SDLC_VERSION" ]; then
-  _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc evidence-gate: plan declares canonical_sdlc_version: '$SDLC_VERSION'.
+  _eg_detail="canonical-sdlc evidence-gate: plan declares canonical_sdlc_version: '$SDLC_VERSION'.
 Plan: $PLAN
-Fix: set 'canonical_sdlc_version: ${SUPPORTED_SDLC_VERSION}' — the only supported version.
-EG_REFUSE_DETAIL
-  )"
+Fix: set 'canonical_sdlc_version: ${SUPPORTED_SDLC_VERSION}' — the only supported version."
   refuse exit2 commit "this plan declares an unsupported sdlc version" "set the supported version" "$_eg_detail"
 fi
 
@@ -817,12 +811,9 @@ apply_rigor_lanes() {  # $1=id $2=status $3=effective-rigor $4=evidence-value
   case "$eff" in
     peer-reviewed|audited)
       if ! is_proof_shaped "$ev"; then
-        _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc task ${id} evidence must show a command + counts, not prose, at rigor '${eff}' ('${ev}').
+        _eg_detail="canonical-sdlc task ${id} evidence must show a command + counts, not prose, at rigor '${eff}' ('${ev}').
 Plan: $PLAN
-Fix: replace the '- ${id}:' evidence with the actual command invocation and result counts (e.g. 'bash test.sh 12/12 green').
-EG_REFUSE_DETAIL
-        )"
+Fix: replace the '- ${id}:' evidence with the actual command invocation and result counts (e.g. 'bash test.sh 12/12 green')."
         refuse exit2 commit "that task's evidence is prose" "record the command and counts" "$_eg_detail"
       fi
       ;;
@@ -831,24 +822,18 @@ EG_REFUSE_DETAIL
     case "$eff" in
       peer-reviewed|audited)
         if ! echo "$ev" | grep -Ewq 'auditor'; then
-          _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc task ${id} is done at rigor '${eff}' but its evidence has no 'auditor' verdict ('${ev}').
+          _eg_detail="canonical-sdlc task ${id} is done at rigor '${eff}' but its evidence has no 'auditor' verdict ('${ev}').
 Plan: $PLAN
-Fix: record the independent auditor's verdict in the '- ${id}:' evidence line before marking done.
-EG_REFUSE_DETAIL
-          )"
+Fix: record the independent auditor's verdict in the '- ${id}:' evidence line before marking done."
           refuse exit2 commit "that task is done with no auditor verdict" "record the auditor's verdict" "$_eg_detail"
         fi
         ;;
     esac
     if [ "$eff" = "audited" ]; then
       if ! echo "$ev" | grep -Ewq 'critic'; then
-        _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc task ${id} is done at rigor 'audited' but its evidence has no 'critic' verdict ('${ev}').
+        _eg_detail="canonical-sdlc task ${id} is done at rigor 'audited' but its evidence has no 'critic' verdict ('${ev}').
 Plan: $PLAN
-Fix: record the adversarial critic's verdict in the '- ${id}:' evidence line before marking done.
-EG_REFUSE_DETAIL
-        )"
+Fix: record the adversarial critic's verdict in the '- ${id}:' evidence line before marking done."
         refuse exit2 commit "that task is done with no critic verdict" "record the critic's verdict" "$_eg_detail"
       fi
     fi
@@ -883,12 +868,9 @@ enforce_rigor_floor() {  # $1=id  $2=effective-rigor  $3=evidence-value
   if echo "$ev" | grep -Ewq 'waiver'; then
     return 0  # recorded downgrade — proceed at the lower cell lane
   fi
-  _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc task ${id} lowers rigor from '${RIGOR}' to '${eff}', below the plan's floor.
+  _eg_detail="canonical-sdlc task ${id} lowers rigor from '${RIGOR}' to '${eff}', below the plan's floor.
 Plan: $PLAN
-Fix: raise the cell to at least '${RIGOR}', or record a downgrade: add 'waiver: <user> <date> <reason>' to the '- ${id}:' evidence line (Waiver Protocol).
-EG_REFUSE_DETAIL
-  )"
+Fix: raise the cell to at least '${RIGOR}', or record a downgrade: add 'waiver: <user> <date> <reason>' to the '- ${id}:' evidence line (Waiver Protocol)."
   refuse exit2 commit "that task lowers rigor below the floor" "raise the rigor, or waive it" "$_eg_detail"
 }
 
@@ -986,12 +968,9 @@ validate_task_ledger() {
     # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
     eff=$(effective_row_rigor "$rigor_cell")
     if [ "$eff" = "INVALID" ]; then
-      _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc task ${id} has an invalid rigor '${rigor_cell}' (want tested|peer-reviewed|audited).
+      _eg_detail="canonical-sdlc task ${id} has an invalid rigor '${rigor_cell}' (want tested|peer-reviewed|audited).
 Plan: $PLAN
-Fix: set the '${id}' row's rigor cell to one of tested, peer-reviewed, audited before committing.
-EG_REFUSE_DETAIL
-      )"
+Fix: set the '${id}' row's rigor cell to one of tested, peer-reviewed, audited before committing."
       refuse exit2 commit "that task's rigor value is not valid" "use tested, peer-reviewed or audited" "$_eg_detail"
     fi
     # Evidence line for this task in ## SDLC State (anchored so T2 never matches T20).
@@ -1002,21 +981,15 @@ EG_REFUSE_DETAIL
       # THE ADDRESSED UNIT: the tested floor is BLOCKING (slice 4/1).
       addressed_found=1
       if [ -z "$ev" ]; then
-        _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc task ${id} has no '- ${id}:' evidence line in '## SDLC State'.
+        _eg_detail="canonical-sdlc task ${id} has no '- ${id}:' evidence line in '## SDLC State'.
 Plan: $PLAN
-Fix: record the evidence artifact on a '- ${id}:' line before committing.
-EG_REFUSE_DETAIL
-        )"
+Fix: record the evidence artifact on a '- ${id}:' line before committing."
         refuse exit2 commit "that task has no evidence line" "add a '- <id>:' evidence line" "$_eg_detail"
       fi
       if is_placeholder_value "$ev"; then
-        _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc task ${id} evidence line is a placeholder ('${ev}').
+        _eg_detail="canonical-sdlc task ${id} evidence line is a placeholder ('${ev}').
 Plan: $PLAN
-Fix: replace the '- ${id}:' placeholder with the actual evidence artifact before committing.
-EG_REFUSE_DETAIL
-        )"
+Fix: replace the '- ${id}:' placeholder with the actual evidence artifact before committing."
         refuse exit2 commit "that task's evidence line is a placeholder" "replace it with real evidence" "$_eg_detail"
       fi
       # 4/8: FLOOR check — a cell lowering this row below the frontmatter rigor
@@ -1060,12 +1033,9 @@ EG_REFUSE_DETAIL
   # The addressed unit (current: T<n>) must have a row in ## Tasks (BLOCKING).
 # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
   if [ "$addressed_found" -eq 0 ]; then
-    _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc task ${CURRENT} has no row in the '## Tasks' registration table.
+    _eg_detail="canonical-sdlc task ${CURRENT} has no row in the '## Tasks' registration table.
 Plan: $PLAN
-Fix: add a '| ${CURRENT} | <intent> | <rigor> | <description> | <status> |' row to '## Tasks' before committing.
-EG_REFUSE_DETAIL
-    )"
+Fix: add a '| ${CURRENT} | <intent> | <rigor> | <description> | <status> |' row to '## Tasks' before committing."
     refuse exit2 commit "that task has no row in '## Tasks'" "add the task's registration row" "$_eg_detail"
   fi
   return 0
@@ -1088,12 +1058,9 @@ SECTION=$(normalize_newlines "$PLAN" | awk '
   flag')
 
 if [ -z "$SECTION" ]; then
-  _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc plan file has an empty '## SDLC State' section.
+  _eg_detail="canonical-sdlc plan file has an empty '## SDLC State' section.
 Plan: $PLAN
-Fix: populate the section with 'current: N' and per-step evidence lines.
-EG_REFUSE_DETAIL
-  )"
+Fix: populate the section with 'current: N' and per-step evidence lines."
   refuse exit2 commit "'## SDLC State' is empty" "add current: and the step lines" "$_eg_detail"
 fi
 
@@ -1203,12 +1170,9 @@ validate_approved_by() {
     | sed -E 's/^[[:space:]]*approved-by[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
   [ -n "$approved" ] && return 0
 
-  _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc step ${CURRENT} — '## SDLC State' carries no 'approved-by:' line; the Step-3 approval is what admits Step 4.
+  _eg_detail="canonical-sdlc step ${CURRENT} — '## SDLC State' carries no 'approved-by:' line; the Step-3 approval is what admits Step 4.
 Plan: $PLAN
-Fix: on the user's literal 'approved', record 'approved-by: <user> <ISO-UTC> "<verbatim reply>"' under '## SDLC State' — never on silence, a question, or a partial reply.
-EG_REFUSE_DETAIL
-  )"
+Fix: on the user's literal 'approved', record 'approved-by: <user> <ISO-UTC> \"<verbatim reply>\"' under '## SDLC State' — never on silence, a question, or a partial reply."
   refuse exit2 commit "'## SDLC State' has no 'approved-by:' line" "record the literal approval" "$_eg_detail"
 }
 
@@ -1252,12 +1216,9 @@ validate_fails_when() {
     fw=$(echo "$block_txt" | grep -E '^[[:space:]]*fails-when[[:space:]]*:' | head -1 \
       | sed -E 's/^[[:space:]]*fails-when[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
     [ -n "$fw" ] && continue
-    _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc step ${CURRENT} — matrix row '${ac}' names no 'fails-when:'; an eval with no nameable failure is not an eval.
+    _eg_detail="canonical-sdlc step ${CURRENT} — matrix row '${ac}' names no 'fails-when:'; an eval with no nameable failure is not an eval.
 Plan: $PLAN
-Fix: add 'fails-when: <the planted defect this eval must go red on>' to the '${ac}:' block — it is authored in the spec's '## Eval design' and rendered here.
-EG_REFUSE_DETAIL
-    )"
+Fix: add 'fails-when: <the planted defect this eval must go red on>' to the '${ac}:' block — it is authored in the spec's '## Eval design' and rendered here."
     refuse exit2 commit "that matrix row names no 'fails-when:'" "add a 'fails-when:' line" "$_eg_detail"
   done <<< "$rows"
   return 0
@@ -1333,12 +1294,9 @@ validate_prototype_no_matrix_row() {
     [ -n "$ac_slice" ] || continue
     for n in $proto_nums; do
       [ "$ac_slice" = "$n" ] || continue
-      _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc step ${CURRENT} — matrix row '${ac}' names 'slice: ${ac_slice}', a 'kind: prototype' row in '## Slices'; a prototype ships nothing and never discharges a matrix row.
+      _eg_detail="canonical-sdlc step ${CURRENT} — matrix row '${ac}' names 'slice: ${ac_slice}', a 'kind: prototype' row in '## Slices'; a prototype ships nothing and never discharges a matrix row.
 Plan: $PLAN
-Fix: remove the '${ac}:' block, or repoint its 'slice:' to the build slice that cites the prototype's ruling — the prototype's own output is a design decision written to the spec, never a matrix discharge.
-EG_REFUSE_DETAIL
-      )"
+Fix: remove the '${ac}:' block, or repoint its 'slice:' to the build slice that cites the prototype's ruling — the prototype's own output is a design decision written to the spec, never a matrix discharge."
       refuse exit2 commit "that row's slice ships nothing" "point it at a shipping slice" "$_eg_detail"
     done
   done <<< "$rows"
@@ -1372,12 +1330,9 @@ if echo "$CURRENT" | grep -qE '^T[0-9]+$' && [ "$SCALE" = "task" ]; then
 fi
 
 if [ -z "$CURRENT" ] || ! echo "$CURRENT" | grep -qE '^[0-9]+[ab]?$'; then
-  _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc plan file's '## SDLC State' section is missing a valid 'current: N' line.
+  _eg_detail="canonical-sdlc plan file's '## SDLC State' section is missing a valid 'current: N' line.
 Plan: $PLAN
-Fix: add a line like 'current: 5' (or 'current: 8b') before committing.
-EG_REFUSE_DETAIL
-  )"
+Fix: add a line like 'current: 5' (or 'current: 8b') before committing."
   refuse exit2 commit "'## SDLC State' has no valid 'current:' line" "add a 'current: N' line" "$_eg_detail"
 fi
 
@@ -1418,12 +1373,9 @@ LINE=$(echo "$SECTION" \
        | head -1)
 
 if [ -z "$LINE" ]; then
-  _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc plan file has no 'Step ${CURRENT}:' line in '## SDLC State'.
+  _eg_detail="canonical-sdlc plan file has no 'Step ${CURRENT}:' line in '## SDLC State'.
 Plan: $PLAN
-Fix: add the evidence artifact for step ${CURRENT} before committing.
-EG_REFUSE_DETAIL
-  )"
+Fix: add the evidence artifact for step ${CURRENT} before committing."
   refuse exit2 commit "the plan has no line for the current step" "add the step's evidence line" "$_eg_detail"
 fi
 
@@ -1459,12 +1411,9 @@ fi
 BLOCK_STRIPPED=$(echo "$BLOCK" | tr -d '[:space:]')
 
 if [ -z "$BLOCK_STRIPPED" ]; then
-  _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc step ${CURRENT} evidence line is empty in '## SDLC State'.
+  _eg_detail="canonical-sdlc step ${CURRENT} evidence line is empty in '## SDLC State'.
 Plan: $PLAN
-Fix: record the evidence artifact (commit SHA, path, link) for step ${CURRENT} before committing.
-EG_REFUSE_DETAIL
-  )"
+Fix: record the evidence artifact (commit SHA, path, link) for step ${CURRENT} before committing."
   refuse exit2 commit "this step's evidence line is empty" "record the step's evidence" "$_eg_detail"
 fi
 
@@ -1491,12 +1440,9 @@ while IFS= read -r _bline; do
     continue
   fi
   if is_placeholder_value "${_bline#*:}"; then
-    _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc step ${CURRENT} evidence line is a placeholder ("${BLOCK}").
+    _eg_detail="canonical-sdlc step ${CURRENT} evidence line is a placeholder (\"${BLOCK}\").
 Plan: $PLAN
-Fix: replace with the actual evidence artifact before committing.
-EG_REFUSE_DETAIL
-    )"
+Fix: replace with the actual evidence artifact before committing."
     refuse exit2 commit "this step's evidence line is a placeholder" "replace it with real evidence" "$_eg_detail"
   fi
 done <<< "$BLOCK"
@@ -1556,32 +1502,23 @@ validate_requirements_pointer() {
         | sed -E 's/^[[:space:]]*requirements[[:space:]]*:[[:space:]]*//' \
         | sed -E 's/;.*$//' | sed -E 's/[[:space:]]+$//')
   if [ -z "$raw" ]; then
-    _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc step ${CURRENT} — the Step 1 evidence has no 'requirements:' field.
+    _eg_detail="canonical-sdlc step ${CURRENT} — the Step 1 evidence has no 'requirements:' field.
 Plan: $PLAN
-Fix: add 'requirements: specs/<epic>/<wave>.requirements.md' to the Step 1 line, naming the Step-1 artifact (K5).
-EG_REFUSE_DETAIL
-    )"
+Fix: add 'requirements: specs/<epic>/<wave>.requirements.md' to the Step 1 line, naming the Step-1 artifact (K5)."
     refuse exit2 commit "Step 1's evidence names no requirements file" "add a 'requirements:' field" "$_eg_detail"
   fi
 
   if echo "$raw" | grep -qE '(^|/)\.\.(/|$)'; then
-    _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc step ${CURRENT} — Step 1 'requirements: ${raw}' climbs out with a '..' component.
+    _eg_detail="canonical-sdlc step ${CURRENT} — Step 1 'requirements: ${raw}' climbs out with a '..' component.
 Plan: $PLAN
-Fix: name the requirements file relative to the docs root, e.g. 'requirements: specs/<epic>/<wave>.requirements.md'.
-EG_REFUSE_DETAIL
-    )"
+Fix: name the requirements file relative to the docs root, e.g. 'requirements: specs/<epic>/<wave>.requirements.md'."
     refuse exit2 commit "the requirements path climbs out with '..'" "name it under the docs root" "$_eg_detail"
   fi
   abs=$(resolve_requirements_path "$raw")
   if [ ! -f "$abs" ]; then
-    _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc step ${CURRENT} — Step 1 'requirements: ${raw}' does not resolve to a real file (resolved to ${abs}).
+    _eg_detail="canonical-sdlc step ${CURRENT} — Step 1 'requirements: ${raw}' does not resolve to a real file (resolved to ${abs}).
 Plan: $PLAN
-Fix: write the requirements document at that path (K5 Step-1 artifact) before committing at step ${CURRENT}.
-EG_REFUSE_DETAIL
-    )"
+Fix: write the requirements document at that path (K5 Step-1 artifact) before committing at step ${CURRENT}."
     refuse exit2 commit "the named requirements file does not exist" "write the requirements file" "$_eg_detail"
   fi
   return 0
@@ -1632,13 +1569,10 @@ shape_block() {
     fi
   done
   if [ "${#missing[@]}" -gt 0 ]; then
-    _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc step ${CURRENT} evidence missing required field(s): ${missing[*]}
+    _eg_detail="canonical-sdlc step ${CURRENT} evidence missing required field(s): ${missing[*]}
 Plan: $PLAN
 Required for step ${CURRENT}: $*
-Fix: rewrite the Step ${CURRENT} block as multi-line YAML-style fields. See canonical-sdlc/SKILL.md "Evidence (two tiers)" → verification shape table.
-EG_REFUSE_DETAIL
-    )"
+Fix: rewrite the Step ${CURRENT} block as multi-line YAML-style fields. See canonical-sdlc/SKILL.md \"Evidence (two tiers)\" → verification shape table."
     refuse exit2 commit "this step's evidence is missing fields" "add the fields the step owes" "$_eg_detail"
   fi
 }
@@ -1660,20 +1594,14 @@ validate_tests_block() {
   total=$(block_get total)
   prefix=$(step_prefix "$step")
   if ! echo "$pass" | grep -qE '^[0-9]+$' || ! echo "$total" | grep -qE '^[0-9]+$'; then
-    _eg_detail="$(cat <<EG_REFUSE_DETAIL
-${prefix} 'pass:' and 'total:' must be integers (got pass='${pass}', total='${total}').
-Plan: $PLAN
-EG_REFUSE_DETAIL
-    )"
+    _eg_detail="${prefix} 'pass:' and 'total:' must be integers (got pass='${pass}', total='${total}').
+Plan: $PLAN"
     refuse exit2 commit "'pass:' and 'total:' are not both integers" "write both as integers" "$_eg_detail"
   fi
   if [ "$pass" -ne "$total" ]; then
-    _eg_detail="$(cat <<EG_REFUSE_DETAIL
-${prefix} evidence has pass=${pass} but total=${total}; the suite is not fully green.
+    _eg_detail="${prefix} evidence has pass=${pass} but total=${total}; the suite is not fully green.
 Plan: $PLAN
-Fix: do not commit step ${step} until pass equals total.
-EG_REFUSE_DETAIL
-    )"
+Fix: do not commit step ${step} until pass equals total."
     refuse exit2 commit "the suite is not fully green" "make pass equal total" "$_eg_detail"
   fi
 }
@@ -1684,11 +1612,8 @@ validate_document_step() {
   local step="$1" prefix
   if ! block_has adr && ! block_has rca && ! block_has_na; then
     prefix=$(step_prefix "$step")
-    _eg_detail="$(cat <<EG_REFUSE_DETAIL
-${prefix} evidence requires 'adr: <path>', 'rca: <path>' (incident-response mode), or 'n/a: <reason>'.
-Plan: $PLAN
-EG_REFUSE_DETAIL
-    )"
+    _eg_detail="${prefix} evidence requires 'adr: <path>', 'rca: <path>' (incident-response mode), or 'n/a: <reason>'.
+Plan: $PLAN"
     refuse exit2 commit "this step names no adr, rca or n/a" "add adr:, rca: or n/a:" "$_eg_detail"
   fi
 }
@@ -1755,12 +1680,9 @@ validate_ship_step() {
   done
   [ "${#missing[@]}" -eq 0 ] && return 0
   prefix=$(step_prefix "$step")
-  _eg_detail="$(cat <<EG_REFUSE_DETAIL
-${prefix} frontmatter names deploy_target=${DEPLOY_TARGET}, so the close-out owes the deploy trio; missing: ${missing[*]}
+  _eg_detail="${prefix} frontmatter names deploy_target=${DEPLOY_TARGET}, so the close-out owes the deploy trio; missing: ${missing[*]}
 Plan: $PLAN
-Fix: add 'deployed:', 'verified:', and 'monitored:' to the Step ${step} block — or, if this run operates no live surface, set 'deploy_target: n/a' in frontmatter (the trio is owed exactly when a target is named).
-EG_REFUSE_DETAIL
-  )"
+Fix: add 'deployed:', 'verified:', and 'monitored:' to the Step ${step} block — or, if this run operates no live surface, set 'deploy_target: n/a' in frontmatter (the trio is owed exactly when a target is named)."
   refuse exit2 commit "the close-out owes the deploy trio" "add deployed:, verified:, monitored:" "$_eg_detail"
 }
 
@@ -2580,12 +2502,9 @@ validate_dispatch_ledger() {
     /^## / { f=0 }
     f')
   if [ -z "$tasks" ]; then
-    _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc audited multi_agent wave plan has no '## Tasks' dispatched-task ledger section.
+    _eg_detail="canonical-sdlc audited multi_agent wave plan has no '## Tasks' dispatched-task ledger section.
 Plan: $PLAN
-Fix: add a '## Tasks' section (a header plus a 'none dispatched' line is fine); the orchestrator appends one row per dispatched task-shaped unit (D7).
-EG_REFUSE_DETAIL
-    )"
+Fix: add a '## Tasks' section (a header plus a 'none dispatched' line is fine); the orchestrator appends one row per dispatched task-shaped unit (D7)."
     refuse exit2 commit "this wave plan has no '## Tasks' ledger" "add a '## Tasks' section" "$_eg_detail"
   fi
   rows=$(echo "$tasks" | grep -E '^[[:space:]]*\|[[:space:]]*T[0-9]+')
@@ -2598,12 +2517,9 @@ EG_REFUSE_DETAIL
     case "$status" in
       pending|active|done|dropped) : ;;
       *)
-        _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc dispatched task ${id} has invalid status '${status:-empty}' (want pending|active|done|dropped).
+        _eg_detail="canonical-sdlc dispatched task ${id} has invalid status '${status:-empty}' (want pending|active|done|dropped).
 Plan: $PLAN
-Fix: set the '${id}' row's status cell to one of pending|active|done|dropped before committing.
-EG_REFUSE_DETAIL
-        )"
+Fix: set the '${id}' row's status cell to one of pending|active|done|dropped before committing."
         refuse exit2 commit "that dispatched task's status is invalid" "use one of the four statuses" "$_eg_detail"
         ;;
     esac
@@ -2612,21 +2528,15 @@ EG_REFUSE_DETAIL
     ev=$(echo "$SECTION" | grep -E "^[[:space:]]*-?[[:space:]]*${id}[[:space:]]*:" | head -1 \
          | sed -E "s/^[[:space:]]*-?[[:space:]]*${id}[[:space:]]*:[[:space:]]*//" | sed -E 's/[[:space:]]+$//')
     if [ -z "$ev" ]; then
-      _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc dispatched task ${id} has no '- ${id}:' evidence line in '## SDLC State'.
+      _eg_detail="canonical-sdlc dispatched task ${id} has no '- ${id}:' evidence line in '## SDLC State'.
 Plan: $PLAN
-Fix: record the dispatched unit's evidence artifact on a '- ${id}:' line before committing.
-EG_REFUSE_DETAIL
-      )"
+Fix: record the dispatched unit's evidence artifact on a '- ${id}:' line before committing."
       refuse exit2 commit "that dispatched task has no evidence line" "add a '- <id>:' evidence line" "$_eg_detail"
     fi
     if is_placeholder_value "$ev"; then
-      _eg_detail="$(cat <<EG_REFUSE_DETAIL
-canonical-sdlc dispatched task ${id} evidence line is a placeholder ('${ev}').
+      _eg_detail="canonical-sdlc dispatched task ${id} evidence line is a placeholder ('${ev}').
 Plan: $PLAN
-Fix: replace the '- ${id}:' placeholder with the actual evidence artifact before committing.
-EG_REFUSE_DETAIL
-      )"
+Fix: replace the '- ${id}:' placeholder with the actual evidence artifact before committing."
       refuse exit2 commit "the dispatched task's evidence is a placeholder" "replace it with evidence" "$_eg_detail"
     fi
   done <<< "$rows"

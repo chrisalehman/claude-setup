@@ -1743,8 +1743,7 @@ add_absent() { ABSENT="${ABSENT:+$ABSENT,}$1"; }
 # artifacts under a canonical label has declared something, unreadably, and only its
 # author knows which one is the contract.
 if [ -n "$C_DELIVERABLE_CANDIDATES" ]; then
-  _dp_detail="$(cat <<DP_REFUSE_DETAIL
-The label's span offers these candidates:
+  _dp_detail="The label's span offers these candidates:
 $(printf '%s\n' "$C_DELIVERABLE_CANDIDATES" | tr ',' '\n' | sed '/^$/d; s/^/    /')
 
 A deliverable is the ONE durable artifact this agent is contracted to produce, and
@@ -1756,9 +1755,7 @@ Fix: name exactly one deliverable path in the label —
   References and inputs the agent should READ go outside the label's span: on their
   own line, under Read first: or Scope constraint:, or after a blank line.
 
-Then retry the dispatch.
-DP_REFUSE_DETAIL
-  )"
+Then retry the dispatch."
   refuse exit2 dispatch "the deliverable label names several paths" "name exactly one deliverable" "$_dp_detail"
 fi
 
@@ -1832,8 +1829,7 @@ if [ -n "$C_DELIVERABLE" ]; then
   case "$D_ABS" in
     "$REPO"/*) : ;;
     *)
-      _dp_detail="$(cat <<DP_REFUSE_DETAIL
-    ${C_DELIVERABLE}
+      _dp_detail="    ${C_DELIVERABLE}
   resolves to ${D_ABS}, which is not under ${REPO}.
 
 The landing check stats — and, for a directory, walks — whatever this names,
@@ -1842,9 +1838,7 @@ on every stop of the agent that owns it. It must be a path inside this repo.
 Fix: name a repo-relative artifact path in the brief —
     Expected artifact: .bionic/docs/record/my-slice-notes.md
 
-Then retry the dispatch.
-DP_REFUSE_DETAIL
-      )"
+Then retry the dispatch."
       refuse exit2 dispatch "the deliverable is outside this repository" "name a path inside the repo" "$_dp_detail"
       ;;
   esac
@@ -1880,8 +1874,7 @@ fi
 # journal step bail early — the same reasoning §8 applies to the attestation
 # path, read here in the refuse direction.
 if [ -z "$C_DELIVERABLE" ] && [ -z "$C_WAIVER" ]; then
-  _dp_detail="$(cat <<DP_REFUSE_DETAIL
-An agent with nothing durable to produce cannot be checked on: there is no
+  _dp_detail="An agent with nothing durable to produce cannot be checked on: there is no
 path to stat when it reports done, and nothing left behind if it dies quietly.
 
 Fix: declare a durable artifact path with a canonical label —
@@ -1892,9 +1885,7 @@ Fix: declare a durable artifact path with a canonical label —
 Or waive it — the reason is recorded on the session roster either way:
     Deliverable-waiver: <why this dispatch produces nothing durable>
 
-Then retry the dispatch.
-DP_REFUSE_DETAIL
-  )"
+Then retry the dispatch."
   refuse exit2 dispatch "this brief names no deliverable" "add an Expected artifact: line" "$_dp_detail"
 fi
 
@@ -1927,9 +1918,8 @@ fi
 # bookkeeping: without one of the two labels there is no budget on the row, and a guard
 # with no budget to enforce is the prose the incident already proved does not bind.
 if [ -z "$C_FILES" ] && [ -z "$C_SUITES" ]; then
-  _dp_detail="$(cat <<DP_REFUSE_DETAIL
-An agent with no declared instrument runs whatever it decides to run. Two writers
-read "run the impacted suites" as the whole tree and spent 40 minutes each
+  _dp_detail="An agent with no declared instrument runs whatever it decides to run. Two writers
+read \"run the impacted suites\" as the whole tree and spent 40 minutes each
 re-proving the world; the budget only binds when it is on the roster row.
 
 Fix: declare the files this slice will touch, on a line of its own —
@@ -1947,9 +1937,7 @@ brief TEXT, before any shell has expanded anything, and the writer-side guard re
 its command the same way — a name that is still a variable when a hook sees it can
 be neither derived from nor checked against anything.
 
-Then retry the dispatch.
-DP_REFUSE_DETAIL
-  )"
+Then retry the dispatch."
   refuse exit2 dispatch "this brief declares no Files: and no Suites:" "declare Files: or Suites:" "$_dp_detail"
 fi
 
@@ -2018,8 +2006,7 @@ elif [ -n "$IMPACT_COMMAND" ]; then
     wait "$_impact_pid" 2>/dev/null
     if [ "$_impact_overran" -eq 1 ]; then
       rm -f "$_impact_tmp"
-      _dp_detail="$(cat <<DP_REFUSE_DETAIL
-The command named by \`impact-command:\` in .bionic/config.yaml turns the paths this
+      _dp_detail="The command named by \`impact-command:\` in .bionic/config.yaml turns the paths this
 brief declared into the set of suites the agent may run. This hook is registered at a
 10-second timeout, and a hook killed on that timeout does NOT refuse: the dispatch
 would proceed with no roster row at all, and the writer would run with no budget —
@@ -2031,9 +2018,7 @@ the wall defeated by the cost of the wall. So the derivation is bounded here.
 
 Fix: narrow \`Files:\` to the paths this slice really writes, or name the closed set
 directly with \`Suites:\` — a declared set needs no derivation at all. If the command
-itself has become slow, that is the thing to fix: it runs on every dispatch.
-DP_REFUSE_DETAIL
-      )"
+itself has become slow, that is the thing to fix: it runs on every dispatch."
       refuse exit2 dispatch "the impact command did not answer" "fix impact-command in config.yaml" "$_dp_detail"
     fi
     _impact_out=$(cat "$_impact_tmp" 2>/dev/null) || _impact_out=""
@@ -2050,8 +2035,7 @@ else
   # into a budget. AC-20: where no impact command is configured the wall requires the
   # explicit list. Refused rather than passed with an empty set, because the author is
   # holding the brief and one line fixes it.
-  _dp_detail="$(cat <<DP_REFUSE_DETAIL
-\`Files:\` states which paths the slice will touch. Turning that into the set of
+  _dp_detail="\`Files:\` states which paths the slice will touch. Turning that into the set of
 suites the agent may run is the tree's job, and this repository has not named the
 command that asks it.
 
@@ -2061,9 +2045,7 @@ Fix: name the closed set in the brief instead —
 Or configure the derivation once, in .bionic/config.yaml —
     impact-command: bash tests/lib/impact.sh
 
-Then retry the dispatch.
-DP_REFUSE_DETAIL
-  )"
+Then retry the dispatch."
   refuse exit2 dispatch "no impact command is configured here" "set impact-command in config.yaml" "$_dp_detail"
 fi
 
@@ -2123,8 +2105,7 @@ case " $SUITES_ALLOWED " in
       case "$_reg_rows" in ''|*[!0-9]*) _reg_rows=0 ;; esac
       case "$_reg_causes" in ''|*[!0-9]*) _reg_causes=0 ;; esac
       if [ "$_reg_rows" -gt 0 ] && [ "$_reg_causes" -lt "$_reg_rows" ]; then
-        _dp_detail="$(cat <<DP_REFUSE_DETAIL
-Full-tree runs on this roster: ${_reg_rows}. Recorded causes on the plan: ${_reg_causes}.
+        _dp_detail="Full-tree runs on this roster: ${_reg_rows}. Recorded causes on the plan: ${_reg_causes}.
 One regression means one: the tree is proved once, at integration close, and a
 second full run is a deliberate act that owes its reason to the next reader.
 
@@ -2134,9 +2115,7 @@ Fix: record why this one is needed, under \`## SDLC State\` in —
     regression-cause: <why the tree must be re-proved>
 
 Then retry the dispatch. A narrower brief needs no cause: name only the suites
-the change actually reaches.
-DP_REFUSE_DETAIL
-        )"
+the change actually reaches."
         refuse exit2 dispatch "this run already ran the full tree" "record the cause on the plan" "$_dp_detail"
       fi
     fi

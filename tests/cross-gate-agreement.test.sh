@@ -44,6 +44,15 @@ set -uo pipefail
 
 . "$(dirname "$0")/lib/resolve-roots.sh"
 . "$(dirname "$0")/lib/assert.sh"
+
+# THE DETAIL IS ON, FOR THE WHOLE SUITE (slice 13, ruling D-1). Since the migration a
+# wall's user stream is ONE line — `bionic: <verb> refused — <fact> (<fix>)` — and every
+# FACT this file cross-checks between hooks (a resolved path, a derived step, a roster
+# id, a live version constant, a main checkout) travels in `detail`. That is the right
+# reading for this suite and not a loosening: what a USER sees is each hook's own suite's
+# subject and tests/refuse.test.sh's, while this file is about whether two hooks agree
+# about the world. `BIONIC_WALL_VERBOSE=1` is the knob that asks a wall for its facts.
+export BIONIC_WALL_VERBOSE=1
 . "$(dirname "$0")/lib/bound-marker.sh"
 . "$(dirname "$0")/lib/live-answer.sh"
 . "$(dirname "$0")/lib/roster-row.sh"
@@ -471,8 +480,12 @@ verdict_er() {  # <repo> -> yes|no|other:<detail>
 # answer is `yes:<value>` where the others answer `yes`. Callers split on `:`.
 verdict_eg() {  # <repo> -> yes:<current>|no|other:<detail>
   local out st
+  # BIONIC_WALL_VERBOSE=1 (slice 13, ruling D-1). The gate's user line is one sentence
+  # now and the DERIVED VALUE this party reports — the step number the plan has no line
+  # for — lives in `detail`. Reading the line alone would make every row here
+  # `other:<prefix>`; the knob is how the party keeps reporting a value at all.
   out=$(mk_bash_payload "$SID_A" "$SANDBOX/t.jsonl" "$1" "git commit -m x" \
-        | env -u CLAUDE_PROJECT_DIR bash "$PARTY_EG" 2>&1); st=$?
+        | env -u CLAUDE_PROJECT_DIR BIONIC_WALL_VERBOSE=1 bash "$PARTY_EG" 2>&1); st=$?
   if [ "$st" -eq 0 ]; then echo no; return; fi
   case "$out" in
     *"has no 'Step "*)
@@ -514,7 +527,7 @@ verdict_lg() {  # <repo> -> yes|no|other:<detail>
   out=$(mk_stopsweep_payload "$repo" "$SID_LG" false | bash "$PARTY_LG" 2>&1); st=$?
   case "$st" in
     0) echo no ;;
-    2) if printf '%s' "$out" | grep -qF 'LANDING CONTRACT UNMET'; then echo yes; else echo "other:block-no-detail"; fi ;;
+    2) if printf '%s' "$out" | grep -qF "bionic: stop refused — a dispatched agent's contract is unmet"; then echo yes; else echo "other:block-no-detail"; fi ;;
     *) echo "other:exit-$st" ;;
   esac
 }
@@ -6177,7 +6190,7 @@ LA_C0=$(la_check la-target)
 expect_contains "the dispatch wall counts the live open seat against the ceiling" \
   "open=1" "$LA_B0"
 expect_contains "…and refuses on it, which is the answer the count produces" \
-  "BLOCKED" "$LA_B0"
+  "bionic: " "$LA_B0"
 expect_absent "…rather than refusing because it could not read the answer at all" \
   "call ListAgents" "$LA_B0"
 expect_contains "the observation resolves a live target to its agent id" "$LA_TID" "$LA_C0"
@@ -6187,7 +6200,7 @@ expect_absent "…and does not report it as absent from the live set" "not live"
 # take; a target it does not find is not this gate's business and PASSES THROUGH. Those two
 # words ARE the resolution, and they are what moves when the parser does.
 expect_contains "the stop guard has standing over the same target: it blocks the stop" \
-  "BLOCKED" "$LA_G0"
+  "bionic: " "$LA_G0"
 expect_contains "…naming that very target in the observation it asks for" \
   "stop-check.sh la-target" "$LA_G0"
 expect_absent "…rather than passing it through as no agent of this session" \
@@ -6285,7 +6298,7 @@ LA_G5=$(la_guard la-target)
 expect_absent "idle open seat: the dispatch wall stops counting it" "open=1" "$LA_B5"
 expect_absent "…and prints no writers refusal at all" "writers:" "$LA_B5"
 expect_contains "…while the SAME answer still gives the stop guard standing over its target" \
-  "BLOCKED" "$LA_G5"
+  "bionic: " "$LA_G5"
 expect_absent "…which it does not call absent from the recorded answer" "is not live" "$LA_G5"
 
 # MUTATION A — the parser writes `running` into every row. The status the BUDGET reads is
@@ -6310,7 +6323,7 @@ LA_TREE="$BIONIC_HOOKS_DIR/.."
 
 expect_contains "mutation A: the wall counts the finished agent open again — the budget moved" \
   "open=1" "$LA_B5A"
-expect_contains "…and refuses on it" "BLOCKED" "$LA_B5A"
+expect_contains "…and refuses on it" "bionic: " "$LA_B5A"
 # The guard's channel quotes the tree it was loaded from in its `Fix:` lines, so the
 # compare normalises that one path away and is byte-exact on everything else — including
 # the verdict, which is the thing under test.
@@ -6320,7 +6333,7 @@ expect_eq "…while the guard's whole channel is otherwise unchanged — presenc
 expect_contains "…and the normaliser really did rewrite that path (not comparing raw text)" \
   "TREE/stop-check.sh" "$(la_norm "$LA_G5")"
 expect_contains "…and that channel is a real refusal, not an empty string (not vacuous)" \
-  "BLOCKED" "$LA_G5A"
+  "bionic: " "$LA_G5A"
 
 # MUTATION B — the parser drops every row that is not `running`. This is the WRONG place to
 # put S16's rule: filtering in the reader rather than in the budget. Now the GUARD moves and
@@ -8461,7 +8474,7 @@ expect_eq "S18.2 landing-gate.sh calls the shared mapping" "1" \
 expect_eq "S18.2 …and never redefines it" "0" \
   "$(grep -c '^worktree_for_row()' "$S18_LG")"
 expect_eq "S18.2 …declaring the dependency, per the loader contract" "1" \
-  "$(grep -cF 'BIONIC_LIB_WANT="root.sh run.sh session.sh worktree.sh"' "$S18_LG")"
+  "$(grep -cF 'BIONIC_LIB_WANT="refuse.sh root.sh run.sh session.sh worktree.sh"' "$S18_LG")"
 
 # --- §S18.3 the reconciliation re-asks the SAME impact-command key S13's dispatch wall
 # reads — never a second config key, never a second derivation command ---
@@ -9009,28 +9022,30 @@ refuse_direct_files() {
   done | sort
 }
 
-# THE ROSTER — every hook still printing its own refusal, measured 2026-09-07 at
-# wt/s11-refuse-lib. Slice 13 strikes a line per migrated hook. 21 of 21 today.
-REFUSE_ALLOWLIST='agent-context-guard.sh
-background-suite-guard.sh
-canonical-sdlc-evidence-gate.sh
-canonical-sdlc-governing-skill.sh
-context-spend.sh
-dispatch-preflight.sh
-engage.sh
-execution-recorder.sh
-farm-out-reminder.sh
-landing-gate.sh
-patrol-duties-gate.sh
-patrol-revive.sh
-preflight-probe.sh
-protect-database.sh
-protect-main.sh
+# THE ROSTER — the five CLI COMMANDS, and nothing else. Slice 13 migrated every WALL
+# in hooks/ to scripts/lib/refuse.sh; what remains on this list is exempt by RULING D-5
+# (record/wave-01-plugin-only/s12-refusal-wording.md), and the reason is a boundary and
+# not a carve-out:
+#
+#   A WALL refuses an act the platform was taking. The reader is interrupted, so the
+#   refusal is an object rendered once, in one line, by one renderer.
+#   A COMMAND answers a request the agent made. It speaks in its own voice, with its
+#   own exit codes, to a caller that asked it a question.
+#
+# The five commands are `session-poker.sh`, `stop-orders.sh`, `stop-check.sh`,
+# `preflight-probe.sh` and `payload/scripts/spawn-worktree.sh`. Four live in hooks/ and
+# so fall inside this section's glob; spawn-worktree.sh does not and is named here for
+# completeness rather than matched.
+#
+# WHY A SUBSET AND NOT AN EQUALITY. Only `preflight-probe.sh` still spells the scanner's
+# word: measured after the migration, `session-poker.sh`, `stop-orders.sh` and
+# `stop-check.sh` carry no `BLOCKED` at all, because their own voice never used it. An
+# equality against the five would therefore be red for three names that are exempt and
+# silent. The subset check plus the zero-walls check below says the thing that matters —
+# no WALL prints its own refusal, and anything the scanner does find is one of the five.
+REFUSE_ALLOWLIST='preflight-probe.sh
 session-poker.sh
-session-start.sh
-session-sweeper.sh
 stop-check.sh
-stop-guard.sh
 stop-orders.sh'
 
 # --- (a) NON-VACUITY OF THE SEARCH SET. Every count below is over a real glob, and
@@ -9040,14 +9055,30 @@ expect_eq "Refuse the hooks glob is non-empty (this section is not counting over
 expect_eq "Refuse payload/scripts/lib/refuse.sh is on disk" "yes" \
   "$([ -r "$REFUSE_LIB_DIR/refuse.sh" ] && echo yes || echo no)"
 
-# --- (b) THE EQUALITY. The measured set IS the roster — no hook has been added to
-# the tree that prints its own refusal, and none has been migrated without its name
-# being struck from the roster above. ---
+# --- (b) THE SUBSET, AND THE ZERO. Everything the scanner finds is one of the five
+# commands, and no wall is among them. A hook added to the tree that prints its own
+# refusal fails the first; a wall that was never migrated fails the second. ---
 REFUSE_FOUND="$(refuse_direct_files "$BIONIC_HOOKS_DIR")"
-expect_eq "Refuse the set of hooks still printing their own refusal is exactly the dated roster" \
-  "$REFUSE_ALLOWLIST" "$REFUSE_FOUND"
-expect_eq "Refuse …and it is 21 files, the whole hook roster, until slice 13 starts" \
-  "21" "$(printf '%s\n' "$REFUSE_FOUND" | wc -l | tr -d ' ')"
+REFUSE_STRAY=""
+while IFS= read -r _f; do
+  [ -n "$_f" ] || continue
+  case "
+$REFUSE_ALLOWLIST
+" in
+    *"
+$_f
+"*) : ;;
+    *) REFUSE_STRAY="$REFUSE_STRAY$_f " ;;
+  esac
+done <<REFUSE_FOUND_EOF
+$REFUSE_FOUND
+REFUSE_FOUND_EOF
+expect_eq "Refuse every file still printing its own refusal is one of the five CLI commands" \
+  "" "$REFUSE_STRAY"
+expect_eq "Refuse …and no WALL is among them: the hooks-that-are-walls count is zero" "0" \
+  "$(printf '%s\n' "$REFUSE_FOUND" | /usr/bin/grep -cE '^(agent-context-guard|background-suite-guard|canonical-sdlc-evidence-gate|canonical-sdlc-governing-skill|context-spend|dispatch-preflight|engage|execution-recorder|farm-out-reminder|landing-gate|patrol-duties-gate|patrol-revive|protect-database|protect-main|session-start|session-sweeper|stop-guard)\.sh$' || true)"
+expect_eq "Refuse …and the set is what slice 13 left: preflight-probe.sh alone still spells it" \
+  "preflight-probe.sh" "$(printf '%s\n' "$REFUSE_FOUND" | tr -d ' ')"
 
 # --- (c) THE SCANNER FINDS A PLANTED PRINT. Without this the equality above could be
 # passing because the scanner matches nothing at all. A scratch copy of the hook
@@ -9064,7 +9095,7 @@ PLANTED_EOF
 REFUSE_MUT_FOUND="$(refuse_direct_files "$REFUSE_MUT")"
 expect_contains "Refuse MUTANT a planted direct print is found by the scanner" \
   "aaa-planted-wall.sh" "$REFUSE_MUT_FOUND"
-expect_ne "Refuse MUTANT …so the equality above would go RED on a new direct printer" \
+expect_ne "Refuse MUTANT …so the subset check above would go RED on a new direct printer" \
   "$REFUSE_ALLOWLIST" "$REFUSE_MUT_FOUND"
 
 # A comment is not a print. The planted file's own first line says BLOCKED in a
@@ -9087,43 +9118,39 @@ expect_absent "Refuse MUTANT a hook whose only BLOCKED is in a comment is NOT fl
 REFUSE_MIG="$SANDBOX/refuse-mig-hooks"
 mkdir -p "$REFUSE_MIG"
 cp "$BIONIC_HOOKS_DIR"/*.sh "$REFUSE_MIG/"
-anchor "$REFUSE_MIG/protect-main.sh" "BLOCKED" 4
-/usr/bin/grep -v 'BLOCKED' "$BIONIC_HOOKS_DIR/protect-main.sh" > "$REFUSE_MIG/protect-main.sh"
+# preflight-probe.sh is the stand-in now: protect-main.sh no longer prints the word at
+# all, so stripping it from that file would mutate nothing and the arm would pass over
+# an unmutated copy.
+anchor "$REFUSE_MIG/preflight-probe.sh" "BLOCKED" 3
+/usr/bin/grep -v 'BLOCKED' "$BIONIC_HOOKS_DIR/preflight-probe.sh" > "$REFUSE_MIG/preflight-probe.sh"
 REFUSE_MIG_FOUND="$(refuse_direct_files "$REFUSE_MIG")"
 expect_absent "Refuse MUTANT a migrated hook drops out of the measured set" \
-  "protect-main.sh" "$REFUSE_MIG_FOUND"
-expect_ne "Refuse MUTANT …so the equality goes RED until slice 13 strikes its roster line" \
+  "preflight-probe.sh" "$REFUSE_MIG_FOUND"
+expect_ne "Refuse MUTANT …so the measured set moves when a file stops printing its own refusal" \
   "$REFUSE_ALLOWLIST" "$REFUSE_MIG_FOUND"
 
 # --- (e) THE RENDERER ITSELF. One definition of `refuse` in the tree, and it does
 # not print the word this section counts: the new user line is
 # `bionic: <verb> refused — <fact> (<fix>)`, which is what replaces `BLOCKED`. ---
-# THE NAME COLLISION, MEASURED AND NAMED RATHER THAN COUNTED AWAY. There are TWO
-# `refuse()` definitions in the tree, not one: the renderer, and a private one-line
-# helper in payload/scripts/spawn-worktree.sh:131 — `refuse() { contract "FAIL
-# reason=$1"; exit 2; }` — which predates this wave and takes one argument where the
-# renderer takes five.
+# THE NAME COLLISION IS GONE, AND THIS PIN IS WHAT KEEPS IT GONE. There used to be TWO
+# `refuse()` definitions in the tree: the renderer, and a private one-line helper in
+# payload/scripts/spawn-worktree.sh — one argument where the renderer takes five.
+# Nothing sourced both, so nothing was broken; but the day that script needed a refusal
+# and declared refuse.sh, the later definition would silently replace the earlier one
+# and every existing call site would pass one argument to a function that refuses on
+# arity — a wall that starts refusing everything, or a script that starts refusing
+# nothing, depending which order the sourcing landed in. Invisible at the call site.
 #
-# WHY THAT IS A HAZARD AND NOT A CURIOSITY. Nothing sources both today, so nothing is
-# broken. But the day spawn-worktree.sh needs a refusal and declares refuse.sh, the
-# later definition silently replaces the earlier one and every existing call site
-# passes one argument to a function that refuses on arity — a wall that starts
-# refusing everything, or a script that starts refusing nothing, depending which order
-# the sourcing lands in. That is the fail-dangerous shape, and it is invisible at the
-# call site.
-#
-# WHY IT IS NOT FIXED HERE. spawn-worktree.sh is not on slice 11's declared Files, and
-# renaming a function in a script this slice does not own is exactly the ride-along the
-# landing gate exists to refuse. Routed to slice 13, which owns the migration and every
-# file it touches. Until then this row pins the count at TWO and names both sites, so
-# the collision is a fact on the record instead of a surprise — and a THIRD definition
-# still turns it red.
-expect_eq "Refuse refuse() is defined exactly twice: the renderer, and spawn-worktree.sh's private helper (slice 13 renames it)" \
-  "2" "$(/usr/bin/grep -lE '^refuse\(\)' "$REFUSE_TREE/hooks"/*.sh "$(dirname "$REFUSE_LIB_DIR")"/*.sh "$REFUSE_LIB_DIR"/*.sh 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+# Slice 13 renamed the private one to `_wt_refuse` (ruling D-6). The count is ONE now,
+# and a second definition anywhere turns this red.
+expect_eq "Refuse refuse() is defined exactly once in the tree: the renderer" \
+  "1" "$(/usr/bin/grep -lE '^refuse\(\)' "$REFUSE_TREE/hooks"/*.sh "$(dirname "$REFUSE_LIB_DIR")"/*.sh "$REFUSE_LIB_DIR"/*.sh 2>/dev/null | sort -u | wc -l | tr -d ' ')"
 expect_eq "Refuse …and no HOOK defines one, which is the half AC-E1.2 is about" "0" \
   "$(/usr/bin/grep -lE '^refuse\(\)' "$REFUSE_TREE/hooks"/*.sh 2>/dev/null | wc -l | tr -d ' ')"
-expect_eq "Refuse …the second is spawn-worktree.sh's, and it is a one-argument helper" "1" \
-  "$(/usr/bin/grep -cE '^refuse\(\) \{ contract ' "$(dirname "$REFUSE_LIB_DIR")/spawn-worktree.sh")"
+expect_eq "Refuse …spawn-worktree.sh's private helper is renamed and still one-argument" "1" \
+  "$(/usr/bin/grep -cE '^_wt_refuse\(\) \{ contract ' "$(dirname "$REFUSE_LIB_DIR")/spawn-worktree.sh")"
+expect_eq "Refuse …and it defines no bare refuse() any more" "0" \
+  "$(/usr/bin/grep -cE '^refuse\(\)' "$(dirname "$REFUSE_LIB_DIR")/spawn-worktree.sh" || true)"
 expect_eq "Refuse …and that one definition is refuse.sh's" "1" \
   "$(/usr/bin/grep -cE '^refuse\(\)' "$REFUSE_LIB_DIR/refuse.sh")"
 expect_eq "Refuse the renderer prints no BLOCKED of its own" "0" \
