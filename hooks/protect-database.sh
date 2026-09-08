@@ -21,7 +21,7 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 # missing would arm this wall in exactly the sessions Chris's ruling takes it out of.
 # The direction is chosen by the cost of the mistake: a destructive command that slips
 # through a broken plugin is one command, and the plugin being broken is loud.
-BIONIC_LIB_WANT="root.sh run.sh session.sh"
+BIONIC_LIB_WANT="refuse.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -171,6 +171,8 @@ BIONIC_LOADER_REFUSE
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "protect-database"; fi
 # shellcheck source=/dev/null
+. "$BIONIC_LIB/refuse.sh"
+# shellcheck source=/dev/null
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"
@@ -208,16 +210,14 @@ if echo "$COMMAND" | grep -qEi '(psql|mysql|sqlite3|mongosh|mongo |clickhouse-cl
   # DROP TABLE / DATABASE / SCHEMA / INDEX / COLLECTION / VIEW / FUNCTION / TRIGGER / PROCEDURE / SEQUENCE / TYPE
   # [WALL: tests/protect-database.test.sh]
   if echo "$CMD_UPPER" | grep -qE 'DROP\s+(TABLE|DATABASE|SCHEMA|INDEX|COLLECTION|VIEW|FUNCTION|TRIGGER|PROCEDURE|SEQUENCE|TYPE)'; then
-    echo "BLOCKED: Destructive database operation (DROP) detected." >&2
-    echo "Run destructive migrations manually from your terminal." >&2
-    exit 2
+    refuse exit2 sql "this command DROPs a database object" "run the migration yourself" \
+      "The matched pattern is a DROP of a table, database, schema, index, collection, view, function, trigger, procedure, sequence or type. A migration run from your own terminal is the route."
   fi
 
   # TRUNCATE [WALL: tests/protect-database.test.sh]
   if echo "$CMD_UPPER" | grep -qE 'TRUNCATE\s'; then
-    echo "BLOCKED: Destructive database operation (TRUNCATE) detected." >&2
-    echo "Run destructive migrations manually from your terminal." >&2
-    exit 2
+    refuse exit2 sql "this command TRUNCATEs a table" "run the migration yourself" \
+      "The matched pattern is TRUNCATE. A migration run from your own terminal is the route."
   fi
 
   # DELETE without WHERE (mass delete) — check per-statement to avoid multi-statement bypass
@@ -225,34 +225,30 @@ if echo "$COMMAND" | grep -qEi '(psql|mysql|sqlite3|mongosh|mongo |clickhouse-cl
   while IFS= read -r stmt; do
     stmt_upper=$(echo "$stmt" | tr '[:lower:]' '[:upper:]')
     if echo "$stmt_upper" | grep -qE 'DELETE\s+FROM\s' && ! echo "$stmt_upper" | grep -qE 'DELETE\s+FROM\s+\S+\s+WHERE\s'; then
-      echo "BLOCKED: DELETE without WHERE clause detected." >&2
-      echo "Run destructive operations manually from your terminal." >&2
-      exit 2
+      refuse exit2 sql "this DELETE has no WHERE clause" "add a WHERE clause" \
+        "The matched pattern is a DELETE FROM with no WHERE in the same statement. An unbounded DELETE empties the table."
     fi
   done <<< "$(echo "$CMD_UPPER" | tr ';' '\n')"
 
   # ALTER TABLE ... DROP COLUMN [WALL: tests/protect-database.test.sh]
   if echo "$CMD_UPPER" | grep -qE 'ALTER\s+TABLE\s+.*DROP\s'; then
-    echo "BLOCKED: Destructive ALTER TABLE (DROP) detected." >&2
-    echo "Run destructive migrations manually from your terminal." >&2
-    exit 2
+    refuse exit2 sql "this ALTER TABLE drops a column or key" "run the migration yourself" \
+      "The matched pattern is an ALTER TABLE that DROPs. A migration run from your own terminal is the route."
   fi
 
   # MongoDB destructive operations (JavaScript method calls)
   # [WALL: tests/protect-database.test.sh]
   if echo "$COMMAND" | grep -qEi '(\.drop\(\)|\.dropDatabase\(\)|\.deleteMany\(\s*\{\s*\}\s*\))'; then
-    echo "BLOCKED: Destructive MongoDB operation detected." >&2
-    echo "Run destructive operations manually from your terminal." >&2
-    exit 2
+    refuse exit2 sql "this drops or wipes a MongoDB collection" "run it from your own terminal" \
+      "The matched pattern is a collection drop, a database drop, or an unfiltered many-document delete. Run it from your own terminal if you mean it."
   fi
 fi
 
 # Also catch raw SQL piped or passed inline (e.g., echo "DROP TABLE..." | psql)
 # [WALL: tests/protect-database.test.sh]
 if echo "$CMD_UPPER" | grep -qE '(DROP\s+(TABLE|DATABASE|SCHEMA|VIEW|FUNCTION|TRIGGER|PROCEDURE)|TRUNCATE\s)' && echo "$COMMAND" | grep -qEi '(\|\s*(psql|mysql|sqlite3|mongosh)|<< )'; then
-  echo "BLOCKED: Destructive SQL piped to database client." >&2
-  echo "Run destructive migrations manually from your terminal." >&2
-  exit 2
+  refuse exit2 sql "destructive SQL is piped to a db client" "run the migration yourself" \
+    "The matched pattern is a DROP or TRUNCATE piped or heredoc-fed into psql, mysql, sqlite3 or mongosh. Piping hides the statement from the argv check."
 fi
 
 exit 0
