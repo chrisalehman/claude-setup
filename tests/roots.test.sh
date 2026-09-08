@@ -344,6 +344,9 @@ section "2c — the governing-skill hook SCAFFOLDS under docs-root: (the live de
 # missing one frontmatter flag proves nothing about the scaffold. The session id is pinned
 # in the environment as well as the payload because `session_id` prefers the environment,
 # and an unpinned call would engage against the id of whatever session is running the suite.
+# IT ALSO OPENS WITH `## Goal`, for the same reason: K5.4 (wave-01 slice 21) made that the
+# first section every canonical-sdlc artifact carries, and content without it meets this
+# hook's own write refusal before the scaffold at `exit 0` is ever reached.
 
 gs_payload() {  # <cwd> <file_path> -> a complete PreToolUse Write payload on stdout
   jq -nc --arg cwd "$1" --arg fp "$2" --arg c "$GS_CONTENT" \
@@ -369,6 +372,10 @@ model_plan: orchestrator=claude-fable-5-1
 ---
 
 # Spec
+
+## Goal
+
+One resolver per root, so every hook and script reads the same docs tree.
 
 ## Design
 
