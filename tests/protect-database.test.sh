@@ -203,4 +203,78 @@ rm -f "$PLAIN_REPO/.bionic/tmp/engaged-$SID.state"
 : > "$PLAIN_REPO/.bionic/tmp/engaged-11111111-2222-3333-4444-555555555555.state"
 unengaged "AC-20 ...another session's marker is not engagement" "psql -c 'DROP TABLE users'"
 
+# ============================================================
+section "AC-E1.3/E1.5: every refusal is one line, in the criterion's shape"
+# ============================================================
+#
+# fails-when: a refusal reaches the user as more than one line, or in any shape but
+# `bionic: <verb> refused — <fact> (<fix ≤ 40 cols>)`. All six of this wall's refusal
+# sites are tripped for real and each is asserted against the criterion's own regex
+# and then against the exact wording the ruled table gives it
+# (s12-refusal-wording-draft.md §1 rows 5 through 10). The pattern that matched is the
+# value the one line had no room for; it lives in `detail`, behind the knob.
+
+PDB_LINE_RE='^bionic: [a-z-]+ refused — .+ \(.{1,40}\)$'
+pdb_stderr() {  # <command> -> the hook's stderr, verbatim
+  pdb_payload "$ENGAGED_REPO" "$1" \
+    | env CLAUDE_CODE_SESSION_ID="$SID" CLAUDE_PROJECT_DIR= bash "$HOOK" \
+        2>"$SANDBOX/.err" >/dev/null || true
+  cat "$SANDBOX/.err"
+}
+
+pdb_one_line() {  # <label> <command> <expected line>
+  local _lbl="$1" _cmd="$2" _want="$3" _got _n
+  _got="$(pdb_stderr "$_cmd")"
+  _n="$(wc -l < "$SANDBOX/.err" | tr -d ' ')"
+  if [ "$_n" = "1" ]; then ok "$_lbl: exactly one line on the user stream"
+  else no "$_lbl: exactly one line on the user stream" "got $_n lines"; fi
+  if printf '%s' "$_got" | /usr/bin/grep -qE "$PDB_LINE_RE"; then
+    ok "$_lbl: in AC-E1.3's shape"
+  else
+    no "$_lbl: in AC-E1.3's shape" "line=[$_got]"
+  fi
+  if [ "$_got" = "$_want" ]; then ok "$_lbl: and it is the table's own wording"
+  else no "$_lbl: and it is the table's own wording" "want [$_want] got [$_got]"; fi
+}
+
+pdb_one_line "row 5 (a dropped object)" "psql -c 'DROP TABLE users'" \
+  "bionic: sql refused — this command DROPs a database object (run the migration yourself)"
+pdb_one_line "row 6 (an emptied table)" "psql -c 'TRUNCATE users'" \
+  "bionic: sql refused — this command TRUNCATEs a table (run the migration yourself)"
+pdb_one_line "row 7 (an unbounded DELETE)" "psql -c 'DELETE FROM users'" \
+  "bionic: sql refused — this DELETE has no WHERE clause (add a WHERE clause)"
+pdb_one_line "row 8 (a dropped column)" "psql -c 'ALTER TABLE users DROP COLUMN age'" \
+  "bionic: sql refused — this ALTER TABLE drops a column or key (run the migration yourself)"
+pdb_one_line "row 9 (a wiped collection)" "mongosh --eval 'db.dropDatabase()'" \
+  "bionic: sql refused — this drops or wipes a MongoDB collection (run it from your own terminal)"
+# THE HEREDOC FORM, not the client pipe: a command naming a client reaches the arms
+# above first (the outer guard matches the same client names), so the piped-SQL arm is
+# reachable only through the `<< ` half of its own condition. Measured, not assumed --
+# the client-pipe spelling renders row 5's line.
+pdb_one_line "row 10 (statement hidden in a heredoc)" \
+  "$(printf 'bash << %s\nDROP TABLE users\nEOF\n' "'EOF'")" \
+  "bionic: sql refused — destructive SQL is piped to a db client (run the migration yourself)"
+
+# AC-E1.5 end to end through this wall: the matched pattern is absent from the one
+# line and present under the knob. Both halves together, so neither passes over an
+# empty stream.
+PDB_OFF="$(pdb_stderr "psql -c 'TRUNCATE users'")"
+case "$PDB_OFF" in
+  *"The matched pattern"*) no "AC-E1.5 the matched pattern is NOT on the one line" ;;
+  *) ok "AC-E1.5 the matched pattern is NOT on the one line" ;;
+esac
+pdb_payload "$ENGAGED_REPO" "psql -c 'TRUNCATE users'" \
+  | env CLAUDE_CODE_SESSION_ID="$SID" CLAUDE_PROJECT_DIR= BIONIC_WALL_VERBOSE=1 \
+      bash "$HOOK" 2>"$SANDBOX/.errv" >/dev/null || true
+PDB_ON="$(cat "$SANDBOX/.errv")"
+case "$PDB_ON" in
+  *"The matched pattern"*) ok "AC-E1.5 …and BIONIC_WALL_VERBOSE=1 puts it there" ;;
+  *) no "AC-E1.5 …and BIONIC_WALL_VERBOSE=1 puts it there" "got=[$PDB_ON]" ;;
+esac
+if printf '%s' "$PDB_ON" | head -1 | /usr/bin/grep -qE "$PDB_LINE_RE"; then
+  ok "AC-E1.5 …with the one line still first"
+else
+  no "AC-E1.5 …with the one line still first"
+fi
+
 finish

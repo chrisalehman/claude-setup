@@ -128,7 +128,13 @@ USAGE
 # Two failure classes, two exit codes, because callers distinguish them:
 #   2  refused — a precondition said no; nothing was created, nothing to undo.
 #   1  aborted — creation had begun and verification failed; it has been undone.
-refuse() { contract "FAIL reason=$1"; exit 2; }
+# RENAMED FROM `refuse` (slice 13, ruling D-6). scripts/lib/refuse.sh defines a
+# five-argument `refuse` for the walls; this is a private one-argument helper and the
+# names collided. Nothing sources both today, but the day this script needs a refusal
+# and declares refuse.sh, the later definition would silently replace the earlier one
+# and every call site here would pass one argument to a function that refuses on arity.
+# The underscore says private and the `_wt_` says whose.
+_wt_refuse() { contract "FAIL reason=$1"; exit 2; }
 
 main_root=""; wt=""; branch=""; created=0
 
@@ -158,29 +164,29 @@ cmd_create() {
   local base="${1:-}" parent="${3:-}"
   branch="${2:-}"
 
-  [ -n "$base" ] && [ -n "$branch" ] || { usage >&2; refuse usage; }
+  [ -n "$base" ] && [ -n "$branch" ] || { usage >&2; _wt_refuse usage; }
 
-  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || refuse not-a-git-repo
-  main_root="$(worktree_root)" || refuse repo-root-unresolvable
-  [ -n "$main_root" ] || refuse repo-root-unresolvable
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || _wt_refuse not-a-git-repo
+  main_root="$(worktree_root)" || _wt_refuse repo-root-unresolvable
+  [ -n "$main_root" ] || _wt_refuse repo-root-unresolvable
 
   # The state directory has to be there BEFORE anything is created: planting a
   # link to a directory that does not exist would produce an attestation whose
   # last field names nothing, which is worse than no worktree.
-  [ -d "$(bionic_root "$main_root")" ] || refuse no-bionic-dir
+  [ -d "$(bionic_root "$main_root")" ] || _wt_refuse no-bionic-dir
 
   local base_sha
   base_sha="$(git -C "$main_root" rev-parse --verify --quiet "${base}^{commit}" 2>/dev/null)"
-  [ -n "$base_sha" ] || refuse base-not-a-commit
+  [ -n "$base_sha" ] || _wt_refuse base-not-a-commit
 
-  git check-ref-format --branch "$branch" >/dev/null 2>&1 || refuse invalid-branch-name
+  git check-ref-format --branch "$branch" >/dev/null 2>&1 || _wt_refuse invalid-branch-name
   if git -C "$main_root" show-ref --verify --quiet "refs/heads/${branch}"; then
-    refuse branch-exists
+    _wt_refuse branch-exists
   fi
 
   # `..` as a path COMPONENT only: a directory whose name merely contains dots
   # is nobody's escape attempt.
-  case "/${parent}/" in */../*) refuse parent-traversal ;; esac
+  case "/${parent}/" in */../*) _wt_refuse parent-traversal ;; esac
 
   local parent_abs
   if [ -z "$parent" ]; then
@@ -191,15 +197,15 @@ cmd_create() {
       *)  parent_abs="${main_root}/${parent}" ;;
     esac
   fi
-  mkdir -p "$parent_abs" 2>/dev/null || refuse parent-dir-uncreatable
-  parent_abs="$(cd "$parent_abs" && pwd -P)" || refuse parent-dir-unresolvable
+  mkdir -p "$parent_abs" 2>/dev/null || _wt_refuse parent-dir-uncreatable
+  parent_abs="$(cd "$parent_abs" && pwd -P)" || _wt_refuse parent-dir-unresolvable
 
   # A slashed branch name (wave/17-03-command-surface) becomes a flat directory
   # named for its last component. Two branches whose last components collide
   # are caught by the existing-path refusal below rather than by silently
   # nesting one inside the other.
   wt="${parent_abs}/${branch##*/}"
-  if [ -e "$wt" ] || [ -L "$wt" ]; then refuse target-path-exists; fi
+  if [ -e "$wt" ] || [ -L "$wt" ]; then _wt_refuse target-path-exists; fi
 
   created=1
   git -C "$main_root" worktree add --quiet -b "$branch" "$wt" "$base_sha" >/dev/null 2>&1 \
@@ -220,20 +226,20 @@ cmd_create() {
 
 cmd_remove() {
   local target="${1:-}"
-  [ -n "$target" ] || { usage >&2; refuse usage; }
-  [ -d "$target" ] || refuse no-such-worktree
+  [ -n "$target" ] || { usage >&2; _wt_refuse usage; }
+  [ -d "$target" ] || _wt_refuse no-such-worktree
 
   # A linked worktree's `.git` is a FILE pointing into the shared repository;
   # the main checkout's is a directory. That distinction is the guard against
   # being handed the main checkout to delete.
-  [ -f "${target}/.git" ] || refuse not-a-linked-worktree
+  [ -f "${target}/.git" ] || _wt_refuse not-a-linked-worktree
 
-  local wt_abs; wt_abs="$(cd "$target" && pwd -P)" || refuse no-such-worktree
+  local wt_abs; wt_abs="$(cd "$target" && pwd -P)" || _wt_refuse no-such-worktree
   local wt_branch; wt_branch="$(git -C "$wt_abs" rev-parse --abbrev-ref HEAD 2>/dev/null)"
-  [ -n "$wt_branch" ] || refuse worktree-head-unreadable
+  [ -n "$wt_branch" ] || _wt_refuse worktree-head-unreadable
 
   local root; root="$(worktree_root "$wt_abs")"
-  [ -n "$root" ] || refuse repo-root-unresolvable
+  [ -n "$root" ] || _wt_refuse repo-root-unresolvable
 
   # A LEGACY link (C2) — one an older bionic planted, since nothing plants one
   # now. git reads it as an untracked file and would refuse to remove the tree
@@ -245,7 +251,7 @@ cmd_remove() {
   fi
 
   if ! git -C "$root" worktree remove "$wt_abs" >/dev/null 2>&1; then
-    refuse worktree-remove-refused
+    _wt_refuse worktree-remove-refused
   fi
 
   # kept=yes is not a status field, it is the contract: the merge decision
@@ -270,6 +276,6 @@ case "${1:-}" in
   remove) shift; cmd_remove "$@" ;;
   land)   shift; cmd_land "$@" ;;
   -h|--help|help) usage; exit 0 ;;
-  "") usage >&2; refuse usage ;;
-  *) usage >&2; refuse unknown-verb ;;
+  "") usage >&2; _wt_refuse usage ;;
+  *) usage >&2; _wt_refuse unknown-verb ;;
 esac

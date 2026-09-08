@@ -50,7 +50,7 @@ CWD="${CLAUDE_PROJECT_DIR:-}"
 # the hook prints one line and steps aside. Until 1.4.0 it denied instead, on the
 # same reasoning the two irreversible-action walls still use; the cost of THAT
 # mistake is what separates them.
-BIONIC_LIB_WANT="cmd-class.sh root.sh run.sh session.sh"
+BIONIC_LIB_WANT="cmd-class.sh refuse.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -157,11 +157,30 @@ loader_fail_closed() {
     "bash $_bl_root/scripts/doctor.sh"|\
     "bash $_bl_root/scripts/setup.sh") exit 0 ;;
   esac
-  cat >&2 <<BIONIC_LOADER_REFUSE
-BLOCKED: $1 cannot load its library (${BIONIC_LIB_MISSING:-the bionic library}), so it
-cannot read this command. A wall that cannot read a command refuses it rather than
-waving it through.
+  # THE ONE LINE, AND THE ONE PLACE IN THE TREE THAT SPELLS IT WITHOUT
+  # scripts/lib/refuse.sh. Every other wall calls `refuse`; this one cannot, because
+  # refuse.sh is IN the library this function exists to report missing. So the row-1
+  # wording (record/wave-01-plugin-only/s12-refusal-wording-draft.md §1) is written
+  # out here by hand, in the renderer's exact format, and tests/loader.test.sh §F
+  # drives it against AC-E1.3's own regex so the two spellings cannot drift.
+  #
+  # THE NAME IS BOUNDED IN PURE BASH for the same reason: `bionic_trunc` is in the
+  # missing library. 23 columns of prefix, 31 of fact after the name, 3 of brackets
+  # and 18 of fix leaves 25 for the hook's name, and the longest caller
+  # (`canonical-sdlc-evidence-gate`, 28) is over it — F-8's runtime-width hazard,
+  # arriving at the one site that cannot ask the truncator. The ellipsis is spent
+  # from inside the budget, exactly as bionic_trunc spends it.
+  _bl_who="${1:-a bionic hook}"
+  if [ "${#_bl_who}" -gt 25 ]; then _bl_who="${_bl_who:0:24}…"; fi
+  printf 'bionic: load refused — %s cannot load the bionic library (run /bionic:doctor)\n' "$_bl_who" >&2
+  # THE DETAIL, on the knob only. Ruling D-1: the reader who is interrupted gets one
+  # sentence; the rest is for whoever asks. There is no hook log to write here — the
+  # library that owns logging is the one that did not load.
+  if [ "${BIONIC_WALL_VERBOSE:-}" = "1" ]; then
+    cat >&2 <<BIONIC_LOADER_REFUSE
+A wall that cannot read a command refuses it rather than waving it through.
 
+Wanted: ${BIONIC_LIB_MISSING:-the bionic library}
 Looked in: ${BIONIC_LIB_CANDS:-(no candidate)}
 
 Until the plugin is whole again this wall permits exactly four commands, each matched
@@ -175,12 +194,15 @@ as a whole string:
 Anything else is refused, including one of those four with another command chained
 after it. Run one of them, or act from your own terminal.
 BIONIC_LOADER_REFUSE
+  fi
   exit 2
 }
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "farm-out-reminder"; fi
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/cmd-class.sh"
+# shellcheck source=/dev/null
+. "$BIONIC_LIB/refuse.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
@@ -272,9 +294,13 @@ log_event() {  # $1=event $2=class
 
 # [WALL: tests/farm-out-reminder.test.sh]
 emit_deny() {  # $1=class $2=role
-  jq -n --arg r "$(deny_reason "$1" "$2")" \
-    '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}' 2>/dev/null
-  return 0
+  # THROUGH THE ONE RENDERER (slice 13, table row 106). `deny` is the mode this hook has
+  # always used and the one the E1 measurement showed carries a model-only channel, so
+  # the user gets the single line and the whole existing instruction rides the JSON
+  # reason unchanged. `refuse` EXITS — with status 0 on this mode, which is what the
+  # JSON verdict needs — so the caller's own `exit 0` after it is unreachable and gone.
+  refuse deny run "this command belongs in a subagent" "dispatch it with the Agent tool" \
+    "$(deny_reason "$1" "$2")"
 }
 
 emit_nudge() {  # $1=class $2=role
@@ -337,7 +363,7 @@ emit_tier1() {  # $1=class $2=role — deny, or downgrade to a nudge under advis
   if [ "$MODE" = "advisory" ]; then
     log_event "deny-downgraded" "$1"; emit_nudge "$1" "$2"; exit 0
   fi
-  log_event "deny" "$1"; emit_deny "$1" "$2"; exit 0
+  log_event "deny" "$1"; emit_deny "$1" "$2"
 }
 
 classify_tier2() {  # $1=flat cmd → sets CLASS ROLE, rc 0 on match

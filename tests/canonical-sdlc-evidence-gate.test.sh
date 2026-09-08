@@ -154,6 +154,17 @@ split_stderr() {  # <file> -> HOOK_RESOLUTION + HOOK_STDERR
   HOOK_STDERR=$(printf '%s\n' "$raw" | grep -v -E "$EG_RESOLUTION_RE" || true)
 }
 
+# THE VERBOSE STREAM (slice 13, ruling D-1). This gate's refusal is now ONE line —
+# `bionic: commit refused — <fact> (<fix>)` — and everything this suite reads off a
+# refusal (the task id, the rigor values, the matrix row, the evidence key, the walk
+# path, the missing fields, the plan path, the Fix prose) is `detail`, which reaches a
+# reader only under BIONIC_WALL_VERBOSE=1. `$HOOK_STDERR` is the line; `$HOOK_VSTDERR`
+# is the line plus the detail, with the resolution announcements split off the same way.
+HOOK_VSTDERR=""
+eg_knob() {  # <raw verbose stderr>
+  HOOK_VSTDERR=$(printf '%s\n' "$1" | grep -v -E "$EG_RESOLUTION_RE" || true)
+}
+
 run_hook() {
   local home_dir="$1" command="$2"
   local input
@@ -177,6 +188,13 @@ run_hook() {
     HOOK_EXIT=$?
   fi
   split_stderr "$tmp_err"
+  HOOK_VSTDERR=""
+  # Gated on the refusal: an ALLOWED commit can write a findings log, and a second
+  # drive of one would double every line in it.
+  if [ "$HOOK_EXIT" -ne 0 ]; then
+    eg_knob "$(HOME="$home_dir" CLAUDE_PROJECT_DIR="" CLAUDE_CODE_SESSION_ID="$EG_SID" \
+      BIONIC_WALL_VERBOSE=1 bash "$HOOK" <<< "$input" 2>&1 >/dev/null || true)"
+  fi
   rm -f "$tmp_err"
 }
 
@@ -198,6 +216,11 @@ run_hook_with_project() {
     HOOK_EXIT=$?
   fi
   split_stderr "$tmp_err"
+  HOOK_VSTDERR=""
+  if [ "$HOOK_EXIT" -ne 0 ]; then
+    eg_knob "$(HOME="$home_dir" CLAUDE_PROJECT_DIR="$project_dir" CLAUDE_CODE_SESSION_ID="$EG_SID" \
+      BIONIC_WALL_VERBOSE=1 bash "$HOOK" <<< "$input" 2>&1 >/dev/null || true)"
+  fi
   rm -f "$tmp_err"
 }
 
@@ -211,13 +234,38 @@ expect_allow() {
   fi
 }
 
+# THE TWO STREAMS, AND WHICH ONE EACH HALF READS (slice 13, ruling D-1). A refusal is
+# now ONE line on the user stream, `bionic: commit refused — <fact> (<fix>)`, and every
+# value a caller here names — a task id, a rigor cell, a matrix row, an evidence key, a
+# walk path, a missing field — is `detail`, which travels only under
+# BIONIC_WALL_VERBOSE=1. So the SHAPE is asserted on `$HOOK_STDERR` (and it is asserted
+# on every call, which is what makes AC-E1.3 hold for all thirty-one direct sites and
+# both frames without an arm per site), while the caller's substring is looked for in
+# `$HOOK_VSTDERR`. The default substring is the rendered prefix rather than the retired
+# `BLOCKED` tag.
+EG_LINE_RE='^bionic: [a-z-]+ refused — .+ \(.{1,40}\)$'
+EG_E1_SEEN=0; EG_E1_BAD_SHAPE=""; EG_E1_BAD_LINES=""
+eg_e1_check() {  # -> 0 iff the user stream is one rendered refusal in the criterion's shape
+  local line
+  line=$(printf '%s\n' "$HOOK_STDERR" | /usr/bin/grep '^bionic: ' || true)
+  EG_E1_SEEN=$((EG_E1_SEEN + 1))
+  if ! printf '%s' "$line" | /usr/bin/grep -qE "$EG_LINE_RE"; then
+    EG_E1_BAD_SHAPE="${EG_E1_BAD_SHAPE}[$HOOK_STDERR] "; return 1
+  fi
+  if [ "$(printf '%s\n' "$HOOK_STDERR" | /usr/bin/grep -c '^bionic: ')" != "1" ]; then
+    EG_E1_BAD_LINES="${EG_E1_BAD_LINES}[$HOOK_STDERR] "; return 1
+  fi
+  return 0
+}
+
 expect_block() {
-  local label="$1" home_dir="$2" command="$3" expected_substr="${4:-BLOCKED}"
+  local label="$1" home_dir="$2" command="$3" expected_substr="${4:-}"
   run_hook "$home_dir" "$command"
-  if [ "$HOOK_EXIT" -eq 2 ] && grep -q "$expected_substr" <<<"$HOOK_STDERR"; then
+  if [ "$HOOK_EXIT" -eq 2 ] && eg_e1_check \
+     && { [ -z "$expected_substr" ] || grep -q "$expected_substr" <<<"$HOOK_VSTDERR"; }; then
     ok "$label"
   else
-    no "$label" "expected block exit 2 with substring '$expected_substr'; got exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
+    no "$label" "expected block exit 2, one rendered line, with substring '$expected_substr'; got exit=$HOOK_EXIT line='$HOOK_STDERR' detail='$HOOK_VSTDERR'"
   fi
 }
 
@@ -235,12 +283,13 @@ expect_allow_p() {
 }
 
 expect_block_p() {
-  local label="$1" home_dir="$2" project_dir="$3" command="$4" expected_substr="${5:-BLOCKED}"
+  local label="$1" home_dir="$2" project_dir="$3" command="$4" expected_substr="${5:-}"
   run_hook_with_project "$home_dir" "$project_dir" "$command"
-  if [ "$HOOK_EXIT" -eq 2 ] && grep -q "$expected_substr" <<<"$HOOK_STDERR"; then
+  if [ "$HOOK_EXIT" -eq 2 ] && eg_e1_check \
+     && { [ -z "$expected_substr" ] || grep -q "$expected_substr" <<<"$HOOK_VSTDERR"; }; then
     ok "$label"
   else
-    no "$label" "expected block exit 2 with substring '$expected_substr'; got exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
+    no "$label" "expected block exit 2, one rendered line, with substring '$expected_substr'; got exit=$HOOK_EXIT line='$HOOK_STDERR' detail='$HOOK_VSTDERR'"
   fi
 }
 
@@ -2200,6 +2249,11 @@ run_hook_project_elsewhere_cwd() {
     HOOK_EXIT=$?
   fi
   split_stderr "$tmp_err"
+  HOOK_VSTDERR=""
+  if [ "$HOOK_EXIT" -ne 0 ]; then
+    eg_knob "$( (cd "$elsewhere_dir" && HOME="$home_dir" CLAUDE_PROJECT_DIR="$project_dir" \
+      CLAUDE_CODE_SESSION_ID="$EG_SID" BIONIC_WALL_VERBOSE=1 bash "$HOOK" <<< "$input") 2>&1 >/dev/null || true)"
+  fi
   rm -f "$tmp_err"
 }
 
@@ -3534,8 +3588,8 @@ engage "$s24_p2"
 s24_marked_plan > "$s24_p2/docs/bionic/plans/epic-01-demo/wave-01-x.plan.md"
 run_hook_with_project "$s24_h2" "$s24_p2" 'git commit -m "x"'
 if [ "$HOOK_EXIT" -eq 2 ] \
-   && grep -q "misplaced" <<<"$HOOK_STDERR" \
-   && grep -qF "$s24_p2/.bionic/docs/plans/" <<<"$HOOK_STDERR"; then
+   && grep -q "misplaced" <<<"$HOOK_VSTDERR" \
+   && grep -qF "$s24_p2/.bionic/docs/plans/" <<<"$HOOK_VSTDERR"; then
   ok "misplaced plan → block, naming the correct path"
 else
   no "misplaced plan → block, naming the correct path" "expected block naming $s24_p2/.bionic/docs/plans/; exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
@@ -3600,7 +3654,7 @@ printf 'docs-root: custom/docs\n' > "$s24_p7/.bionic/config.yaml"
 engage "$s24_p7"
 s24_marked_plan > "$s24_p7/.bionic/docs/plans/epic-01-demo/wave-01-x.plan.md"
 run_hook_with_project "$s24_h7" "$s24_p7" 'git commit -m "x"'
-if [ "$HOOK_EXIT" -eq 2 ] && grep -qF "$s24_p7/custom/docs/plans/" <<<"$HOOK_STDERR"; then
+if [ "$HOOK_EXIT" -eq 2 ] && grep -qF "$s24_p7/custom/docs/plans/" <<<"$HOOK_VSTDERR"; then
   ok "block names the CONFIGURED docs root, not a hardcoded .bionic/"
 else
   no "block names the CONFIGURED docs root, not a hardcoded .bionic/" "expected block naming $s24_p7/custom/docs/plans/; exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
@@ -3635,8 +3689,8 @@ engage "$s24_p9"
 s24_marked_plan > "$s24_p9/docs/bionic/plans/epic-01-demo/wave-01-x.plan.md"
 run_hook_with_project "$s24_h9" "$s24_p9" 'git commit -m "x"'
 if [ "$HOOK_EXIT" -eq 2 ] \
-   && grep -q "misplaced" <<<"$HOOK_STDERR" \
-   && grep -qF "$s24_p9/.bionic/docs/plans/" <<<"$HOOK_STDERR"; then
+   && grep -q "misplaced" <<<"$HOOK_VSTDERR" \
+   && grep -qF "$s24_p9/.bionic/docs/plans/" <<<"$HOOK_VSTDERR"; then
   ok "misplaced plan blocks even with a non-empty ~/.claude/plans"
 else
   no "misplaced plan blocks even with a non-empty ~/.claude/plans" "expected block; exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
@@ -3713,8 +3767,8 @@ echo "-- 25a: a commit FROM the worktree is gated against the main repo's plan -
 s25_h1=$(make_home)
 run_hook_with_project "$s25_h1" "$s25_wt" 'git commit -m "x"'
 if [ "$HOOK_EXIT" -eq 2 ] \
-   && grep -q "placeholder" <<<"$HOOK_STDERR" \
-   && grep -qF "$s25_main/.bionic/docs/plans/wave-01-x.plan.md" <<<"$HOOK_STDERR"; then
+   && grep -q "placeholder" <<<"$HOOK_VSTDERR" \
+   && grep -qF "$s25_main/.bionic/docs/plans/wave-01-x.plan.md" <<<"$HOOK_VSTDERR"; then
   ok "25a commit from a linked worktree is gated by the main repo's plan"
 else
   no "25a commit from a linked worktree is gated by the main repo's plan" "expected block naming the main repo's plan; exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
@@ -3750,9 +3804,9 @@ s25_marked_plan_body > "$s25_main2/notes/rogue.plan.md"
 s25_h3=$(make_home)
 run_hook_with_project "$s25_h3" "$s25_wt2" 'git commit -m "x"'
 if [ "$HOOK_EXIT" -eq 2 ] \
-   && grep -q "misplaced" <<<"$HOOK_STDERR" \
-   && grep -qF "$s25_main2/notes/rogue.plan.md" <<<"$HOOK_STDERR" \
-   && grep -qF "$s25_main2/.bionic/docs/plans/" <<<"$HOOK_STDERR"; then
+   && grep -q "misplaced" <<<"$HOOK_VSTDERR" \
+   && grep -qF "$s25_main2/notes/rogue.plan.md" <<<"$HOOK_VSTDERR" \
+   && grep -qF "$s25_main2/.bionic/docs/plans/" <<<"$HOOK_VSTDERR"; then
   ok "25c sweep from a worktree finds the main repo's misplaced plan"
 else
   no "25c sweep from a worktree finds the main repo's misplaced plan" "expected block naming the main repo's paths; exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
@@ -3843,8 +3897,8 @@ touch "$s25_main/.bionic/docs/plans/epic-01-demo/both.plan.md"
 s25_h5=$(make_home)
 run_hook_with_project "$s25_h5" "$s25_wt" 'git commit -m "x"'
 if [ "$HOOK_EXIT" -eq 2 ] \
-   && grep -q "placeholder" <<<"$HOOK_STDERR" \
-   && grep -qF "$s25_main/.bionic/docs/plans/epic-01-demo/both.plan.md" <<<"$HOOK_STDERR"; then
+   && grep -q "placeholder" <<<"$HOOK_VSTDERR" \
+   && grep -qF "$s25_main/.bionic/docs/plans/epic-01-demo/both.plan.md" <<<"$HOOK_VSTDERR"; then
   ok "25e3 the gate, from the worktree, gates the SAME file the governing hook accepted"
 else
   no "25e3 the gate, from the worktree, gates the SAME file the governing hook accepted" "exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
@@ -3873,8 +3927,8 @@ PATH="$ac10_oldgit:$PATH"
 run_hook_with_project "$s25_h6" "$s25_wt" 'git commit -m "x"'
 PATH="$s25_saved_path"
 if [ "$HOOK_EXIT" -eq 2 ] \
-   && grep -q "placeholder" <<<"$HOOK_STDERR" \
-   && grep -qF "$s25_main/.bionic/docs/plans/" <<<"$HOOK_STDERR"; then
+   && grep -q "placeholder" <<<"$HOOK_VSTDERR" \
+   && grep -qF "$s25_main/.bionic/docs/plans/" <<<"$HOOK_VSTDERR"; then
   ok "25f old git — worktree commit still gated by the main repo's plan"
 else
   no "25f old git — worktree commit still gated by the main repo's plan" "expected block naming the main repo; exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
@@ -4722,7 +4776,7 @@ expect_block "31b relative plan path in the command → names the split" \
 # pins the note's scope rather than asserting an empty world.
 run_hook "$h31a" 'git commit -m "x"'
 if [ "$HOOK_EXIT" -eq 2 ] \
-   && grep -q "AC-2" <<<"$HOOK_STDERR" \
+   && grep -q "AC-2" <<<"$HOOK_VSTDERR" \
    && ! grep -q "also writes the plan" <<<"$HOOK_STDERR"; then
   ok "31c plain commit refusal carries no split line"
 else
@@ -5124,7 +5178,7 @@ else
 fi
 engage "$p34c"
 run_hook_with_project "$h34c" "$p34c" 'git commit -m "x"'
-if [ "$HOOK_EXIT" -eq 2 ] && grep -q "misplaced" <<<"$HOOK_STDERR"; then
+if [ "$HOOK_EXIT" -eq 2 ] && grep -q "misplaced" <<<"$HOOK_VSTDERR"; then
   ok "34c control: the same tree, marker planted, is REFUSED as misplaced"
 else
   no "34c control: the same tree, marker planted, is REFUSED as misplaced" "expected block; exit=$HOOK_EXIT stderr='$HOOK_STDERR'"
@@ -5245,6 +5299,16 @@ s35_run() {  # <root> <sid> <command> -> S35_EXIT / S35_ERR
     S35_EXIT=$?
   fi
   S35_ERR=$(cat "$tmp_err")
+  # THE DETAIL STREAM (slice 13, ruling D-1): this section greps plan PATHS off the
+  # refusal, and a path is `detail` now. Gated on the refusal so an allowed commit is
+  # never driven twice.
+  # An ALLOWED call has no refusal to expand, and its announcements are already on the
+  # ordinary stream — so the fallback is that stream, not an empty string.
+  S35_VERR="$S35_ERR"
+  if [ "$S35_EXIT" != "0" ]; then
+    S35_VERR=$(HOME="$root" CLAUDE_PROJECT_DIR="" CLAUDE_CODE_SESSION_ID="$sid" \
+      BIONIC_WALL_VERBOSE=1 bash "$HOOK" <<< "$input" 2>&1 >/dev/null || true)
+  fi
   rm -f "$tmp_err"
 }
 
@@ -5252,10 +5316,10 @@ s35_run() {  # <root> <sid> <command> -> S35_EXIT / S35_ERR
 s35_assert() {
   local label="$1" want="$2" yes="$3" nope="$4" why=""
   [ "$S35_EXIT" = "$want" ] || why="exit=$S35_EXIT want=$want"
-  if [ -z "$why" ] && [ "$yes" != "-" ] && ! grep -qF -- "$yes" <<< "$S35_ERR"; then
+  if [ -z "$why" ] && [ "$yes" != "-" ] && ! grep -qF -- "$yes" <<< "$S35_VERR"; then
     why="stderr is missing '$yes'"
   fi
-  if [ -z "$why" ] && [ "$nope" != "-" ] && grep -qF -- "$nope" <<< "$S35_ERR"; then
+  if [ -z "$why" ] && [ "$nope" != "-" ] && grep -qF -- "$nope" <<< "$S35_VERR"; then
     why="stderr carries '$nope' and must not"
   fi
   if [ -z "$why" ]; then
@@ -6079,5 +6143,43 @@ expect_allow "38e a prototype slice present, but no AC block names it → allow"
 # than reproduced here — `.bionic/` is machine-local and absent from a fresh clone, so
 # an in-suite fixture reading it would degrade to a vacuous pass on exactly the
 # machines this arm is meant to protect.
+
+section "AC-E1.3/E1.5: every refusal is one line, in the criterion's shape"
+
+# fails-when: a refusal reaches the user as more than one line, or in any shape but
+# `bionic: <verb> refused — <fact> (<fix ≤ 40 cols>)`.
+#
+# The counters below were filled by `eg_e1_check`, which every `expect_block` and
+# `expect_block_p` call above runs — so the coverage is every refusal this suite
+# produces, across all thirty-one direct sites and both parametric frames, rather than
+# an arm per site. The count proves the sweep saw real refusals.
+expect_eq "E1.3 the gate refused many times in this run (not counting over air)" "yes" \
+  "$([ "$EG_E1_SEEN" -ge 100 ] && echo yes || echo no)"
+expect_eq "E1.3 every refusal matched the criterion's shape" "" "$EG_E1_BAD_SHAPE"
+expect_eq "E1.3 every refusal put exactly one rendered line on the user stream" "" "$EG_E1_BAD_LINES"
+
+# THE PARAMETRIC TABLE'S EXACT WORDING at one block_matrix site and one
+# ledger_shape_fail site, and the column budget on the widest of them.
+. "${BIONIC_SCRIPTS_DIR}/payload/scripts/lib/width.sh"
+eg_e1_h=$(make_home)
+write_plan "$eg_e1_h" "$(matrix_frontmatter true)
+## SDLC State
+current: 5
+approved-by: fixture 2026-09-07T00:00Z \"approved\"
+Step 5:
+$step5_base" > /dev/null
+run_hook "$eg_e1_h" 'git commit -m "x"'
+expect_status "E1.3 the no-matrix fixture refuses" "2" "$HOOK_EXIT"
+expect_eq "E1.3 …with the parametric table's line for :1798" \
+  "bionic: commit refused — this plan has no verification matrix yet (add one row per criterion)" \
+  "$(printf '%s\n' "$HOOK_STDERR" | /usr/bin/grep '^bionic: ')"
+expect_eq "E1.3 …inside the 100-column budget" "yes" \
+  "$([ "$(bionic_cols "$(printf '%s\n' "$HOOK_STDERR" | /usr/bin/grep '^bionic: ')")" -le 100 ] && echo yes || echo no)"
+expect_absent "E1.5 the section name the old headline carried is NOT on the user line" \
+  "## Verification Matrix" "$HOOK_STDERR"
+expect_contains "E1.5 …and BIONIC_WALL_VERBOSE=1 carries it, with the step number" \
+  "canonical-sdlc step" "$HOOK_VSTDERR"
+expect_contains "E1.5 …and the caller's repair prose" \
+  "Verification Matrix" "$HOOK_VSTDERR"
 
 finish

@@ -171,7 +171,10 @@ stdin_for() {  # <project> <transcript-path> [event] [stop_hook_active]
 # operator's real session id, find no marker under it, and pass every case in silence. The
 # same mirroring hooks/stop-guard.sh's and dispatch-preflight's suites already do.
 fire() {  # <project> [event] [stop_hook_active]
-  HOOK_OUT=$(env CLAUDE_CODE_SESSION_ID="$SID" bash "$HOOK" <<< "$(stdin_for "$1" "$1/transcript.jsonl" "${2:-Stop}" "${3:-false}")" 2>/dev/null)
+  HOOK_OUT=$(env CLAUDE_CODE_SESSION_ID="$SID" bash "$HOOK" <<< "$(stdin_for "$1" "$1/transcript.jsonl" "${2:-Stop}" "${3:-false}")" 2>"${PE1_ERRFILE:-/dev/null}")
+  # THE USER STREAM, kept for the AC-E1.3 section at the end (slice 13). The JSON reason
+  # on stdout is what every arm above reads; this is the one line a reader is shown.
+  HOOK_ERR_USER=$(cat "${PE1_ERRFILE:-/dev/null}" 2>/dev/null)
   HOOK_RC=$?
 }
 
@@ -972,5 +975,35 @@ case "$HOOK_ERR" in
   *"$PLAN_B_REL"*) no "26c: B's path (the still-open plan) appears nowhere in the output" "$HOOK_ERR" ;;
   *) ok "26c: B's path (the still-open plan) appears nowhere in the output" ;;
 esac
+
+section "AC-E1.3/E1.5: the refusal's user stream is one line, in the criterion's shape"
+
+# fails-when: a refusal reaches the user as more than one line, or in any shape but
+# `bionic: <verb> refused — <fact> (<fix ≤ 40 cols>)`. This gate refuses over the JSON
+# `block` channel, which has a model-only wire — so the reason the arms above read stays
+# whole in the JSON while the USER stream is the single rendered line, always, knob or
+# no knob. Both halves are asserted on one drive of a real refusal.
+
+PE1_RE='^bionic: [a-z-]+ refused — .+ \(.{1,40}\)$'
+PE1_ERRFILE="$(mktemp)"
+# Drive a real refusal through the same helper the arms above use, then read the user
+# stream it left behind. The status is the block channel's own: exit 0 with a verdict.
+PE1_D=$(make_env); u_tick "$PE1_D"; a_tool "$PE1_D" ListAgents
+fire "$PE1_D"
+expect_contains "E1.3 the JSON verdict is still a block (the model's half is unchanged)" \
+  '"decision":"block"' "$HOOK_OUT"
+# ONE REFUSAL LINE. The gate also prints its own diagnostics to stderr before it
+# decides, so the count is of RENDERED refusals and not of every byte on the stream.
+expect_eq "E1.3 the user stream carries exactly one rendered refusal" \
+  "1" "$(printf '%s\n' "$HOOK_ERR_USER" | /usr/bin/grep -c '^bionic: ')"
+if printf '%s\n' "$HOOK_ERR_USER" | /usr/bin/grep '^bionic: ' | /usr/bin/grep -qE "$PE1_RE"; then
+  ok "E1.3 …in AC-E1.3's shape"
+else
+  no "E1.3 …in AC-E1.3's shape" "line=[$HOOK_ERR_USER]"
+fi
+expect_contains "E1.3 …and it is one of this gate's ruled facts" \
+  "bionic: stop refused — no task-list refresh since this tick" "$HOOK_ERR_USER"
+expect_absent "E1.5 the paragraph the model reads is NOT on the user stream" \
+  "this gate blocks once" "$HOOK_ERR_USER"
 
 finish

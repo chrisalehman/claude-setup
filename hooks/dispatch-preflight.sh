@@ -107,7 +107,7 @@ CWD=$(_jq '.cwd')
 # payload/scripts/lib/loader.sh. FAIL OPEN: this wall protects a dispatch, and a
 # dispatch that should have been refused can be stopped and re-run — refusing every
 # Agent call on the machine because a file is missing cannot be undone as cheaply.
-BIONIC_LIB_WANT="root.sh run.sh session.sh patrol.sh agents.sh roster.sh"
+BIONIC_LIB_WANT="refuse.sh root.sh run.sh session.sh patrol.sh agents.sh roster.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -214,11 +214,30 @@ loader_fail_closed() {
     "bash $_bl_root/scripts/doctor.sh"|\
     "bash $_bl_root/scripts/setup.sh") exit 0 ;;
   esac
-  cat >&2 <<BIONIC_LOADER_REFUSE
-BLOCKED: $1 cannot load its library (${BIONIC_LIB_MISSING:-the bionic library}), so it
-cannot read this command. A wall that cannot read a command refuses it rather than
-waving it through.
+  # THE ONE LINE, AND THE ONE PLACE IN THE TREE THAT SPELLS IT WITHOUT
+  # scripts/lib/refuse.sh. Every other wall calls `refuse`; this one cannot, because
+  # refuse.sh is IN the library this function exists to report missing. So the row-1
+  # wording (record/wave-01-plugin-only/s12-refusal-wording-draft.md §1) is written
+  # out here by hand, in the renderer's exact format, and tests/loader.test.sh §F
+  # drives it against AC-E1.3's own regex so the two spellings cannot drift.
+  #
+  # THE NAME IS BOUNDED IN PURE BASH for the same reason: `bionic_trunc` is in the
+  # missing library. 23 columns of prefix, 31 of fact after the name, 3 of brackets
+  # and 18 of fix leaves 25 for the hook's name, and the longest caller
+  # (`canonical-sdlc-evidence-gate`, 28) is over it — F-8's runtime-width hazard,
+  # arriving at the one site that cannot ask the truncator. The ellipsis is spent
+  # from inside the budget, exactly as bionic_trunc spends it.
+  _bl_who="${1:-a bionic hook}"
+  if [ "${#_bl_who}" -gt 25 ]; then _bl_who="${_bl_who:0:24}…"; fi
+  printf 'bionic: load refused — %s cannot load the bionic library (run /bionic:doctor)\n' "$_bl_who" >&2
+  # THE DETAIL, on the knob only. Ruling D-1: the reader who is interrupted gets one
+  # sentence; the rest is for whoever asks. There is no hook log to write here — the
+  # library that owns logging is the one that did not load.
+  if [ "${BIONIC_WALL_VERBOSE:-}" = "1" ]; then
+    cat >&2 <<BIONIC_LOADER_REFUSE
+A wall that cannot read a command refuses it rather than waving it through.
 
+Wanted: ${BIONIC_LIB_MISSING:-the bionic library}
 Looked in: ${BIONIC_LIB_CANDS:-(no candidate)}
 
 Until the plugin is whole again this wall permits exactly four commands, each matched
@@ -232,10 +251,13 @@ as a whole string:
 Anything else is refused, including one of those four with another command chained
 after it. Run one of them, or act from your own terminal.
 BIONIC_LOADER_REFUSE
+  fi
   exit 2
 }
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "dispatch-preflight"; fi
+# shellcheck source=/dev/null
+. "$BIONIC_LIB/refuse.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
@@ -342,14 +364,17 @@ esac
 # ---------- this session is engaged: this IS a decision ----------
 
 deny() {  # <reason line>...
-  echo "BLOCKED: this subagent start needs a working environment — a wave is active." >&2
-  echo "" >&2
-  local line
-  for line in "$@"; do echo "$line" >&2; done
-  echo "" >&2
-  echo "Fix: ${PREFLIGHT_CMD}" >&2
-  echo "Then retry the dispatch." >&2
-  exit 2
+  # THE FRAME KEEPS ITS PARAMETERS AND LOSES ITS VOICE (slice 13, D-1). Its fixed
+  # headline and its Fix line are `detail` now; the caller passes the ruled fact and fix.
+  local fact="$1" fix="$2"; shift 2
+  local reasons="" line
+  for line in "$@"; do reasons="${reasons}${line}
+"; done
+  refuse exit2 dispatch "$fact" "$fix" "${reasons}
+This subagent start needs a working environment, and a wave is active.
+
+Fix: ${PREFLIGHT_CMD}
+Then retry the dispatch."
 }
 
 STATE_FILE="$REPO/.bionic/tmp/preflight-${PAYLOAD_SID}.state"
@@ -423,7 +448,8 @@ if ! attested; then
   [ -f "$PROBE_SCRIPT" ] || PROBE_SCRIPT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/preflight-probe.sh"
 
   if [ ! -f "$PROBE_SCRIPT" ]; then
-    deny "No environment attestation was found for this repo, and the probe that writes one" \
+    deny "this repo has no environment attestation" "run the preflight probe" \
+      "No environment attestation was found for this repo, and the probe that writes one" \
          "could not be located (looked beside this gate and under the Claude config directory)."
   fi
 
@@ -442,15 +468,13 @@ if ! attested; then
     # to run it again by hand to learn anything. Indented so the quotation is
     # visibly the probe speaking.
     {
-      echo "BLOCKED: the environment check refused, so this dispatch would launch into a broken environment." >&2
-      echo "" >&2
-      echo "The check was run automatically for this session and did not pass:" >&2
-      printf '%s\n' "$PROBE_OUT" | sed 's/^/    /' >&2
-      echo "" >&2
-      echo "A fleet inherits this environment and dies collectively if it is wrong." >&2
-      echo "Fix the failure above, then retry the dispatch (or re-run by hand: ${PREFLIGHT_CMD})." >&2
+      refuse exit2 dispatch "the environment check ran and did not pass" "fix what the probe named" \
+        "The check was run automatically for this session and did not pass:
+$(printf '%s\n' "$PROBE_OUT" | sed 's/^/    /')
+
+A fleet inherits this environment and dies collectively if it is wrong.
+Fix the failure above, then retry the dispatch (or re-run by hand: ${PREFLIGHT_CMD})."
     }
-    exit 2
   fi
 
   # Announced, never silent. §4 bans printing CHECK DETAIL on the allow path; this
@@ -513,21 +537,20 @@ PATROL_STAMP_FILE="$STATE_DIR/patrol-${PAYLOAD_SID}.state"
 POKER_SCRIPT="${HOOK_DIR}/session-poker.sh"
 [ -f "$POKER_SCRIPT" ] || POKER_SCRIPT="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/session-poker.sh"
 
-patrol_deny() {  # <state line>...
-  echo "patrol checkpoint: this dispatch is refused — the Patrol is not alive for this session." >&2
-  echo "" >&2
-  local line
-  for line in "$@"; do echo "$line" >&2; done
-  echo "" >&2
-  echo "A dispatch with no Patrol behind it is an agent nobody is waiting on." >&2
-  echo "" >&2
-  echo "Fix: re-arm the Patrol — both halves, the clock and the stamp:" >&2
-  echo "  1. CronCreate a RECURRING session job at the interval \`bash ${POKER_SCRIPT} interval\`" >&2
-  echo "     reports, carrying the patrol prompt (skills/canonical-sdlc/SKILL.md §Dispatch)." >&2
-  echo "  2. bash ${POKER_SCRIPT} arm" >&2
-  echo "" >&2
-  echo "Then retry the dispatch." >&2
-  exit 2
+patrol_deny() {  # <fact> <fix> <state line>...
+  local fact="$1" fix="$2"; shift 2
+  local reasons="" line
+  for line in "$@"; do reasons="${reasons}${line}
+"; done
+  refuse exit2 dispatch "$fact" "$fix" "${reasons}
+A dispatch with no Patrol behind it is an agent nobody is waiting on.
+
+Fix: re-arm the Patrol — both halves, the clock and the stamp:
+  1. CronCreate a RECURRING session job at the interval \`bash ${POKER_SCRIPT} interval\`
+     reports, carrying the patrol prompt (skills/canonical-sdlc/SKILL.md §Dispatch).
+  2. bash ${POKER_SCRIPT} arm
+
+Then retry the dispatch."
 }
 
 # THE INTERVAL IS A THRESHOLD, NOT A PRECONDITION (critic C-2, W5). This block used to
@@ -569,7 +592,7 @@ fi
 # UNCONDITIONAL, and that is the C-2 fix in one word: this arm asks whether anything armed
 # the Patrol, a question with no threshold in it.
 if [ -L "$PATROL_STAMP_FILE" ] || [ ! -f "$PATROL_STAMP_FILE" ]; then
-  patrol_deny \
+  patrol_deny "no Patrol stamp exists for this session" "arm the Patrol, both halves" \
     "There is no Patrol stamp for this session at:" \
     "    ${PATROL_STAMP_FILE}" \
     "The Patrol was never armed on this session (a symbolic link at that path is never" \
@@ -603,7 +626,7 @@ else
       PATROL_AGE=$(( $(date -u +%s) - PATROL_MTIME ))
       [ "$PATROL_AGE" -lt 0 ] && PATROL_AGE=0
       if [ "$PATROL_AGE" -gt "$PATROL_MAX_AGE" ]; then
-        patrol_deny \
+        patrol_deny "the Patrol was armed and stopped firing" "re-arm the Patrol, both halves" \
           "The Patrol was armed on this session and has stopped firing." \
           "Its last stamp is ${PATROL_AGE}s old — past the ${PATROL_MAX_AGE}s limit," \
           "which is 2x ${PATROL_INTERVAL_WORDS}:" \
@@ -680,20 +703,19 @@ case "$DP_SUBAGENT" in
             sub(/[[:space:]]+$/, ""); print; exit }
         ' "$PLAN" 2>/dev/null) || DP_APPROVED=""
         if [ -z "$DP_APPROVED" ]; then
-          echo "BLOCKED: this ${DP_SUBAGENT} dispatch is refused — the plan it would build carries no 'approved-by:' line." >&2
-          echo "" >&2
-          echo "Plan: ${PLAN}" >&2
-          echo "Step: ${DP_CURRENT} — writers run against an APPROVED plan, and nothing recorded one." >&2
-          echo "" >&2
-          echo "A writer is the first act of a plan that cannot be taken back by closing a file." >&2
-          echo "" >&2
-          echo "Fix: put the Step-3 card to the user and wait for the literal word 'approved'; then" >&2
-          echo "     record it under '## SDLC State' in the plan above:" >&2
-          echo "       approved-by: <user> <ISO-UTC> \"<verbatim reply>\"" >&2
-          echo "     Silence, a question, or a partial reply is never transcribed as approval." >&2
-          echo "" >&2
-          echo "Then retry the dispatch." >&2
-          exit 2
+          refuse exit2 dispatch "the plan this writer builds is unapproved" "get the Step-3 plan approved" \
+            "Role: ${DP_SUBAGENT}
+Plan: ${PLAN}
+Step: ${DP_CURRENT} — writers run against an APPROVED plan, and nothing recorded one.
+
+A writer is the first act of a plan that cannot be taken back by closing a file.
+
+Fix: put the Step-3 card to the user and wait for the literal word 'approved'; then
+     record it under '## SDLC State' in the plan above:
+       approved-by: <user> <ISO-UTC> \"<verbatim reply>\"
+     Silence, a question, or a partial reply is never transcribed as approval.
+
+Then retry the dispatch."
         fi
       fi
     fi
@@ -805,10 +827,8 @@ if ! is_agent_context; then
     LEASE_MAIN=""
     [ -n "$LEASE_COMMON" ] && LEASE_MAIN=$( cd "$LEASE_COMMON/.." 2>/dev/null && pwd -P )
     if [ -n "$LEASE_MAIN" ] && [ "$LEASE_MAIN" != "$LEASE_TOP" ]; then
-      cat >&2 <<LEASE_REFUSE
-BLOCKED: this dispatch was made from inside a linked worktree.
-
-    cwd:           ${CWD}
+      refuse exit2 dispatch "this dispatch came from a worktree" "dispatch from the main checkout" \
+        "    cwd:           ${CWD}
     worktree:      ${LEASE_TOP}
     main checkout: ${LEASE_MAIN}
 
@@ -818,9 +838,7 @@ ${LEASE_MAIN}, so a dispatch made here is recorded in one address space by an au
 working in another, and the tree's lease carries no row accounting for the orchestrator.
 
 Fix: dispatch from ${LEASE_MAIN}. A dispatched agent working in its own tree may dispatch
-from there — this refusal is the main thread's alone.
-LEASE_REFUSE
-      exit 2
+from there — this refusal is the main thread's alone."
     fi
   fi
 fi
@@ -985,11 +1003,11 @@ if [ -n "$PARALLEL_BUDGET" ]; then
     printf '%s' "$n"
   }
 
-  budget_deny() {  # <the one line naming the resource, its ceiling and its count>
-    cat >&2 <<BUDGET_REFUSE
-BLOCKED: this dispatch would put the run past its parallel budget.
-
-    $1
+  budget_deny() {  # <fact> <the one line naming the resource, its ceiling and its count>
+    # ONE FIX FOR ALL THREE ARMS (rows 43-45): the fact names which ceiling was passed
+    # and the repair is the same act whichever it was.
+    refuse exit2 dispatch "$1" "land or stand down a row" \
+      "    $2
 
 budget: ${PARALLEL_BUDGET}
   declared by ${PLAN}
@@ -999,9 +1017,7 @@ recorded verbatim — nothing re-derives it here, and raising it is a Step-0 act
 
 Fix: land or stand down an open row first (\`bash <plugin-root>/hooks/stop-orders.sh
 standdown\` computes the batch), or re-run Step 0's probe and raise the line if the
-machine genuinely has the room.
-BUDGET_REFUSE
-    exit 2
+machine genuinely has the room."
   }
 
   # WHOSE TRANSCRIPT IS IT (F-2 ruling, 2026-09-05). The harness writes a dispatched
@@ -1047,6 +1063,7 @@ BUDGET_REFUSE
   B_WRITERS=$(budget_field writers)
   if [ -n "$B_WRITERS" ]; then
     [ $(( BUDGET_OPEN + 1 )) -gt "$B_WRITERS" ] && budget_deny \
+      "this passes the run's writer budget" \
       "writers: budget=${B_WRITERS} open=${BUDGET_OPEN} with-this-dispatch=$(( BUDGET_OPEN + 1 ))"
   else
     BUDGET_UNMEASURED="${BUDGET_UNMEASURED} writers"
@@ -1055,6 +1072,7 @@ BUDGET_REFUSE
   B_SUITES=$(budget_field suites)
   if [ -n "$B_SUITES" ]; then
     [ $(( BUDGET_CLAIMED + 1 )) -gt "$B_SUITES" ] && budget_deny \
+      "this passes the run's suite budget" \
       "suites: budget=${B_SUITES} claimed=${BUDGET_CLAIMED} with-this-dispatch=$(( BUDGET_CLAIMED + 1 ))"
   else
     BUDGET_UNMEASURED="${BUDGET_UNMEASURED} suites"
@@ -1064,6 +1082,7 @@ BUDGET_REFUSE
   if [ -n "$B_TREES" ]; then
     BUDGET_LIVE=$(budget_live_trees "$REPO")
     [ $(( BUDGET_LIVE + 1 )) -gt "$B_TREES" ] && budget_deny \
+      "this passes the run's worktree budget" \
       "worktrees: budget=${B_TREES} live=${BUDGET_LIVE} with-this-dispatch=$(( BUDGET_LIVE + 1 ))"
   else
     BUDGET_UNMEASURED="${BUDGET_UNMEASURED} worktrees"
@@ -1724,25 +1743,20 @@ add_absent() { ABSENT="${ABSENT:+$ABSENT,}$1"; }
 # artifacts under a canonical label has declared something, unreadably, and only its
 # author knows which one is the contract.
 if [ -n "$C_DELIVERABLE_CANDIDATES" ]; then
-  echo "BLOCKED: this dispatch brief names more than one path under its deliverable label — a wave is active." >&2
-  echo "" >&2
-  echo "The label's span offers these candidates:" >&2
-  printf '%s\n' "$C_DELIVERABLE_CANDIDATES" | tr ',' '\n' | while IFS= read -r _cand; do
-    [ -n "$_cand" ] || continue
-    echo "    ${_cand}" >&2
-  done
-  echo "" >&2
-  echo "A deliverable is the ONE durable artifact this agent is contracted to produce, and" >&2
-  echo "the wall never picks among candidates — whichever it chose would be recorded as a" >&2
-  echo "declared fact, and the landing check would order this agent to write it." >&2
-  echo "" >&2
-  echo "Fix: name exactly one deliverable path in the label —" >&2
-  echo "    Expected artifact: .bionic/docs/record/my-slice-notes.md" >&2
-  echo "  References and inputs the agent should READ go outside the label's span: on their" >&2
-  echo "  own line, under Read first: or Scope constraint:, or after a blank line." >&2
-  echo "" >&2
-  echo "Then retry the dispatch." >&2
-  exit 2
+  _dp_detail="The label's span offers these candidates:
+$(printf '%s\n' "$C_DELIVERABLE_CANDIDATES" | tr ',' '\n' | sed '/^$/d; s/^/    /')
+
+A deliverable is the ONE durable artifact this agent is contracted to produce, and
+the wall never picks among candidates — whichever it chose would be recorded as a
+declared fact, and the landing check would order this agent to write it.
+
+Fix: name exactly one deliverable path in the label —
+    Expected artifact: .bionic/docs/record/my-slice-notes.md
+  References and inputs the agent should READ go outside the label's span: on their
+  own line, under Read first: or Scope constraint:, or after a blank line.
+
+Then retry the dispatch."
+  refuse exit2 dispatch "the deliverable label names several paths" "name exactly one deliverable" "$_dp_detail"
 fi
 
 # ========================================================= THE CONTAINMENT WALL
@@ -1815,27 +1829,17 @@ if [ -n "$C_DELIVERABLE" ]; then
   case "$D_ABS" in
     "$REPO"/*) : ;;
     *)
-      echo "BLOCKED: this dispatch names a deliverable outside the repository — a wave is active." >&2
-      echo "" >&2
-      echo "    ${C_DELIVERABLE}" >&2
-      echo "  resolves to ${D_ABS}, which is not under ${REPO}." >&2
-      echo "" >&2
-      echo "The landing check stats — and, for a directory, walks — whatever this names," >&2
-      echo "on every stop of the agent that owns it. It must be a path inside this repo." >&2
-      echo "" >&2
-      # A CONCRETE NAME, never a <slot> (Step-6 R6 critic R6-2). This message hands the
-      # author a line to copy, and briefs in this repo quote wall text verbatim — so the
-      # example must be a brief that every wall here ACCEPTS. The slot form it used to
-      # recommend is refused by the sibling wall below (a template is not a path), and
-      # tests/cross-gate-agreement.test.sh §N.4 pins that refusal: this file was
-      # recommending, in one message, the exact string another of its messages rejects.
-      # tests/dispatch-preflight.test.sh S18 drives each refusal's own Fix: line back
-      # through the gate so the two can never drift apart again.
-      echo "Fix: name a repo-relative artifact path in the brief —" >&2
-      echo "    Expected artifact: .bionic/docs/record/my-slice-notes.md" >&2
-      echo "" >&2
-      echo "Then retry the dispatch." >&2
-      exit 2
+      _dp_detail="    ${C_DELIVERABLE}
+  resolves to ${D_ABS}, which is not under ${REPO}.
+
+The landing check stats — and, for a directory, walks — whatever this names,
+on every stop of the agent that owns it. It must be a path inside this repo.
+
+Fix: name a repo-relative artifact path in the brief —
+    Expected artifact: .bionic/docs/record/my-slice-notes.md
+
+Then retry the dispatch."
+      refuse exit2 dispatch "the deliverable is outside this repository" "name a path inside the repo" "$_dp_detail"
       ;;
   esac
 fi
@@ -1870,21 +1874,19 @@ fi
 # journal step bail early — the same reasoning §8 applies to the attestation
 # path, read here in the refuse direction.
 if [ -z "$C_DELIVERABLE" ] && [ -z "$C_WAIVER" ]; then
-  echo "BLOCKED: this dispatch brief names no deliverable — a wave is active." >&2
-  echo "" >&2
-  echo "An agent with nothing durable to produce cannot be checked on: there is no" >&2
-  echo "path to stat when it reports done, and nothing left behind if it dies quietly." >&2
-  echo "" >&2
-  echo "Fix: declare a durable artifact path with a canonical label —" >&2
-  echo "    Expected artifact: .bionic/docs/record/my-slice-notes.md" >&2
-  echo "  Any of these labels lifts one: Expected artifact(s), Deliverable(s), Artifact(s)." >&2
-  echo "  Name a concrete path — the wall never guesses one from prose, and a <slot> is not a name." >&2
-  echo "" >&2
-  echo "Or waive it — the reason is recorded on the session roster either way:" >&2
-  echo "    Deliverable-waiver: <why this dispatch produces nothing durable>" >&2
-  echo "" >&2
-  echo "Then retry the dispatch." >&2
-  exit 2
+  _dp_detail="An agent with nothing durable to produce cannot be checked on: there is no
+path to stat when it reports done, and nothing left behind if it dies quietly.
+
+Fix: declare a durable artifact path with a canonical label —
+    Expected artifact: .bionic/docs/record/my-slice-notes.md
+  Any of these labels lifts one: Expected artifact(s), Deliverable(s), Artifact(s).
+  Name a concrete path — the wall never guesses one from prose, and a <slot> is not a name.
+
+Or waive it — the reason is recorded on the session roster either way:
+    Deliverable-waiver: <why this dispatch produces nothing durable>
+
+Then retry the dispatch."
+  refuse exit2 dispatch "this brief names no deliverable" "add an Expected artifact: line" "$_dp_detail"
 fi
 
 # ============================================== THE SUITE-ALLOWANCE WALL (AC-20)
@@ -1916,29 +1918,27 @@ fi
 # bookkeeping: without one of the two labels there is no budget on the row, and a guard
 # with no budget to enforce is the prose the incident already proved does not bind.
 if [ -z "$C_FILES" ] && [ -z "$C_SUITES" ]; then
-  echo "BLOCKED: this dispatch brief declares neither the files it will touch nor the suites it may run — a wave is active." >&2
-  echo "" >&2
-  echo "An agent with no declared instrument runs whatever it decides to run. Two writers" >&2
-  echo "read \"run the impacted suites\" as the whole tree and spent 40 minutes each" >&2
-  echo "re-proving the world; the budget only binds when it is on the roster row." >&2
-  echo "" >&2
-  echo "Fix: declare the files this slice will touch, on a line of its own —" >&2
-  echo "    Files: path/one.sh, path/two.sh" >&2
-  echo "  The impact command named in .bionic/config.yaml derives the suites from them." >&2
-  echo "" >&2
-  echo "Where no impact command is configured, name the closed set yourself —" >&2
-  echo "    Suites: tests/one.test.sh, tests/two.test.sh" >&2
-  echo "" >&2
-  echo "Or waive the budget for a brief that runs no suite at all —" >&2
-  echo "    Suites: none" >&2
-  echo "" >&2
-  echo "Either way: one path per token, no shell variables. Both labels are read out of the" >&2
-  echo "brief TEXT, before any shell has expanded anything, and the writer-side guard reads" >&2
-  echo "its command the same way — a name that is still a variable when a hook sees it can" >&2
-  echo "be neither derived from nor checked against anything." >&2
-  echo "" >&2
-  echo "Then retry the dispatch." >&2
-  exit 2
+  _dp_detail="An agent with no declared instrument runs whatever it decides to run. Two writers
+read \"run the impacted suites\" as the whole tree and spent 40 minutes each
+re-proving the world; the budget only binds when it is on the roster row.
+
+Fix: declare the files this slice will touch, on a line of its own —
+    Files: path/one.sh, path/two.sh
+  The impact command named in .bionic/config.yaml derives the suites from them.
+
+Where no impact command is configured, name the closed set yourself —
+    Suites: tests/one.test.sh, tests/two.test.sh
+
+Or waive the budget for a brief that runs no suite at all —
+    Suites: none
+
+Either way: one path per token, no shell variables. Both labels are read out of the
+brief TEXT, before any shell has expanded anything, and the writer-side guard reads
+its command the same way — a name that is still a variable when a hook sees it can
+be neither derived from nor checked against anything.
+
+Then retry the dispatch."
+  refuse exit2 dispatch "this brief declares no Files: and no Suites:" "declare Files: or Suites:" "$_dp_detail"
 fi
 
 # ---------- the derivation ----------
@@ -2006,22 +2006,20 @@ elif [ -n "$IMPACT_COMMAND" ]; then
     wait "$_impact_pid" 2>/dev/null
     if [ "$_impact_overran" -eq 1 ]; then
       rm -f "$_impact_tmp"
-      echo "BLOCKED: the impact command did not answer within ${IMPACT_BOUND_S}s, so this dispatch has no budget to record — a wave is active." >&2
-      echo "" >&2
-      echo "The command named by \`impact-command:\` in .bionic/config.yaml turns the paths this" >&2
-      echo "brief declared into the set of suites the agent may run. This hook is registered at a" >&2
-      echo "10-second timeout, and a hook killed on that timeout does NOT refuse: the dispatch" >&2
-      echo "would proceed with no roster row at all, and the writer would run with no budget —" >&2
-      echo "the wall defeated by the cost of the wall. So the derivation is bounded here." >&2
-      echo "" >&2
-      echo "  command: $IMPACT_COMMAND" >&2
-      echo "  paths:   $*" >&2
-      echo "  bound:   ${IMPACT_BOUND_S}s" >&2
-      echo "" >&2
-      echo "Fix: narrow \`Files:\` to the paths this slice really writes, or name the closed set" >&2
-      echo "directly with \`Suites:\` — a declared set needs no derivation at all. If the command" >&2
-      echo "itself has become slow, that is the thing to fix: it runs on every dispatch." >&2
-      exit 2
+      _dp_detail="The command named by \`impact-command:\` in .bionic/config.yaml turns the paths this
+brief declared into the set of suites the agent may run. This hook is registered at a
+10-second timeout, and a hook killed on that timeout does NOT refuse: the dispatch
+would proceed with no roster row at all, and the writer would run with no budget —
+the wall defeated by the cost of the wall. So the derivation is bounded here.
+
+  command: $IMPACT_COMMAND
+  paths:   $*
+  bound:   ${IMPACT_BOUND_S}s
+
+Fix: narrow \`Files:\` to the paths this slice really writes, or name the closed set
+directly with \`Suites:\` — a declared set needs no derivation at all. If the command
+itself has become slow, that is the thing to fix: it runs on every dispatch."
+      refuse exit2 dispatch "the impact command did not answer" "fix impact-command in config.yaml" "$_dp_detail"
     fi
     _impact_out=$(cat "$_impact_tmp" 2>/dev/null) || _impact_out=""
     rm -f "$_impact_tmp"
@@ -2037,20 +2035,18 @@ else
   # into a budget. AC-20: where no impact command is configured the wall requires the
   # explicit list. Refused rather than passed with an empty set, because the author is
   # holding the brief and one line fixes it.
-  echo "BLOCKED: this dispatch brief declares Files: but no impact command is configured to derive suites from them — a wave is active." >&2
-  echo "" >&2
-  echo "\`Files:\` states which paths the slice will touch. Turning that into the set of" >&2
-  echo "suites the agent may run is the tree's job, and this repository has not named the" >&2
-  echo "command that asks it." >&2
-  echo "" >&2
-  echo "Fix: name the closed set in the brief instead —" >&2
-  echo "    Suites: tests/one.test.sh, tests/two.test.sh" >&2
-  echo "" >&2
-  echo "Or configure the derivation once, in .bionic/config.yaml —" >&2
-  echo "    impact-command: bash tests/lib/impact.sh" >&2
-  echo "" >&2
-  echo "Then retry the dispatch." >&2
-  exit 2
+  _dp_detail="\`Files:\` states which paths the slice will touch. Turning that into the set of
+suites the agent may run is the tree's job, and this repository has not named the
+command that asks it.
+
+Fix: name the closed set in the brief instead —
+    Suites: tests/one.test.sh, tests/two.test.sh
+
+Or configure the derivation once, in .bionic/config.yaml —
+    impact-command: bash tests/lib/impact.sh
+
+Then retry the dispatch."
+  refuse exit2 dispatch "no impact command is configured here" "set impact-command in config.yaml" "$_dp_detail"
 fi
 
 # ============================================= THE ONE-REGRESSION WALL (AC-24)
@@ -2109,20 +2105,18 @@ case " $SUITES_ALLOWED " in
       case "$_reg_rows" in ''|*[!0-9]*) _reg_rows=0 ;; esac
       case "$_reg_causes" in ''|*[!0-9]*) _reg_causes=0 ;; esac
       if [ "$_reg_rows" -gt 0 ] && [ "$_reg_causes" -lt "$_reg_rows" ]; then
-        echo "BLOCKED: this run has already dispatched a full-tree regression — a wave is active." >&2
-        echo "" >&2
-        echo "Full-tree runs on this roster: ${_reg_rows}. Recorded causes on the plan: ${_reg_causes}." >&2
-        echo "One regression means one: the tree is proved once, at integration close, and a" >&2
-        echo "second full run is a deliberate act that owes its reason to the next reader." >&2
-        echo "" >&2
-        echo "Fix: record why this one is needed, under \`## SDLC State\` in —" >&2
-        echo "    $PLAN" >&2
-        echo "" >&2
-        echo "    regression-cause: <why the tree must be re-proved>" >&2
-        echo "" >&2
-        echo "Then retry the dispatch. A narrower brief needs no cause: name only the suites" >&2
-        echo "the change actually reaches." >&2
-        exit 2
+        _dp_detail="Full-tree runs on this roster: ${_reg_rows}. Recorded causes on the plan: ${_reg_causes}.
+One regression means one: the tree is proved once, at integration close, and a
+second full run is a deliberate act that owes its reason to the next reader.
+
+Fix: record why this one is needed, under \`## SDLC State\` in —
+    $PLAN
+
+    regression-cause: <why the tree must be re-proved>
+
+Then retry the dispatch. A narrower brief needs no cause: name only the suites
+the change actually reaches."
+        refuse exit2 dispatch "this run already ran the full tree" "record the cause on the plan" "$_dp_detail"
       fi
     fi
     ;;

@@ -221,7 +221,7 @@ mk_bash_payload() {  # <sid> <cwd>  — an irrelevant tool, for the A7 hoist tes
       tool_input:{command:"echo hi"}, tool_use_id:"toolu_0irrelevant"}'
 }
 
-GATE_OUT=""; GATE_ERR=""; GATE_ST=0
+GATE_OUT=""; GATE_ERR=""; GATE_VERR=""; GATE_ST=0
 # Set to a directory to drive the gate with a sandboxed CLAUDE_CONFIG_DIR — the
 # roster prune's liveness lookup reads <config>/projects/*/<session>.jsonl, and
 # the operator's REAL config dir would decide which fixtures survive otherwise.
@@ -241,8 +241,13 @@ GATE_ENV=""
 # is a session, so the driver mirrors the payload into the environment. A payload with
 # no session key exports an empty one, which is what makes the no-session-key arms
 # still reach the fail direction they pin.
+# THE COLUMN COUNTER, for the AC-E1.3 sweep in the driver below: the em dash is three
+# bytes and one column, so a byte count would pass a line that wraps.
+. "${BIONIC_SCRIPTS_DIR}/payload/scripts/lib/width.sh"
+GATE_TIME=0
 run_gate() {  # <payload-json>
-  local _sid; _sid=$(printf '%s' "$1" | jq -r '.session_id // ""' 2>/dev/null) || _sid=""
+  local _sid _t0; _sid=$(printf '%s' "$1" | jq -r '.session_id // ""' 2>/dev/null) || _sid=""
+  _t0=$(date +%s)
   GATE_ENV="$GATE_ENV CLAUDE_CODE_SESSION_ID=$_sid"
   if [ -n "$GATE_CONFIG_DIR" ]; then
     # shellcheck disable=SC2086
@@ -252,7 +257,54 @@ run_gate() {  # <payload-json>
     GATE_OUT=$(printf '%s' "$1" | env $GATE_ENV bash "$GATE" 2>"$SANDBOX/.err")
   fi
   GATE_ST=$?
+  GATE_TIME=$(( $(date +%s) - _t0 ))
   GATE_ERR=$(cat "$SANDBOX/.err")
+  # AC-E1.3, SWEPT AT THE DRIVER. Every refusal this suite produces is checked for the
+  # criterion's shape as it happens, so no site can be migrated without an eval and no
+  # arm has to be written twice. The counters are read in the AC-E1.3 section at the end.
+  if [ "$GATE_ST" = "2" ]; then
+    _dp_line=$(printf '%s\n' "$GATE_ERR" | /usr/bin/grep '^bionic: ' || true)
+    if [ -z "$_dp_line" ]; then
+      # THE ONE REFUSAL SITE THE RULED WORDING TABLE DOES NOT COVER. `live-agents:` at
+      # dispatch-preflight.sh (the STALE/NONE roster answer) is a refusal the slice-12
+      # table has no row for, so slice 13 left its text alone rather than inventing
+      # wording for it. It is counted here by name so the gap is a fact on the record and
+      # a SECOND uncovered site would show up as an unnamed one.
+      DP_E1_UNCOVERED=$(( ${DP_E1_UNCOVERED:-0} + 1 ))
+      case "$GATE_ERR" in
+        *"live-agents: "*) : ;;
+        *) DP_E1_UNNAMED="${DP_E1_UNNAMED:-}[$GATE_ERR] " ;;
+      esac
+      return 0
+    fi
+    DP_E1_SEEN=$(( ${DP_E1_SEEN:-0} + 1 ))
+    printf '%s' "$_dp_line" | /usr/bin/grep -qE '^bionic: [a-z-]+ refused — .+ \(.{1,40}\)$' \
+      || DP_E1_BAD_SHAPE="${DP_E1_BAD_SHAPE:-}[$_dp_line] "
+    [ "$(printf '%s\n' "$_dp_line" | wc -l | tr -d ' ')" = "1" ] \
+      || DP_E1_BAD_LINES="${DP_E1_BAD_LINES:-}[$_dp_line] "
+    [ "$(bionic_cols "$_dp_line")" -le 100 ] || DP_E1_BAD_COLS="${DP_E1_BAD_COLS:-}[$_dp_line] "
+  fi
+  # THE SAME CALL AGAIN, WITH THE KNOB (slice 13, ruling D-1). This gate's refusal is
+  # now ONE line — `bionic: dispatch refused — <fact> (<fix>)` — and everything this
+  # suite reads out of the old frames (the probe output, the budget string, the plan
+  # path, the pasteable Fix lines, the candidate list) is `detail`, which reaches a
+  # reader only under BIONIC_WALL_VERBOSE=1. `$GATE_ERR` is the LINE; `$GATE_VERR` is
+  # the line plus the detail.
+  # ONLY WHEN THE FIRST DRIVE REFUSED. An allowed dispatch JOURNALS a roster row, so a
+  # second drive of an accepted call would append a second row and every counting arm in
+  # this suite would read two where the gate wrote one. Measured, not guessed: an
+  # ungated second drive turned "exactly one row was appended" into two.
+  GATE_VERR=""
+  if [ "$GATE_ST" -ne 0 ]; then
+    if [ -n "$GATE_CONFIG_DIR" ]; then
+      # shellcheck disable=SC2086
+      GATE_VERR=$(printf '%s' "$1" | env $GATE_ENV BIONIC_WALL_VERBOSE=1 \
+        CLAUDE_CONFIG_DIR="$GATE_CONFIG_DIR" bash "$GATE" 2>&1 >/dev/null)
+    else
+      # shellcheck disable=SC2086
+      GATE_VERR=$(printf '%s' "$1" | env $GATE_ENV BIONIC_WALL_VERBOSE=1 bash "$GATE" 2>&1 >/dev/null)
+    fi
+  fi
   GATE_ENV="${GATE_ENV% CLAUDE_CODE_SESSION_ID=*}"
   return 0
 }
@@ -516,7 +568,7 @@ mkdir -p "$REPO/.bionic/tmp"; chmod 500 "$REPO/.bionic/tmp"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO")"
 chmod 700 "$REPO/.bionic/tmp"
 expect_contains "a probe-failure refusal still names the install-path fix command" \
-  "bash $PROBE_SRC" "$GATE_ERR"
+  "bash $PROBE_SRC" "$GATE_VERR"
 expect_absent "refusal does not name a repo-relative fix command (checklist A1)" "hooks/preflight-probe.sh\"" "$GATE_ERR"
 case "$GATE_ERR" in
   *"hooks/dispatch-preflight.sh"*) no "refusal never names itself as the fix" ;;
@@ -693,7 +745,10 @@ chmod 700 "$REPO/.bionic/tmp"
 # fixtures-can-pin-away-the-test); proven vacuous by mutation in epic-18 W3 4/2, where
 # rewriting PREFLIGHT_CMD to `bash preflight-probe.sh` flipped nothing.
 # Lifting the gate's own text lets a relative spelling reach the execution below.
-FIXLINE=$(printf '%s\n' "$GATE_ERR" | sed -n 's/.*re-run by hand: \(.*\))\..*/\1/p' | head -1)
+# THE FIX TEXT IS IN THE DETAIL NOW (slice 13, D-1): the user line carries the repair in
+# six words and the runnable command travels with `detail`, so the extractor reads the
+# verbose stream. That the extracted line still EXECUTES is what the arms below prove.
+FIXLINE=$(printf '%s\n' "$GATE_VERR" | sed -n 's/.*re-run by hand: \(.*\))\..*/\1/p' | head -1)
 # The extractor's own non-emptiness, positive, on the same fixture — without it the
 # three assertions below are again a test of nothing (authoring rule: prove the
 # extractor before asserting an absence through it).
@@ -880,10 +935,11 @@ run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_NO_DELIVERABLE" "w99-nodel
 
 expect_status "a dispatch whose brief names no deliverable is REFUSED" "2" "$GATE_ST"
 expect_empty "the refusal never goes to stdout" "$GATE_OUT"
-expect_contains "the refusal is phrased as a block" "BLOCKED" "$GATE_ERR"
+expect_contains "the refusal is phrased as a refusal, in the renderer's one line" \
+  "bionic: dispatch refused — " "$GATE_ERR"
 expect_contains "the refusal names the field that is missing" "names no deliverable" "$GATE_ERR"
 expect_contains "the refusal shows a label that lifts one" "Expected artifact:" "$GATE_ERR"
-expect_contains "the refusal names the waiver escape verbatim" "Deliverable-waiver:" "$GATE_ERR"
+expect_contains "the refusal names the waiver escape verbatim" "Deliverable-waiver:" "$GATE_VERR"
 # The wrong fix would be the environment attestation's — this refusal is a
 # different one and must not send the operator to re-run the probe.
 expect_absent "the refusal does not name the attestation fix command" "preflight-probe.sh" "$GATE_ERR"
@@ -950,7 +1006,7 @@ REPO=$(make_repo r10w5 yes)
 write_attestation "$REPO" "$SID_A"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_EMPTY_WAIVER" "w99-emptywaiver")"
 expect_status "a reasonless waiver does not open the wall" "2" "$GATE_ST"
-expect_contains "…and the refusal still names the escape" "Deliverable-waiver:" "$GATE_ERR"
+expect_contains "…and the refusal still names the escape" "Deliverable-waiver:" "$GATE_VERR"
 
 # ---- the ordinary brief records no waiver ----
 REPO=$(make_repo r10w6 yes)
@@ -1482,7 +1538,7 @@ REPO=$(make_repo r12f yes)
 write_attestation "$REPO" "$SID_A"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_ONLY_READFIRST" "w99-refusaltext")"
 expect_contains "the refusal names a canonical label to add" "Expected artifact:" "$GATE_ERR"
-expect_contains "the refusal says the wall never guesses" "never guesses" "$GATE_ERR"
+expect_contains "the refusal says the wall never guesses" "never guesses" "$GATE_VERR"
 expect_absent "…and no longer promises to infer an unlabeled record/ mention" \
   "inferred automatically" "$GATE_ERR"
 
@@ -1597,10 +1653,10 @@ run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_LABEL_RUNON" "runonbot")"
 expect_status "C-2: a run-on labelled span naming four paths is REFUSED as ambiguous (R7)" \
   "2" "$GATE_ST"
 expect_contains "C-2: …the refusal names the declared artifact" \
-  "record/w99-report.md" "$GATE_ERR"
+  "record/w99-report.md" "$GATE_VERR"
 expect_contains "C-2: …and the 'read …' input path, so neither is chosen for the author" \
-  "record/legacy-notes.md" "$GATE_ERR"
-expect_contains "C-2: …and the 'do not touch' suite runner" "tests/run.sh" "$GATE_ERR"
+  "record/legacy-notes.md" "$GATE_VERR"
+expect_contains "C-2: …and the 'do not touch' suite runner" "tests/run.sh" "$GATE_VERR"
 expect_status "C-2: …and no roster row demands any of the four" "1" \
   "$([ -f "$(roster_path "$REPO" "$SID_A")" ] && echo 0 || echo 1)"
 
@@ -1659,7 +1715,7 @@ write_attestation "$REPO" "$SID_A"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_QUOTED_WAIVER" "quoter2")"
 expect_status "S-1: a quoted mid-sentence waiver does not open the absent-deliverable wall" \
   "2" "$GATE_ST"
-expect_contains "S-1: …the refusal still names the escape" "Deliverable-waiver:" "$GATE_ERR"
+expect_contains "S-1: …the refusal still names the escape" "Deliverable-waiver:" "$GATE_VERR"
 
 # (c) a line-start waiver whose reason is the literal placeholder from the wall
 # text is not a reason.
@@ -1701,8 +1757,9 @@ REPO=$(make_repo r13h yes)
 write_attestation "$REPO" "$SID_A"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_ESCAPE_REL" "escaper")"
 expect_status "S-2: a ..-escaping deliverable is refused at the dispatch wall" "2" "$GATE_ST"
-expect_contains "S-2: …the refusal is phrased as a block" "BLOCKED" "$GATE_ERR"
-expect_contains "S-2: …and names the offending path" "../../../../../../etc/hosts" "$GATE_ERR"
+expect_contains "S-2: …the refusal is phrased as a refusal, in the renderer's one line" \
+  "bionic: dispatch refused — " "$GATE_ERR"
+expect_contains "S-2: …and names the offending path" "../../../../../../etc/hosts" "$GATE_VERR"
 expect_status "S-2: …and no roster row is written for it" "1" \
   "$([ -f "$(roster_path "$REPO" "$SID_A")" ] && echo 0 || echo 1)"
 
@@ -1715,7 +1772,7 @@ REPO=$(make_repo r13i yes)
 write_attestation "$REPO" "$SID_A"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_ESCAPE_ABS" "escaper2")"
 expect_status "S-2: an absolute out-of-repo deliverable is refused too" "2" "$GATE_ST"
-expect_contains "S-2: …and names it" "/usr/share" "$GATE_ERR"
+expect_contains "S-2: …and names it" "/usr/share" "$GATE_VERR"
 
 # CONTROL: an in-repo ABSOLUTE path is a perfectly good deliverable and must
 # still pass — the check is containment, not a ban on absolute paths.
@@ -1989,9 +2046,10 @@ run_gate "$(mk_agent_payload "$SID_A" "$REPO")"
 chmod 700 "$REPO/.bionic/tmp"
 expect_status "AC-4: a probe that FAILS blocks the dispatch (the environment is broken)" \
   "2" "$GATE_ST"
-expect_contains "AC-4: …the refusal is phrased as a block" "BLOCKED" "$GATE_ERR"
+expect_contains "AC-4: …the refusal is phrased as a refusal, in the renderer's one line" \
+  "bionic: dispatch refused — " "$GATE_ERR"
 expect_contains "AC-4: …and hands over the probe's own reason, not a paraphrase" \
-  "state dir" "$GATE_ERR"
+  "state dir" "$GATE_VERR"
 expect_status "AC-4: …and a blocked dispatch is journalled nowhere (AC-12)" "0" \
   "$([ -f "$(roster_path "$REPO" "$SID_A")" ] && echo 1 || echo 0)"
 
@@ -2098,9 +2156,9 @@ run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_TWO_PATHS_SHAPE" "shapebot
 expect_status "R6-1 CASE 9: a deliverable span naming two paths is REFUSED, never resolved" \
   "2" "$GATE_ST"
 expect_contains "R6-1 CASE 9: …the refusal names the reference path" \
-  ".bionic/docs/record/w2-critic-report.md" "$GATE_ERR"
+  ".bionic/docs/record/w2-critic-report.md" "$GATE_VERR"
 expect_contains "R6-1 CASE 9: …and the real artifact, so neither is silently contracted" \
-  ".bionic/docs/record/w2-probe-frd.md" "$GATE_ERR"
+  ".bionic/docs/record/w2-probe-frd.md" "$GATE_VERR"
 expect_contains "R6-1 CASE 9: …and asks for exactly one" "exactly one" "$GATE_ERR"
 expect_status "R6-1 CASE 9: …and no roster row contracts the agent to either" "1" \
   "$([ -f "$(roster_path "$REPO" "$SID_A")" ] && echo 0 || echo 1)"
@@ -2116,16 +2174,16 @@ write_attestation "$REPO" "$SID_A"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_TWO_PATHS_READ" "readproducebot")"
 expect_status "R6-1 CASE 10: read-X-then-produce-Y is REFUSED, not contracted to X" "2" "$GATE_ST"
 expect_contains "R6-1 CASE 10: …the auditors report is named as a candidate, not taken" \
-  ".bionic/docs/record/w2-auditor-report.md" "$GATE_ERR"
+  ".bionic/docs/record/w2-auditor-report.md" "$GATE_VERR"
 expect_contains "R6-1 CASE 10: …alongside the artifact the agent was actually sent to write" \
-  ".bionic/docs/record/w2-probe-frd2.md" "$GATE_ERR"
+  ".bionic/docs/record/w2-probe-frd2.md" "$GATE_VERR"
 expect_status "R6-1 CASE 10: …and no row is written for either" "1" \
   "$([ -f "$(roster_path "$REPO" "$SID_A")" ] && echo 0 || echo 1)"
 
 # ---- the refusal DIAGNOSES ambiguity, and is not the absent-deliverable message ----
 expect_absent "the ambiguity refusal is not misfiled as an absent deliverable" \
   "names no deliverable" "$GATE_ERR"
-expect_contains "…it says where references belong instead" "outside" "$GATE_ERR"
+expect_contains "…it says where references belong instead" "outside" "$GATE_VERR"
 
 # ---- THE RESUBMISSION: CASE 9 with one path in the label and the reference moved out ----
 BRIEF_TWO_PATHS_FIXED='You are reviewing the wave.
@@ -2211,7 +2269,7 @@ REPO=$(make_repo r18g yes)
 write_attestation "$REPO" "$SID_A"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_AMBIG_WAIVED" "waivedambig")"
 expect_status "a waiver does not excuse an ambiguous deliverable label" "2" "$GATE_ST"
-expect_contains "…and the refusal still names both candidates" "a-notes.md" "$GATE_ERR"
+expect_contains "…and the refusal still names both candidates" "a-notes.md" "$GATE_VERR"
 
 # ---- S18b: the deliverable span ends at the next LABELLED LINE, not at the next
 # registered label (wave-bionic-1.3.2, found at dispatch) ----
@@ -2249,7 +2307,7 @@ REPO=$(make_repo r18twoline yes)
 write_attestation "$REPO" "$SID_A"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_TWO_ON_ONE_LINE" "twolinebot")"
 expect_status "S18b two paths on the deliverable label OWN line are still REFUSED" "2" "$GATE_ST"
-expect_contains "S18b …and the refusal still names both candidates" "w99-two.log" "$GATE_ERR"
+expect_contains "S18b …and the refusal still names both candidates" "w99-two.log" "$GATE_VERR"
 
 # A prose continuation line (no label head) still belongs to the span — the R6-4 window
 # stays open, so a path named in a later sentence is still found.
@@ -2297,7 +2355,7 @@ for _wall in containment absent ambiguous; do
   write_attestation "$REPO" "$SID_A"
   run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$_b" "fixline-$_wall")"
   expect_status "self-consistency ($_wall): the wall refuses" "2" "$GATE_ST"
-  _ex=$(fix_example "$GATE_ERR")
+  _ex=$(fix_example "$GATE_VERR")
   expect_status "self-consistency ($_wall): its Fix: block recommends a labeled example" "0" \
     "$([ -n "$_ex" ] && echo 0 || echo 1)"
   expect_absent "self-consistency ($_wall): …carrying no slot the walls themselves refuse" \
@@ -2421,7 +2479,7 @@ run_gate "$(mk_agent_payload "$SID_A" "$REPO" 'Canonical-sdlc Step 4. Do the thi
 Exit condition: the suite is green.')"
 expect_status "a deliverable-less dispatch in an agent context is still REFUSED" "2" "$GATE_ST"
 expect_contains "…by the absent-deliverable wall, in its own words" \
-  "BLOCKED: this dispatch brief names no deliverable" "$GATE_ERR"
+  "bionic: dispatch refused — this brief names no deliverable" "$GATE_ERR"
 GATE_ENV="$S20_SAVED_ENV"
 
 # The paired positive: the same dispatch with no channel marker — the main thread, as
@@ -2478,12 +2536,13 @@ write_attestation "$REPO" "$SID_A"
 rm -f "$(s21_stamp_path "$REPO" "$SID_A")"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO")"
 expect_status "an ABSENT Patrol stamp refuses the dispatch" "2" "$GATE_ST"
-expect_contains "…in the checkpoint house style, not an alarm word" "patrol checkpoint" "$GATE_ERR"
-expect_contains "…naming the state it found" "never armed" "$GATE_ERR"
-expect_contains "…and naming the exact re-arm command, resolved" "session-poker.sh arm" "$GATE_ERR"
+expect_contains "…in the checkpoint house style, not an alarm word" \
+  "bionic: dispatch refused — no Patrol stamp exists for this session" "$GATE_ERR"
+expect_contains "…naming the state it found" "never armed" "$GATE_VERR"
+expect_contains "…and naming the exact re-arm command, resolved" "session-poker.sh arm" "$GATE_VERR"
 expect_contains "…and the CronCreate half, so the stamp is not re-armed into a dead clock" \
-  "CronCreate" "$GATE_ERR"
-expect_contains "…and says what to do after" "retry the dispatch" "$GATE_ERR"
+  "CronCreate" "$GATE_VERR"
+expect_contains "…and says what to do after" "retry the dispatch" "$GATE_VERR"
 expect_status "…and journals nothing: a refused dispatch is not a launch" "0" \
   "$(roster_rows "$(roster_path "$REPO" "$SID_A")")"
 
@@ -2512,7 +2571,7 @@ write_attestation "$REPO" "$SID_A"
 rm -f "$(s21_stamp_path "$REPO" "$SID_A")"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO")"
 expect_status "a stamp keyed to a DIFFERENT session does not arm this one" "2" "$GATE_ST"
-expect_contains "…and reads as never-armed here" "never armed" "$GATE_ERR"
+expect_contains "…and reads as never-armed here" "never armed" "$GATE_VERR"
 
 # ---------- the wall rides the active-run predicate and nothing else ----------
 REPO=$(make_repo r21e no)
@@ -2536,7 +2595,7 @@ s21_backdate "$(s21_stamp_path "$REPO" "$SID_A")" 200     # past 2 x 60s
 run_gate "$(mk_agent_payload "$SID_A" "$REPO")"
 expect_status "…and one past it refuses, on the same fixture the default would have passed" \
   "2" "$GATE_ST"
-expect_contains "…naming the interval it measured against" "120s" "$GATE_ERR"
+expect_contains "…naming the interval it measured against" "120s" "$GATE_VERR"
 
 # ---------- a symlinked stamp is refused, never followed ----------
 REPO=$(make_repo r21h yes)
@@ -2581,7 +2640,7 @@ printf 'poker-interval: 30\n' > "$REPO/.bionic/config.yaml"   # the bare-number 
 rm -f "$(s21_stamp_path "$REPO" "$SID_A")"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO")"
 expect_status "an unreadable interval does NOT open the wall for an unarmed session" "2" "$GATE_ST"
-expect_contains "…the never-armed arm still fires" "never armed" "$GATE_ERR"
+expect_contains "…the never-armed arm still fires" "never armed" "$GATE_VERR"
 
 # r21k — and the staleness arm runs too, measured against the fallback default.
 REPO=$(make_repo r21k yes)
@@ -2631,7 +2690,7 @@ S21_SAVED_GATE="$GATE"; GATE="$S21_TREE_HOOKS/dispatch-preflight.sh"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO")"
 expect_status "r21l the fallback threshold moves with the POKER's constant, not the gate's" \
   "2" "$GATE_ST"
-expect_contains "…and measures against 2x the doctored default" "20s" "$GATE_ERR"
+expect_contains "…and measures against 2x the doctored default" "20s" "$GATE_VERR"
 GATE="$S21_SAVED_GATE"
 
 # r21m — THE POKER ITSELF UNREACHABLE. `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hooks/` is the
@@ -2653,7 +2712,7 @@ GATE="$S21_LONE_HOOKS/dispatch-preflight.sh"; GATE_CONFIG_DIR="$S21_EMPTY_CONFIG
 run_gate "$(mk_agent_payload "$SID_A" "$REPO")"
 expect_status "r21m with NO poker on either lane, the unarmed session is still refused" \
   "2" "$GATE_ST"
-expect_contains "…by the existence arm, which never needed the interval" "never armed" "$GATE_ERR"
+expect_contains "…by the existence arm, which never needed the interval" "never armed" "$GATE_VERR"
 
 # …and the staleness half, which genuinely cannot run, says so instead of passing quietly.
 REPO=$(make_repo r21n yes)
@@ -2735,8 +2794,8 @@ s22_roster_row "$REPO" "$SID_A" "W-TWO"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO")"
 expect_status "r22a two open rows against writers=2 → the third dispatch is REFUSED" "2" "$GATE_ST"
 expect_contains "…naming the budget line verbatim" \
-  "writers=2 suites=9 worktrees=9 test_jobs=4 source=probe" "$GATE_ERR"
-expect_contains "…and the count that broke it" "writers: budget=2 open=2 with-this-dispatch=3" "$GATE_ERR"
+  "writers=2 suites=9 worktrees=9 test_jobs=4 source=probe" "$GATE_VERR"
+expect_contains "…and the count that broke it" "writers: budget=2 open=2 with-this-dispatch=3" "$GATE_VERR"
 expect_contains "…naming the plan the budget came from" "$REPO/.bionic/docs/plans/epic-99-test/wave-01-test.plan.md" "$GATE_ERR"
 
 REPO=$(make_repo r22b yes)
@@ -2781,7 +2840,7 @@ s22_set_budget "$REPO" "writers=9 suites=1 worktrees=9 test_jobs=4 source=probe"
 s22_roster_row "$REPO" "$SID_A" "W-ONE" "bash tests/run.sh"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO")"
 expect_status "r22e one claimed suite against suites=1 → REFUSED" "2" "$GATE_ST"
-expect_contains "…naming the suite count" "suites: budget=1 claimed=1 with-this-dispatch=2" "$GATE_ERR"
+expect_contains "…naming the suite count" "suites: budget=1 claimed=1 with-this-dispatch=2" "$GATE_VERR"
 
 REPO=$(make_repo r22f yes)
 write_attestation "$REPO" "$SID_A"
@@ -2799,7 +2858,7 @@ expect_status "r22h worktrees=1 with no tree standing → passes (the control)" 
 s22_fake_tree "$REPO" "one"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO")"
 expect_status "…one live tree against worktrees=1 → REFUSED" "2" "$GATE_ST"
-expect_contains "…naming the tree count" "worktrees: budget=1 live=1 with-this-dispatch=2" "$GATE_ERR"
+expect_contains "…naming the tree count" "worktrees: budget=1 live=1 with-this-dispatch=2" "$GATE_VERR"
 # A plain directory under .worktrees is not a leased tree — only a linked one is.
 REPO=$(make_repo r22i yes)
 write_attestation "$REPO" "$SID_A"
@@ -2825,7 +2884,7 @@ R22G_TRANSCRIPT="$SANDBOX/.r22g-live.jsonl"
 mk_transcript "$R22G_TRANSCRIPT" fresh W-ONE W-TWO W-THREE
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w99-impl" "claude-sonnet-5" "$R22G_TRANSCRIPT")"
 expect_status "r22g three live rows and one absent, against writers=3 → REFUSED" "2" "$GATE_ST"
-expect_contains "…the wall counts three open" "writers: budget=3 open=3 with-this-dispatch=4" "$GATE_ERR"
+expect_contains "…the wall counts three open" "writers: budget=3 open=3 with-this-dispatch=4" "$GATE_VERR"
 # shellcheck source=/dev/null
 ( . "${BIONIC_SCRIPTS_DIR}/payload/scripts/lib/patrol.sh" 2>/dev/null \
   && patrol_roster_state "$REPO" "$SID_A" ) > "$SANDBOX/.r22g" 2>/dev/null
@@ -2864,7 +2923,7 @@ R22JB_T="$SANDBOX/.r22jb.jsonl"
 mk_transcript "$R22JB_T" fresh r1
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w99-impl" "claude-sonnet-5" "$R22JB_T")"
 expect_status "r22jb r1 present in the fresh answer -> open=1, REFUSED" "2" "$GATE_ST"
-expect_contains "…naming the count" "writers: budget=1 open=1 with-this-dispatch=2" "$GATE_ERR"
+expect_contains "…naming the count" "writers: budget=1 open=1 with-this-dispatch=2" "$GATE_VERR"
 
 # (c) no FRESH answer this turn — STALE and NONE both — REFUSES the whole dispatch,
 # naming the fix, before the budget arm is ever consulted (AC-8). Same roster/budget
@@ -3049,7 +3108,7 @@ mk_transcript "$R22KB_T" fresh "r1:idle" "r2:running"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w99-impl" "claude-sonnet-5" "$R22KB_T")"
 expect_status "r22kb one idle row and one running row against writers=1 -> REFUSED" "2" "$GATE_ST"
 expect_contains "…counting the running one ONLY: open=1, not open=2" \
-  "writers: budget=1 open=1 with-this-dispatch=2" "$GATE_ERR"
+  "writers: budget=1 open=1 with-this-dispatch=2" "$GATE_VERR"
 
 # (c) AMBIGUITY IS STILL OPEN, and it is the arm that keeps (a) from being read as
 # "anything the reader cannot call running is free". The same name twice — two sessions
@@ -3064,7 +3123,7 @@ run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w99-impl" "claude-s
 expect_status "r22kc the same name listed TWICE is unresolvable -> still counted open" \
   "2" "$GATE_ST"
 expect_contains "…open=1 on the safe direction, even though neither copy reads running" \
-  "writers: budget=1 open=1 with-this-dispatch=2" "$GATE_ERR"
+  "writers: budget=1 open=1 with-this-dispatch=2" "$GATE_VERR"
 
 # (d) FRESHNESS STILL COMES FIRST. A STALE answer refuses the whole dispatch before any
 # status is consulted — an idle row on a stale answer says nothing about now.
@@ -3119,7 +3178,7 @@ run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w99-impl" "claude-s
 expect_status "r22kf …and at writers=1 the still-running one alone fills it -> REFUSED" \
   "2" "$GATE_ST"
 expect_contains "…open=1, the finished agent uncounted" \
-  "writers: budget=1 open=1 with-this-dispatch=2" "$GATE_ERR"
+  "writers: budget=1 open=1 with-this-dispatch=2" "$GATE_VERR"
 
 # (f) THE CLAIMED (suites) COUNT RIDES THE SAME PREDICATE. A `claims=` row whose agent
 # has finished must not hold a suite allowance either — otherwise the two ceilings would
@@ -3132,7 +3191,7 @@ R22KG_T="$SANDBOX/.r22kg.jsonl"
 mk_transcript "$R22KG_T" fresh "r1:running"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w99-impl" "claude-sonnet-5" "$R22KG_T")"
 expect_status "r22kg meta: a RUNNING claimant fills suites=1 (the control)" "2" "$GATE_ST"
-expect_contains "…naming the claimed count" "suites: budget=1 claimed=1 with-this-dispatch=2" "$GATE_ERR"
+expect_contains "…naming the claimed count" "suites: budget=1 claimed=1 with-this-dispatch=2" "$GATE_VERR"
 mk_transcript "$R22KG_T" fresh "r1:idle"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w99-impl" "claude-sonnet-5" "$R22KG_T")"
 expect_status "r22kg the SAME claimant, now idle, releases its suite allowance" "0" "$GATE_ST"
@@ -3157,7 +3216,7 @@ mk_transcript "$R22KH_T" fresh "r1:starting"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w99-impl" "claude-sonnet-5" "$R22KH_T")"
 expect_status "r22kh an UNKNOWN third status word still counts OPEN -> REFUSED" "2" "$GATE_ST"
 expect_contains "…open=1, the slot kept on a reading nobody has seen before" \
-  "writers: budget=1 open=1 with-this-dispatch=2" "$GATE_ERR"
+  "writers: budget=1 open=1 with-this-dispatch=2" "$GATE_VERR"
 expect_contains "r22kh meta: the answer body really says starting, not running" \
   "r1 [8895ce]  ·  bionic:implementor  ·  starting" "$(cat "$R22KH_T")"
 
@@ -3180,7 +3239,7 @@ R22KI_T="$SANDBOX/.r22ki.jsonl"
 mk_transcript "$R22KI_T" fresh "r1:starting"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w99-impl" "claude-sonnet-5" "$R22KI_T")"
 expect_status "r22ki an unknown-status claimant still HOLDS its suite allowance" "2" "$GATE_ST"
-expect_contains "…naming the claimed count" "suites: budget=1 claimed=1 with-this-dispatch=2" "$GATE_ERR"
+expect_contains "…naming the claimed count" "suites: budget=1 claimed=1 with-this-dispatch=2" "$GATE_VERR"
 mk_transcript "$R22KI_T" fresh "r1:idle"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w99-impl" "claude-sonnet-5" "$R22KI_T")"
 expect_status "…and the SAME claimant read idle releases it" "0" "$GATE_ST"
@@ -3233,8 +3292,8 @@ expect_status "r23a a dispatch from the MAIN checkout passes (the control)" "0" 
 
 run_gate "$(mk_agent_payload "$SID_A" "$S23_TREE")"
 expect_status "r23b the same dispatch from inside the linked worktree is REFUSED" "2" "$GATE_ST"
-expect_contains "…naming the main checkout" "main checkout: $S23_MAIN" "$GATE_ERR"
-expect_contains "…and the tree it was made from" "$S23_TREE" "$GATE_ERR"
+expect_contains "…naming the main checkout" "main checkout: $S23_MAIN" "$GATE_VERR"
+expect_contains "…and the tree it was made from" "$S23_TREE" "$GATE_VERR"
 
 # The settings-channel spelling of an agent context.
 GATE_ENV="$GATE_ENV BIONIC_HOOK_CHANNEL=agent-context"
@@ -3357,7 +3416,7 @@ awk 'NR==2 { print "parallel-budget: writers=0 suites=4 worktrees=32 test_jobs=8
   "$S24_PLAN" > "$S24_PLAN.tmp" && mv "$S24_PLAN.tmp" "$S24_PLAN"
 run_gate "$(mk_agent_payload "$SID_A" "$S24_BUDGET")"
 expect_status "r24i the same brief against a FULL budget is REFUSED" "2" "$GATE_ST"
-expect_contains "…by the budget wall" "writers" "$GATE_ERR"
+expect_contains "…by the budget wall" "writers" "$GATE_VERR"
 
 # and the same full budget with NO plan-free failure and NO marker is silent.
 rm -f "$S24_BUDGET/.bionic/tmp/engaged-$SID_A.state"
@@ -3455,7 +3514,7 @@ s25_bind "$S25_REPO" "$SID_A" "$S25_PLAN_A"
 s22_roster_row "$S25_REPO" "$SID_A" "W-ONE"
 run_gate "$(mk_agent_payload "$SID_A" "$S25_REPO")"
 expect_status "25a1: bound to A (tight budget), the dispatch is REFUSED by A's ceiling" "2" "$GATE_ST"
-expect_contains "25a2: …naming A as the plan the budget came from" "$S25_PLAN_A" "$GATE_ERR"
+expect_contains "25a2: …naming A as the plan the budget came from" "$S25_PLAN_A" "$GATE_VERR"
 expect_absent "25a3: …and B's path is never named" "$S25_PLAN_B" "$GATE_ERR"
 expect_absent "25a4: bound: no fallback line is printed" \
   "run resolved by newest-plan fallback" "$GATE_ERR"
@@ -3747,15 +3806,15 @@ run_gate "$(mk_agent_payload "$SID_A" "$REPO" 'Your slice: build it.
 Expected artifact: .bionic/docs/record/w27c.md
 Expected duration: ~15 minutes.' "w27-neither")"
 expect_status "27c a brief declaring neither Files: nor Suites: is REFUSED" "2" "$GATE_ST"
-expect_contains "27c …naming the Files: fix" "Files: path/one.sh" "$GATE_ERR"
-expect_contains "27c …naming the Suites: fix" "Suites: tests/one.test.sh" "$GATE_ERR"
-expect_contains "27c …and the waiver" "Suites: none" "$GATE_ERR"
+expect_contains "27c …naming the Files: fix" "Files: path/one.sh" "$GATE_VERR"
+expect_contains "27c …naming the Suites: fix" "Suites: tests/one.test.sh" "$GATE_VERR"
+expect_contains "27c …and the waiver" "Suites: none" "$GATE_VERR"
 # THE SPELLING RULE, IN THE ONE MESSAGE AN AUTHOR READS WHEN THE LABELS ARE MISSING. Both
 # labels are read out of the brief TEXT before any shell expands anything, and the
 # writer-side guard reads its command the same way (review-c C-5/C-6): a name that is still
 # a variable when a hook sees it can be neither derived from nor checked against anything.
 expect_contains "27c …and the spelling rule the two labels share" \
-  "one path per token, no shell variables" "$GATE_ERR"
+  "one path per token, no shell variables" "$GATE_VERR"
 expect_empty "27c …with nothing on stdout" "$GATE_OUT"
 expect_status "27c …and no row journalled for a refused dispatch" \
   "0" "$(roster_rows "$(roster_path "$REPO" "$SID_A")")"
@@ -3783,8 +3842,8 @@ REPO=$(make_repo r27e yes)
 write_attestation "$REPO" "$SID_A"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FILES" "w27-nocmd")"
 expect_status "27e Files: with no impact-command configured is REFUSED" "2" "$GATE_ST"
-expect_contains "27e …naming the declared-set fix" "Suites: tests/one.test.sh" "$GATE_ERR"
-expect_contains "27e …and the config key that would derive it" "impact-command:" "$GATE_ERR"
+expect_contains "27e …naming the declared-set fix" "Suites: tests/one.test.sh" "$GATE_VERR"
+expect_contains "27e …and the config key that would derive it" "impact-command:" "$GATE_VERR"
 
 # --- S27f: a brief carrying BOTH — the declaration wins ---
 #
@@ -3828,7 +3887,7 @@ REPO=$(make_repo r27c2 yes)
 write_attestation "$REPO" "$SID_A"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" 'Your slice: build it.
 Expected artifact: .bionic/docs/record/w27c2.md' "w27-neither2")"
-S27_FIX=$(printf '%s\n' "$GATE_ERR" | grep -m1 -E '^[[:space:]]+Suites: tests' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+S27_FIX=$(printf '%s\n' "$GATE_VERR" | grep -m1 -E '^[[:space:]]+Suites: tests' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
 expect_status "27h the refusal really recommended a Suites: line" "0" \
   "$([ -n "$S27_FIX" ] && echo 0 || echo 1)"
 REPO=$(make_repo r27h yes)
@@ -3872,16 +3931,16 @@ expect_status "28a …and its row carries run.sh, which is what makes it countab
 
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_REGRESSION" "w28-runner-two")"
 expect_status "28b a SECOND full-tree dispatch in the same run is REFUSED" "2" "$GATE_ST"
-expect_contains "28b …counting what it found" "Full-tree runs on this roster: 1" "$GATE_ERR"
+expect_contains "28b …counting what it found" "Full-tree runs on this roster: 1" "$GATE_VERR"
 # READ OUT OF THE FIX BLOCK, not merely "somewhere on stderr" — the unbound-session
 # advisory this gate prints on every run also names the plan path, so a plain contains
 # passes over a wall that never fired.
 # Compared from the fixture root rightwards, because the gate resolves symlinks on the
 # path it prints (/var -> /private/var on macOS) while $REPO does not.
-S28_FIXLINE=$(printf '%s\n' "$GATE_ERR" | grep -A1 -F 'under `## SDLC State` in' | tail -1 | sed 's/^[[:space:]]*//')
+S28_FIXLINE=$(printf '%s\n' "$GATE_VERR" | grep -A1 -F 'under `## SDLC State` in' | tail -1 | sed 's/^[[:space:]]*//')
 expect_status "28b …naming the plan the cause belongs on, inside its own Fix block" \
   "/repo/.bionic/docs/plans/epic-99-test/wave-01-test.plan.md" "${S28_FIXLINE##*/r28}"
-expect_contains "28b …and the line to write" "regression-cause:" "$GATE_ERR"
+expect_contains "28b …and the line to write" "regression-cause:" "$GATE_VERR"
 expect_status "28b …and the refused dispatch journalled no second row" \
   "1" "$(roster_rows "$(roster_path "$REPO" "$SID_A")")"
 
@@ -3893,7 +3952,7 @@ expect_status "28c …and it is journalled" \
 
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_REGRESSION" "w28-runner-four")"
 expect_status "28d …but the cause is spent: a THIRD run needs a second one" "2" "$GATE_ST"
-expect_contains "28d …and the count says so" "Full-tree runs on this roster: 2" "$GATE_ERR"
+expect_contains "28d …and the count says so" "Full-tree runs on this roster: 2" "$GATE_VERR"
 
 # A NARROWER BRIEF NEEDS NO CAUSE — the rule is about the full tree, not about dispatching.
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" 'Your slice: fix the widget.
@@ -3912,7 +3971,7 @@ regression-cause: written outside the ledger}" > "$S28F_PLAN"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_REGRESSION" "w28f-one")"
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_REGRESSION" "w28f-two")"
 expect_status "28f a regression-cause above ## SDLC State does not count" "2" "$GATE_ST"
-expect_contains "28f …and the wall still reports zero causes" "Recorded causes on the plan: 0" "$GATE_ERR"
+expect_contains "28f …and the wall still reports zero causes" "Recorded causes on the plan: 0" "$GATE_VERR"
 
 section "SECTION 29 — the derivation is BOUNDED, and the overrun is a refusal (review-c C-16)"
 # THE DEFECT. The impact command is the whole of this gate's cost — ~0.3 s without it,
@@ -3945,12 +4004,15 @@ write_attestation "$REPO" "$SID_A"
 s29_impact "$REPO" 30
 S29_T0=$(date +%s)
 run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FILES" "w29-slow")"
-S29_ELAPSED=$(( $(date +%s) - S29_T0 ))
+# THE WALL'S OWN COST, not the suite's: `run_gate` drives the call a second time with
+# BIONIC_WALL_VERBOSE=1 to read `detail`, and that second bounded derivation would double
+# the number measured here. `$GATE_TIME` is the first drive alone.
+S29_ELAPSED="$GATE_TIME"
 expect_status "29a a derivation that outruns the bound REFUSES the dispatch" "2" "$GATE_ST"
-expect_contains "29a …naming the bound it outran" "did not answer within 6s" "$GATE_ERR"
-expect_contains "29a …naming the command that was slow" "impact-stub.sh" "$GATE_ERR"
-expect_contains "29a …naming the paths it was asked about" "payload/scripts/lib/widget.sh" "$GATE_ERR"
-expect_contains "29a …and saying why an unbounded one would be worse" "no roster row" "$GATE_ERR"
+expect_contains "29a …naming the bound it outran" "bound:   6s" "$GATE_VERR"
+expect_contains "29a …naming the command that was slow" "impact-stub.sh" "$GATE_VERR"
+expect_contains "29a …naming the paths it was asked about" "payload/scripts/lib/widget.sh" "$GATE_VERR"
+expect_contains "29a …and saying why an unbounded one would be worse" "no roster row" "$GATE_VERR"
 # THE POINT OF THE BOUND IS THE CLOCK. The hook is registered at a 10-second timeout, so a
 # refusal that arrives after it is no refusal at all.
 if [ "$S29_ELAPSED" -lt 10 ]; then
@@ -4036,10 +4098,10 @@ for _role in bionic:implementor bionic:senior-implementor; do
   run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w${_tag}" "claude-sonnet-5" \
                                "$S5_LIVE_TRANSCRIPT" "$_role")"
   expect_status "${_tag} a ${_role} dispatch at current: 4 with no approved-by is refused" "2" "$GATE_ST"
-  expect_contains "${_tag} …and the refusal names the missing line" "approved-by" "$GATE_ERR"
+  expect_contains "${_tag} …and the refusal names the missing line" "approved-by" "$GATE_VERR"
   # NOT merely the plan path: an unbound session's own resolution announcement carries that
   # already, so a path assertion here would be green with no refusal printed at all.
-  expect_contains "${_tag} …and says what a writer needs" "writers run against an APPROVED plan" "$GATE_ERR"
+  expect_contains "${_tag} …and says what a writer needs" "writers run against an APPROVED plan" "$GATE_VERR"
 done
 
 # --- 30c: THE CONTROL — the same dispatch with the line present passes ---
@@ -4133,7 +4195,7 @@ for _role in bionic:implementor bionic:senior-implementor; do
   run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w${_tag}" "claude-sonnet-5" \
                                "$S5_LIVE_TRANSCRIPT" "$_role")"
   expect_status "${_tag} a ${_role} dispatch at task-scale current: T1 with no approved-by is refused" "2" "$GATE_ST"
-  expect_contains "${_tag} …and the refusal names the missing line" "approved-by" "$GATE_ERR"
+  expect_contains "${_tag} …and the refusal names the missing line" "approved-by" "$GATE_VERR"
 done
 
 # --- 31c: THE CONTROL — the same dispatch with the line present passes ---
@@ -4171,5 +4233,47 @@ run_gate "$(mk_agent_payload "$SID_A" "$REPO" "$BRIEF_FULL" "w31f" "claude-sonne
                              "$S5_LIVE_TRANSCRIPT" "bionic:implementor")"
 expect_status "31f task-scale current: T3 with no approved-by is refused (any n >= 1, not just T1)" "2" "$GATE_ST"
 
+
+section "AC-E1.3/E1.5 — every refusal this gate makes is one line, in the shape"
+
+# fails-when: a refusal reaches the user as more than one line, or in any shape but
+# `bionic: <verb> refused — <fact> (<fix ≤ 40 cols>)`.
+#
+# WHY A WRAPPER AND NOT ONE ROW PER SITE. This gate has sixteen refusal sites behind
+# three frames, and every one of them is already driven somewhere above. `run_gate` is
+# wrapped here so that EVERY refusal the rest of this suite produced was checked as it
+# happened — shape, line count and column budget — and the counter proves the sweep saw
+# real refusals rather than counting over air.
+
+
+expect_eq "E1.3 the gate refused at least ten times in this run (not counting over air)" "yes" \
+  "$([ "${DP_E1_SEEN:-0}" -ge 10 ] && echo yes || echo no)"
+expect_eq "E1.3 every refusal matched the criterion's shape" "" "${DP_E1_BAD_SHAPE:-}"
+expect_eq "E1.3 every refusal was exactly one line" "" "${DP_E1_BAD_LINES:-}"
+expect_eq "E1.3 every refusal fitted the 100-column budget" "" "${DP_E1_BAD_COLS:-}"
+# THE UNCOVERED SITE, named rather than silently tolerated: `live-agents:` has no row in
+# the slice-12 wording table, so it still speaks in its own voice. Any OTHER refusal that
+# renders no line fails here.
+expect_eq "E1.3 the only refusals with no rendered line are the uncovered live-agents site" \
+  "" "${DP_E1_UNNAMED:-}"
+
+# THE TABLE'S EXACT WORDING at three sites, one per frame: the environment frame, the
+# Patrol frame, and a direct arm.
+REPO=$(make_repo re13b yes)
+write_attestation "$REPO" "$SID_A"
+run_gate "$(mk_agent_payload "$SID_A" "$REPO" "Your slice: build it.
+Expected duration: ~15 minutes.
+Suites: tests/widget.test.sh" "w-e13b")"
+expect_eq "E1.3 row 48 (no deliverable) is the table's line" \
+  "bionic: dispatch refused — this brief names no deliverable (add an Expected artifact: line)" \
+  "$(printf '%s\n' "$GATE_ERR" | /usr/bin/grep '^bionic: ')"
+
+# AC-E1.5, the pair: the frame's Fix block is off the user stream and on the knob.
+expect_absent "E1.5 the Fix block is NOT on the user stream" \
+  "Then retry the dispatch" "$GATE_ERR"
+expect_contains "E1.5 …and BIONIC_WALL_VERBOSE=1 puts it back" \
+  "Then retry the dispatch" "$GATE_VERR"
+expect_contains "E1.5 …with the one line still in it" \
+  "bionic: dispatch refused — this brief names no deliverable" "$GATE_VERR"
 
 finish

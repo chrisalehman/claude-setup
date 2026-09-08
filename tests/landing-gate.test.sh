@@ -372,11 +372,20 @@ commit_files() {  # <worktree> <message> <path>...
 # DIVERGENCE, not a session, and every roster filename below would be built from the
 # wrong key. A payload with no session key exports an empty one, which is what keeps the
 # no-session-key arms reaching the fail direction they pin.
+GATE_VERBOSE=1
 run_gate() {  # <gate path> <payload json>
   local gate="$1" json="$2"
   local _sid; _sid=$(printf '%s' "$json" | jq -r '.session_id // ""' 2>/dev/null) || _sid=""
   printf '%s' "$json" > "$SANDBOX/payload.json"
-  ( exec env CLAUDE_CODE_SESSION_ID="$_sid" bash "$gate" < "$SANDBOX/payload.json" ) \
+  # THE KNOB IS A DRIVER SETTING HERE, not a second drive (slice 13, ruling D-1). This
+  # gate BLOCKS ONCE: it records that it refused and passes on the next stop, so a second
+  # invocation to read `detail` comes back empty and every arm asserting the detail would
+  # be asserting over nothing. Measured, not assumed. So the one drive carries
+  # BIONIC_WALL_VERBOSE=1 by default — `$OUT_STDERR` is then the line PLUS the detail,
+  # which is what the per-row arms below read — and the AC-E1.3 section sets
+  # GATE_VERBOSE=0 for its own fixtures, where the one line on its own is the subject.
+  ( exec env CLAUDE_CODE_SESSION_ID="$_sid" \
+      ${GATE_VERBOSE:+BIONIC_WALL_VERBOSE=$GATE_VERBOSE} bash "$gate" < "$SANDBOX/payload.json" ) \
     > "$SANDBOX/gate.out" 2> "$SANDBOX/gate.err" &
   local pid=$!
   BG_PIDS="$BG_PIDS $pid"
@@ -392,6 +401,13 @@ run_gate() {  # <gate path> <payload json>
   fi
   OUT_STDOUT="$(cat "$SANDBOX/gate.out")"
   OUT_STDERR="$(cat "$SANDBOX/gate.err")"
+  # THE SAME CALL AGAIN, WITH THE KNOB, ONLY WHEN IT REFUSED (slice 13, ruling D-1).
+  # This gate's refusal is now ONE line — `bionic: stop refused — <fact> (<fix>)` — and
+  # the per-row paragraphs this suite reads for names, files and derived suites are
+  # `detail`, which reaches a reader only under BIONIC_WALL_VERBOSE=1. `$OUT_STDERR` is
+  # the line; `$OUT_VSTDERR` is the line plus the detail. Gated on the refusal so a
+  # PERMITTED stop is never swept twice.
+  OUT_VSTDERR="$OUT_STDERR"
 }
 
 # ================================================================= Section 1
@@ -1205,8 +1221,8 @@ add_row "$R16A" name=slice16a agent_id="$AID_A" deliverable=.bionic/docs/record/
 deliver "$R16A" .bionic/docs/record/s16a.md
 run_gate "$GATE" "$(stop_payload "$R16A" "$SID" false)"
 expect_status "16a: a diff outside the declared Files: refuses the stop" "2" "$RC"
-expect_contains "16a: …naming the row" "slice16a" "$OUT_STDERR"
-expect_contains "16a: …naming the offending file" "undeclared/two.sh" "$OUT_STDERR"
+expect_contains "16a: …naming the row" "slice16a" "$OUT_VSTDERR"
+expect_contains "16a: …naming the offending file" "undeclared/two.sh" "$OUT_VSTDERR"
 expect_absent "16a: …never the declared file" "declared/one.sh" "$OUT_STDERR"
 expect_eq "16a: …the deliverable side stays silent (it WAS delivered)" "0" \
   "$(printf '%s' "$OUT_STDERR" | /usr/bin/grep -c 'LANDING CONTRACT UNMET')"
@@ -1252,7 +1268,7 @@ add_row "$R16D" name=mixed-case agent_id="$AID_A" deliverable=.bionic/docs/recor
 deliver "$R16D" .bionic/docs/record/s16d.md
 run_gate "$GATE" "$(stop_payload "$R16D" "$SID" false)"
 expect_status "16d: the worktree is found by name even when the directory case differs" "2" "$RC"
-expect_contains "16d: …naming the offending file" "undeclared/x.sh" "$OUT_STDERR"
+expect_contains "16d: …naming the offending file" "undeclared/x.sh" "$OUT_VSTDERR"
 
 # --- 16e: A declared Files: with NO locatable worktree (the tree was already removed, or
 # never matched by name) is an AMBIGUITY, not a refusal — the same "cannot place it" pass
@@ -1300,8 +1316,8 @@ add_row "$R16G" name=slice16g agent_id="$AID_A" deliverable=.bionic/docs/record/
 deliver "$R16G" .bionic/docs/record/s16g.md
 run_gate "$GATE" "$(stop_payload "$R16G" "$SID" false)"
 expect_status "16g: a diff outside Files: with an impact command configured still refuses" "2" "$RC"
-expect_contains "16g: …naming the offending file" "undeclared/three.sh" "$OUT_STDERR"
-expect_contains "16g: …and the suite the impact command derived for it" "fake.test.sh" "$OUT_STDERR"
+expect_contains "16g: …naming the offending file" "undeclared/three.sh" "$OUT_VSTDERR"
+expect_contains "16g: …and the suite the impact command derived for it" "fake.test.sh" "$OUT_VSTDERR"
 
 # --- 16h: A DETACHED MAIN CHECKOUT (review-a A-5). `git rev-parse --abbrev-ref HEAD` prints
 # the literal string `HEAD` there, and `HEAD` resolves INSIDE the worktree to the worktree's
@@ -1337,7 +1353,7 @@ add_row "$R16H2" name=slice16h2 agent_id="$AID_A" deliverable=.bionic/docs/recor
 deliver "$R16H2" .bionic/docs/record/s16h2.md
 run_gate "$GATE" "$(stop_payload "$R16H2" "$SID" false)"
 expect_absent "16h: control: on a branch the announcement is gone" "reconciliation is INERT" "$OUT_STDERR"
-expect_contains "16h: control: …and the diff outside Files: refuses" "undeclared/four.sh" "$OUT_STDERR"
+expect_contains "16h: control: …and the diff outside Files: refuses" "undeclared/four.sh" "$OUT_VSTDERR"
 
 # --- 16i: THE DERIVATION IS BOUNDED (review-c C-17). The impact command costs ~2.6-6.5 s
 # and this hook is registered at "timeout": 10 on Stop and SubagentStop, with the call
@@ -1360,9 +1376,9 @@ T16I=$(date +%s)
 run_gate "$GATE" "$(stop_payload "$R16I" "$SID" false)"
 E16I=$(( $(date +%s) - T16I ))
 expect_status "16i: a slow derivation does not turn the refusal into a pass" "2" "$RC"
-expect_contains "16i: …the offending file is still named" "undeclared/slow.sh" "$OUT_STDERR"
+expect_contains "16i: …the offending file is still named" "undeclared/slow.sh" "$OUT_VSTDERR"
 expect_contains "16i: …and the reader is told the suites were NOT derived" \
-  "are NOT named here" "$OUT_STDERR"
+  "are NOT named here" "$OUT_VSTDERR"
 expect_absent "16i: …never the answer the command would eventually have given" \
   "never.test.sh" "$OUT_STDERR"
 if [ "$E16I" -lt 10 ]; then
@@ -1475,5 +1491,44 @@ SM_OUT3=$(bash "$SM_DRIVER" "$SM_LIB" "$BIONIC_HOOKS_DIR" 2>&1)
 SM_ST3=$?
 expect_eq "17d control: against the shipped hook the lib sources clean" "0" "$SM_ST3"
 expect_contains "17d …and the builder is a real function" "function" "$SM_OUT3"
+
+section "AC-E1.3/E1.5: the refusal is one line, in the criterion's shape"
+
+# fails-when: a refusal reaches the user as more than one line, or in any shape but
+# `bionic: <verb> refused — <fact> (<fix ≤ 40 cols>)`. Both of this gate's refusal kinds
+# are tripped on their own fixture with the knob OFF, which is what a live session sees.
+
+LG_E1_RE='^bionic: [a-z-]+ refused — .+ \(.{1,40}\)$'
+GATE_VERBOSE=0
+
+# (a) an unmet landing contract — table row 108.
+RE1="$(make_wave_repo re1)"
+add_row "$RE1" name=we1-s5 agent_id="$AID_A" deliverable=.bionic/docs/record/never.md \
+  launched_at="$(iso_ago 600)"
+run_gate "$GATE" "$(stop_payload "$RE1" "$SID" false)"
+expect_status "E1.3 an unmet contract still refuses" 2 "$RC"
+expect_eq "E1.3 …in exactly one line" "1" "$(printf '%s\n' "$OUT_STDERR" | wc -l | tr -d ' ')"
+if printf '%s' "$OUT_STDERR" | /usr/bin/grep -qE "$LG_E1_RE"; then
+  ok "E1.3 …in AC-E1.3's shape"
+else
+  no "E1.3 …in AC-E1.3's shape" "line=[$OUT_STDERR]"
+fi
+expect_eq "E1.3 …and it is the table's own wording (row 108)" \
+  "bionic: stop refused — a dispatched agent's contract is unmet (write the named artifacts)" \
+  "$OUT_STDERR"
+expect_absent "E1.5 the per-row paragraph is NOT on the user stream" \
+  "LANDING CONTRACT UNMET" "$OUT_STDERR"
+
+# (b) the same fixture with the knob ON: the paragraph is back, the line still first.
+GATE_VERBOSE=1
+RE2="$(make_wave_repo re2)"
+add_row "$RE2" name=we2-s5 agent_id="$AID_A" deliverable=.bionic/docs/record/never.md \
+  launched_at="$(iso_ago 600)"
+run_gate "$GATE" "$(stop_payload "$RE2" "$SID" false)"
+expect_status "E1.5 the same refusal with the knob" 2 "$RC"
+expect_contains "E1.5 …carries the per-row paragraph" "LANDING CONTRACT UNMET" "$OUT_STDERR"
+expect_eq "E1.5 …with the one line still first" \
+  "bionic: stop refused — a dispatched agent's contract is unmet (write the named artifacts)" \
+  "$(printf '%s\n' "$OUT_STDERR" | head -1)"
 
 finish
