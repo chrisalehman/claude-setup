@@ -469,6 +469,34 @@ HARD_BACK="$(json_field reason "$DRV_OUT")"
 expect_status "4l the escaper survives quotes, backslashes, a tab and a newline" "0" "$?"
 expect_contains "4m …and the detail comes back byte-identical" "$HARD" "$HARD_BACK"
 
+# CONTROL BYTES, the class a hand-rolled escaper forgets (Step-6 review F-1). JSON
+# forbids EVERY code point below U+0020 unescaped, not just the five with a short
+# spelling, and `detail` is not a field the library controls: farm-out-reminder.sh
+# interpolates the model's own Bash command text into it, scrubbed for secrets and
+# truncated but never filtered for control bytes. An unescaped 0x01 makes the whole
+# `deny` verdict unparseable, and `deny` exits 0 — so the wall reports success while
+# telling the CLI nothing, which is the fail-OPEN direction.
+CTRL="$(printf 'a\001b\033c\016d')"
+drive "$LIB" deny "$FX_VERB" "$FX_FACT" "$FX_FIX" "$CTRL"
+CTRL_BACK="$(json_field hookSpecificOutput.permissionDecisionReason "$DRV_OUT")"
+expect_status "4n deny: a detail carrying control bytes still parses as JSON" "0" "$?"
+expect_contains "4o deny: …and the bytes survive the escaper" "$CTRL" "$CTRL_BACK"
+expect_absent "4p deny: …and no raw control byte is on the wire" "$CTRL" "$DRV_OUT"
+
+drive "$LIB" block "$FX_VERB" "$FX_FACT" "$FX_FIX" "$CTRL"
+CTRL_BACK="$(json_field reason "$DRV_OUT")"
+expect_status "4q block: the same detail parses on the block wire" "0" "$?"
+expect_contains "4r block: …and the bytes survive there too" "$CTRL" "$CTRL_BACK"
+expect_absent "4s block: …and no raw control byte is on the wire" "$CTRL" "$DRV_OUT"
+
+# THE ESCAPER IS STILL PARAMETER EXPANSION, not `jq`. refuse.sh's header gives the
+# reason — `jq` is a dependency this machine can lose and a wall that cannot format
+# its refusal must not therefore fail open — and F-1's fix must not buy validity by
+# reintroducing it. The permit path is the one that must stay free of processes, and
+# sourcing the library is the whole permit path.
+expect_absent "4t the escaper does not shell out to jq" "jq" \
+  "$(sed -n '/^_refuse_json_escape()/,/^}/p' "$LIB")"
+
 # ============================================================
 section "5 — fail-closed: refuse exits, and no path out of it waves the action past"
 # ============================================================
