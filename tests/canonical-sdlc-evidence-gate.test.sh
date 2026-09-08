@@ -3806,6 +3806,10 @@ deploy_target: none
 model_plan: orchestrator=fable-5-high
 ---
 
+## Goal
+
+One artifact path put in front of both hooks, so their answers about placement must agree.
+
 ## Verification Matrix
 
 stack-health: n/a: no long-running serve observed
