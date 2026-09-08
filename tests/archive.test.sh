@@ -208,6 +208,51 @@ expect_eq "3e: the printed line names the occupied path" \
   "yes" "$(contains "$OUT3" "plans/epic-03")"
 
 # ============================================================
+section "3f — an unwritable archive root: the refusal is the ONLY line"
+# ============================================================
+#
+# Step-6 review F-6. `mkdir -p "$dest_base"` ran without redirecting its stderr, so the
+# reader got the shell's own diagnostic ahead of the library's one line:
+#
+#     mkdir: /.../ro/dest/p3f: Permission denied
+#     bionic: archive refused — could not create /.../ro/dest/p3f
+#
+# The refusal itself was always correct and every source tree was always left in place;
+# what leaked was a second line, in a project whose whole refusal contract (E1, ADR-002)
+# is that a wall says one thing once. `archive_run` is a COMMAND rather than a wall
+# (slice-12 ruling D-5, so it keeps its own voice and its own exit codes) but the
+# one-line property is the same property.
+#
+# A READ-ONLY PARENT, not a missing one: `mkdir -p` on a path it cannot create is the
+# only way to reach that branch, and chmod 500 on the parent is how it is reached
+# without root. SKIPPED WHEN THE TEST RUNS AS ROOT, where the chmod does not bind and
+# the arm would assert about a `mkdir` that succeeded.
+P3F="$(new_project p3f)"
+mkdir -p "$P3F/.bionic/docs/plans/epic-3f"
+fixture_plan "$P3F/.bionic/docs/plans/epic-3f/wave-01.plan.md" 9 yes
+RO_BASE="$SANDBOX/ro-archive"
+mkdir -p "$RO_BASE"
+printf 'archive-root: %s\n' "$RO_BASE" > "$P3F/.bionic/config.yaml"
+chmod 500 "$RO_BASE"
+
+if [ -w "$RO_BASE" ]; then
+  ok "3f: SKIPPED — the read-only parent stayed writable, so this is a root shell"
+else
+  OUT3F="$(call_archive "$P3F" "$P3F/.bionic/docs/plans/epic-3f")"
+  RC3F=$?
+  expect_eq "3f.1 an unwritable archive root refuses" "1" "$RC3F"
+  expect_eq "3f.2 …and the refusal is the only line of output" "1" \
+    "$(printf '%s\n' "$OUT3F" | wc -l | tr -d ' ')"
+  expect_eq "3f.3 …no raw mkdir diagnostic in front of it" "no" \
+    "$(contains "$OUT3F" "mkdir:")"
+  expect_eq "3f.4 …and the line is the library's own" "yes" \
+    "$(contains "$OUT3F" "bionic: archive refused — could not create")"
+  expect_eq "3f.5 …the source plan is untouched" "yes" \
+    "$([ -f "$P3F/.bionic/docs/plans/epic-3f/wave-01.plan.md" ] && echo yes || echo no)"
+fi
+chmod 700 "$RO_BASE" 2>/dev/null || true
+
+# ============================================================
 section "4 — AC-C.4: an origin-file mismatch (basename collision) refuses"
 # ============================================================
 
