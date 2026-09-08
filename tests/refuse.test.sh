@@ -16,17 +16,20 @@
 #   §3  AC-E1.5. `BIONIC_WALL_VERBOSE=1` puts `detail` on the user stream, in every
 #       mode, and its absence keeps it off the modes that have somewhere else to put it.
 #   §4  the model stream's shape per mode: `deny` carries `detail` in
-#       `permissionDecisionReason`, `block` in `reason`, `exit2` on stderr after the
-#       user line — the three shapes the E1 measurement proved reach the model.
+#       `permissionDecisionReason`, `block` in `reason`, and `exit2` carries the one
+#       line and nothing else — its single wire is the user's, so D-1 keeps `detail`
+#       off it entirely and `BIONIC_WALL_VERBOSE=1` is the only way back to it.
 #   §5  the fail-closed properties. `refuse` exits and never returns to a call site
 #       that could then wave the action through, and every path out of it — including
 #       every authoring error — leaves a non-zero status or a blocking JSON verdict.
 #
 # THE SHAPES ARE ASSERTED LITERALLY, NOT READ BACK OUT OF THE TABLE. §2's exit2 row
-# says "one line, a blank, then the detail" as a literal expectation, not as
-# `refuse_channel exit2 detail_to_user`. A suite that asks the library what to expect
-# and then checks the library did it agrees with itself for any value of the cell.
-# Slice 12 owns that cell; when it flips, this row goes red and is edited on purpose.
+# says "exactly one line, and the detail is not on it" as a literal expectation, not
+# as `refuse_channel exit2 detail_to_user`. A suite that asks the library what to
+# expect and then checks the library did it agrees with itself for any value of the
+# cell. Slice 12 owned that cell and flipped it to `no` (ruling D-1, "a refusal is a
+# sentence with a pointer"); this row went red on that flip and was edited on
+# purpose, in slice 13, which is exactly what it is here to force.
 #
 # EVERY ASSERTION HAS A MUTANT. Each section drives a scratch copy of refuse.sh with
 # exactly one guard removed and requires the copy to fail where the shipped file
@@ -154,8 +157,10 @@ section "1 — the channel table is data, and every cell is the measurement's"
 # measurement that cost a slice. A cell edited to a plausible guess — most likely
 # turning an `unverified` into a `yes` because the guess feels safe — would be
 # invisible, and every later reader would treat the guess as measured. The
-# `user_interactive` rows are the ones this protects: all five say `unverified`
-# today, and slice 12 replaces them from Chris's attended run.
+# `user_interactive` rows are the ones this protects: slice 12's attended run
+# (e1-measurement.md §D-2) measured the three BLOCKING modes and replaced their
+# cells; the two non-blocking modes were never driven interactively and still say
+# `unverified`, which is a gap named rather than a guess written.
 
 expect_true "1a refuse.sh is on disk and parses" bash -n "$LIB"
 
@@ -191,10 +196,32 @@ done
 # (c) THE MEASURED CELLS, by value.
 for _m in exit2 deny systemmessage block additionalcontext; do
   expect_eq "1j $_m: the headless terminal showed nothing" "none" "$(cell "$_m" user_headless)"
-  expect_eq "1k $_m: the interactive terminal is unverified, not guessed" \
-    "unverified" "$(cell "$_m" user_interactive)"
   expect_regex "1l $_m: the source cell names the measurement row it is quoted from" \
-    '^e1-measurement\.md channel table, mode [1-5]$' "$(cell "$_m" source)"
+    '^e1-measurement\.md channel table, mode [1-5]( \+ D-2)?$' "$(cell "$_m" source)"
+done
+
+# THE INTERACTIVE CELLS, filled by slice 12's attended run (e1-measurement.md §D-2,
+# F-D2-1..3) for the three blocking modes and still `unverified` for the two that
+# were never driven live. Pinned by a phrase each, not by the whole cell: the phrase
+# is the finding, and a cell rewritten to say something else about the same mode
+# should go red here.
+expect_contains "1k1 exit2: the interactive cell carries D-2's red-paint finding" \
+  "painted in red" "$(cell exit2 user_interactive)"
+expect_contains "1k2 exit2: …and the Bash collapse that hides it" \
+  "Ran N shell commands" "$(cell exit2 user_interactive)"
+expect_contains "1k3 deny: the interactive cell says the raw text never painted" \
+  "nothing raw" "$(cell deny user_interactive)"
+expect_contains "1k4 block: the interactive cell carries F-D2-2, that the command RAN" \
+  "the command RAN" "$(cell block user_interactive)"
+for _m in exit2 deny block; do
+  expect_ne "1k5 $_m: the interactive cell is no longer the placeholder" \
+    "unverified" "$(cell "$_m" user_interactive)"
+  expect_contains "1k6 $_m: …and its source cell says D-2 is where it came from" \
+    "D-2" "$(cell "$_m" source)"
+done
+for _m in systemmessage additionalcontext; do
+  expect_eq "1k7 $_m: never driven interactively, so still unverified and not guessed" \
+    "unverified" "$(cell "$_m" user_interactive)"
 done
 expect_eq "1m deny is model-only: the reason rides JSON, the terminal showed nothing" \
   "yes" "$(cell deny model_only)"
@@ -205,8 +232,8 @@ expect_eq "1o exit2 is NOT model-only: one wire carries both halves" \
 
 # (d) FIELD 9, the switch slice 12 owns. Asserted by value so the ruling is a
 # deliberate edit here and not a silent library change.
-expect_eq "1p exit2 ships putting detail on the user stream (slice 12 owns this cell)" \
-  "yes" "$(cell exit2 detail_to_user)"
+expect_eq "1p exit2 does NOT put detail on the user stream — ruling D-1 flipped this cell" \
+  "no" "$(cell exit2 detail_to_user)"
 expect_eq "1q deny does not: it has a model-only channel" "no" "$(cell deny detail_to_user)"
 expect_eq "1r block does not, for the same reason" "no" "$(cell block detail_to_user)"
 
@@ -223,11 +250,13 @@ section "2 — AC-E1.3: the user stream is one line, in the criterion's shape"
 # fails-when: two lines, or a fix over six words. Both halves are driven below, and
 # both have a mutant.
 #
-# THE THREE MODES DIFFER, AND THE DIFFERENCE IS THE MEASUREMENT'S. `deny` and `block`
-# have a model-only channel, so their user stream is LITERALLY one line. `exit2` has
-# one wire for both halves, so its user stream is the line, a blank, and the detail —
-# the D4 degradation, taken deliberately so the model keeps its instruction. Each is
-# spelled out here rather than derived from the table.
+# ALL THREE MODES AGREE ON THE USER STREAM, AND THE REASON DIFFERS. `deny` and
+# `block` have a model-only channel, so their user stream is one line because the
+# detail has somewhere else to be. `exit2` has ONE wire for both halves, and ruling
+# D-1 ("a refusal is a sentence with a pointer") spends it on the line alone: the
+# detail goes to the hook's log and to `BIONIC_WALL_VERBOSE=1`, never to the reader
+# who is being interrupted. Each is spelled out here rather than derived from the
+# table.
 
 # --- (a) deny and block: exactly one line on the user stream. ---
 for _m in deny block; do
@@ -240,11 +269,17 @@ for _m in deny block; do
     "A path-qualified" "$DRV_ERR"
 done
 
-# --- (b) exit2: the line first, then the detail, on the one wire it has. ---
+# --- (b) exit2: the one line, and nothing after it. Its single wire is the user's,
+# so the detail is not on it either — the positive (2e/2e2) and the negative (2g)
+# are asserted together, because "the detail is absent" is worthless beside a stream
+# that is empty for some other reason. ---
 drive "$LIB" exit2 "$FX_VERB" "$FX_FACT" "$FX_FIX" "$FX_DETAIL"
 expect_regex "2e exit2: the FIRST line matches AC-E1.3's shape" "$USER_LINE_RE" "$DRV_ERR_1"
-expect_eq "2f exit2: …and it is the whole user half — line 2 is blank" "" "$(sed -n '2p' "$SANDBOX/.err")"
-expect_contains "2g exit2: the detail follows it, for the model that reads this stream" \
+expect_eq "2e2 exit2: …spelled from the object's four fields" \
+  "bionic: $FX_VERB refused — $FX_FACT ($FX_FIX)" "$DRV_ERR_1"
+expect_eq "2f exit2: …and it is the WHOLE stream — exactly one line, no blank, no detail" \
+  "1" "$DRV_ERR_LINES"
+expect_absent "2g exit2: the detail is not on the wire the user reads (ruling D-1)" \
   "A path-qualified" "$DRV_ERR"
 expect_eq "2h exit2: nothing at all on stdout (stdout is the JSON modes' wire)" "" "$DRV_OUT"
 
@@ -411,10 +446,17 @@ expect_contains "4h block: reason opens with the user line" \
   "bionic: $FX_VERB refused — $FX_FACT ($FX_FIX)" "$BLOCK_REASON"
 expect_contains "4i block: …and carries the detail" "A path-qualified" "$BLOCK_REASON"
 
+# exit2 has no second channel: the model reads the same stderr the user does, so
+# under D-1 the model gets the one line and the detail is the log's and the knob's.
+# That is the D4 degradation named in refuse.sh's header, and it is why a migrated
+# wall's `detail` must also be worth reading in the hook's own log.
 drive "$LIB" exit2 "$FX_VERB" "$FX_FACT" "$FX_FIX" "$FX_DETAIL"
-expect_contains "4j exit2: stderr carries the one line first" \
+expect_contains "4j exit2: stderr carries the one line, which is what the model reads" \
   "bionic: $FX_VERB refused — $FX_FACT ($FX_FIX)" "$DRV_ERR_1"
-expect_contains "4k exit2: …then the detail, which is how the model reads it here" \
+expect_absent "4k exit2: …and the detail is not on it, in either direction" \
+  "A path-qualified" "$DRV_ERR"
+drive_v 1 "$LIB" exit2 "$FX_VERB" "$FX_FACT" "$FX_FIX" "$FX_DETAIL"
+expect_contains "4k2 exit2: the knob is the way back to it, on the same wire" \
   "A path-qualified" "$DRV_ERR"
 
 # THE ESCAPER, on the shapes that break a hand-rolled one: a lone backslash before a

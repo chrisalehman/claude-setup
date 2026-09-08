@@ -34,9 +34,10 @@
 # behave. Every cell in it was measured on CLI 2.1.263 by slice 10 and is quoted from
 # `record/wave-01-plugin-only/e1-measurement.md`; the `source` column names the row.
 # Cells the measurement could not establish carry the literal value `unverified`,
-# never a guess — the interactive terminal's rendering of a hook refusal cannot be
-# produced without live keystrokes, so every mode's `user_interactive` cell says
-# `unverified` and slice 12 fills them from Chris's attended run.
+# never a guess. Slice 12's attended run (§D-2 of the same file, findings F-D2-1..3)
+# drove the three BLOCKING modes live and filled their `user_interactive` cells; the
+# two non-blocking modes were never driven interactively and still say `unverified`,
+# which is a gap named rather than a guess written.
 #
 # Ten fields, `|`-separated, one row per mode. No cell may contain a `|`.
 #
@@ -45,25 +46,28 @@
 #   3  refusal           `yes` iff this mode may carry a refusal at all
 #   4  blocks            does the tool call / stop actually not happen
 #   5  user_headless     what `claude -p`'s terminal shows — measured
-#   6  user_interactive  what a live session's terminal shows — `unverified`
+#   6  user_interactive  what a live session's terminal shows — measured for the
+#                        three blocking modes (§D-2), `unverified` for the other two
 #   7  model             what reaches the model's context — measured
 #   8  model_only        `yes` iff `detail` reaches the model and not the user
 #   9  detail_to_user    does THIS renderer also put `detail` on the user stream
 #   10 source            the measurement row every cell above is quoted from
 #
-# FIELD 9 IS THE ONE SWITCH SLICE 12 OWNS, and it is why the table is data rather
-# than a `case`. On `deny` and `block` the split is real: `detail` rides the JSON
-# reason, the user line rides stderr, and the user stream is one line. On `exit2`
-# there is one wire for both — the CLI wraps the hook's stderr into the model's
-# tool_result, and what an interactive terminal paints of that same stderr is the
-# `unverified` cell. So `exit2` ships with `detail_to_user=yes`: the model keeps its
-# instruction, which is ADR-002's whole point, and the cost is that an interactive
-# banner may show the detail too. If Chris's attended run shows the banner paints
-# every stderr line, slice 12 flips this one cell to `no` and `exit2` degrades to
-# design D4's "short form for both" with no other change to this file — and
-# tests/refuse.test.sh §2 goes red until its exit2 row is edited to match, which is
-# the point of asserting the shapes literally there instead of reading them back
-# out of this table.
+# FIELD 9 IS THE ONE SWITCH SLICE 12 OWNED, AND IT IS NOW `no` EVERYWHERE. It is why
+# the table is data rather than a `case`. On `deny` and `block` the split is real:
+# `detail` rides the JSON reason, the user line rides stderr, and the user stream is
+# one line. On `exit2` there is one wire for both — the CLI wraps the hook's stderr
+# into the model's tool_result and, §D-2 finding F-D2-3 showed, paints that same
+# stderr to the user in red, whole, under the refused tool's own header. So there is
+# no split to spend: whatever `exit2` gives the model it gives the reader. Ruling
+# D-1 ("a refusal is a sentence with a pointer", Chris 2026-09-07) spends that one
+# wire on the line alone — `exit2` ships with `detail_to_user=no`, the reader is
+# interrupted by one sentence, and `detail` lives in the hook's own log and behind
+# `BIONIC_WALL_VERBOSE=1`. The cost is design D4's degradation taken deliberately:
+# on `exit2` the model reads the line and no more, so a migrated wall's `detail`
+# must be worth reading where it does land. tests/refuse.test.sh §2 asserts that
+# shape literally rather than reading it back out of this table, which is why the
+# flip made it go red and be edited on purpose.
 #
 # WHY exit2 IS STILL SUPPORTED. Nine of the real walls and all 21 loader walls use
 # it, and four hook events in the roster (SubagentStop, PostToolUse, SessionStart,
@@ -121,10 +125,10 @@ BIONIC_REFUSE_FIX_WORDS=6
 BIONIC_REFUSE_FIX_COLS=40
 
 # THE CHANNEL TABLE. Every cell quoted from record/wave-01-plugin-only/e1-measurement.md.
-BIONIC_REFUSE_TABLE='exit2|exit 2 with the text on stderr|yes|yes|none|unverified|the full stderr text, wrapped in a synthetic is_error tool_result prefixed "PreToolUse:<tool> hook error"|no|yes|e1-measurement.md channel table, mode 1
-deny|PreToolUse JSON hookSpecificOutput.permissionDecision=deny with permissionDecisionReason, exit 0|yes|yes|none|unverified|permissionDecisionReason verbatim, unwrapped, as a synthetic is_error tool_result|yes|no|e1-measurement.md channel table, mode 2
+BIONIC_REFUSE_TABLE='exit2|exit 2 with the text on stderr|yes|yes|none|the whole stderr painted in red as the error result of the refused tool call, about 12 lines then "+N lines", for every non-Bash tool; a Bash call collapses to "Ran N shell commands" at the default view until ctrl+o|the full stderr text, wrapped in a synthetic is_error tool_result prefixed "PreToolUse:<tool> hook error"|no|no|e1-measurement.md channel table, mode 1 + D-2
+deny|PreToolUse JSON hookSpecificOutput.permissionDecision=deny with permissionDecisionReason, exit 0|yes|yes|none|nothing raw at the default view: "Ran 1 shell command" collapsed, then whatever the model says next; on a non-Bash tool the reason lands in the same is_error tool_result slot and is expected to paint as exit2 does — inferred, not measured|permissionDecisionReason verbatim, unwrapped, as a synthetic is_error tool_result|yes|no|e1-measurement.md channel table, mode 2 + D-2
 systemmessage|top-level JSON systemMessage, exit 0|no|no|none|unverified|nothing in the conversation: a stream-json system/informational event and no more|no|n-a|e1-measurement.md channel table, mode 3
-block|JSON decision=block with reason on stdout, exit 0|yes|yes|none|unverified|reason verbatim: an is_error tool_result on PreToolUse, a synthetic user turn "Stop hook feedback" on Stop|yes|no|e1-measurement.md channel table, mode 4
+block|JSON decision=block with reason on stdout, exit 0|yes|yes|none|nothing raw, and on PreToolUse the command RAN anyway ("Ran 2 shell commands", then its output) — not a reliable interactive block, so PreToolUse block is off the table|reason verbatim: an is_error tool_result on PreToolUse, a synthetic user turn "Stop hook feedback" on Stop|yes|no|e1-measurement.md channel table, mode 4 + D-2
 additionalcontext|PreToolUse JSON hookSpecificOutput.additionalContext, exit 0|no|no|none|unverified|nothing: zero occurrences anywhere in the stream-json transcript|no|n-a|e1-measurement.md channel table, mode 5'
 
 # refuse_channel <mode> <field> -> the cell on stdout; exit 1, silent, for an
