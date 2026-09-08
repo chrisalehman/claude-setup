@@ -687,7 +687,7 @@ integrity_line() {
 PROOT_STOCK="$(make_plugin_root)"
 LINE_STOCK="$(integrity_line "$PROOT_STOCK")"
 expect_match "49: an untouched install reads as stock" "*state=stock*" "$LINE_STOCK"
-expect_match "50: …over all eleven rendered files, not just the six roles" "*total=11*" "$LINE_STOCK"
+expect_match "50: …over all twelve rendered files, not just the six roles" "*total=12*" "$LINE_STOCK"
 expect_match "51: …with nothing named as modified" "*modified=0 names=-*" "$LINE_STOCK"
 
 # THE DEFECT CONTROL. `stock` above is worth nothing unless the same reader turns on a
