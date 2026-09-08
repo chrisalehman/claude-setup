@@ -262,15 +262,22 @@ jq --arg v "0.0.0-mismatch" '.version = $v' "$PLUGIN_JSON" > "$DOCTORED_ROOT/.cl
 expect_eq "18: …and reports the DOCTORED version for a doctored root (the header would show it)" \
   "0.0.0-mismatch" "$(detect_version_of "$DOCTORED_ROOT")"
 
-# --- the census: no THIRD surface appears unnoticed ---------------------------
+# --- the census: no FOURTH surface appears unnoticed ---------------------------
 #
 # The four pins above are a fixed list, and a fixed list goes stale the moment somebody adds
-# a fifth surface. The sweep is the pin that notices: exactly two files in this tree DECLARE
-# a bionic version, and both of them agree with the owner.
+# a fifth surface. The sweep is the pin that notices: exactly three files in this tree
+# DECLARE a bionic version, and all three agree with the owner.
+#
+# THE THIRD SURFACE, ADDED AT SLICE 14 (E2). `payload/commands/version.md` carries the same
+# baked `bionic <version> (installed)` line help.md does — see its template's "The printed
+# line begins with:" block — so `/bionic:version`'s own doc text is a version declaration by
+# the identical extractor, never a second regex. AC-E2.3's fails-when ("census still 2") is
+# what assertion 19 below now refuses.
 SITES="$(declaring_sites "$REPO")"
-expect_eq "19: exactly two surfaces in the tree DECLARE a version, and they are the known two" \
+expect_eq "19: exactly three surfaces in the tree DECLARE a version, and they are the known three" \
   "payload/.claude-plugin/plugin.json|${PLUGIN_VERSION}
-payload/commands/help.md|${PLUGIN_VERSION}" "$SITES"
+payload/commands/help.md|${PLUGIN_VERSION}
+payload/commands/version.md|${PLUGIN_VERSION}" "$SITES"
 
 SITE_DISAGREEMENTS="$(printf '%s\n' "$SITES" | awk -F'|' -v v="$PLUGIN_VERSION" '$2 != v')"
 expect_empty "20: …and every one of them agrees with plugin.json" "$SITE_DISAGREEMENTS"
@@ -290,6 +297,30 @@ expect_contains "21: the sweep FINDS a third declaring surface planted in a scra
   "payload/scripts/third-surface.json|0.0.0-mismatch" "$SWEEP_SITES"
 expect_nonempty "22: …and the disagreement filter reports it as a disagreement" \
   "$(printf '%s\n' "$SWEEP_SITES" | awk -F'|' -v v="$PLUGIN_VERSION" '$2 != v')"
+
+# --- E2.2: help's roster carries the /bionic:version row --------------------
+expect_contains "22b: payload/commands/help.md's roster carries a /bionic:version row" \
+  "/bionic:version" "$(cat "$HELP_MD")"
+
+# --- E2.3: doctoring version.md's OWN line to a different version reads as a
+# disagreement, in a scratch tree that otherwise agrees (AC-E2.3's fails-when: "census
+# still 2" — this proves version.md is the THIRD surface the census can catch on its own,
+# not merely counted alongside an unrelated mismatch). "0.0.0-mismatch" rather than a
+# literal like "1.5.1": the doctored value only has to differ from whatever PLUGIN_VERSION
+# actually is on the machine running this suite, and a release bump could make a fixed
+# literal collide with the real version and doctor nothing at all.
+VERSION_MD="${REPO}/payload/commands/version.md"
+E23_TREE="$TMP/e23-tree"
+mkdir -p "$E23_TREE/payload/.claude-plugin" "$E23_TREE/payload/commands"
+cp "$PLUGIN_JSON" "$E23_TREE/payload/.claude-plugin/plugin.json"
+cp "$HELP_MD" "$E23_TREE/payload/commands/help.md"
+sed "s/^bionic ${PLUGIN_VERSION//./\\.} (installed)\$/bionic 0.0.0-mismatch (installed)/" \
+  "$VERSION_MD" > "$E23_TREE/payload/commands/version.md"
+E23_SITES="$(declaring_sites "$E23_TREE")"
+expect_contains "23: the census counts version.md as its own declaring surface" \
+  "payload/commands/version.md|" "$E23_SITES"
+expect_nonempty "24: …and a version.md doctored to 1.5.1 reads as a disagreement" \
+  "$(printf '%s\n' "$E23_SITES" | awk -F'|' -v v="$PLUGIN_VERSION" '$2 != v')"
 
 # ── SECTION 2 — WALLS (spec AC-14/AC-26, `.bionic/docs/plans/wave-bionic-1.4.0-update/`).
 #
@@ -1260,8 +1291,8 @@ expect_true "74a: payload/integrity/rendered.sha256 exists" test -f "$RENDERED_M
 expect_false "74b: payload/integrity/agents.sha256 is gone" \
   test -f "${REPO}/payload/integrity/agents.sha256"
 MANIFEST_BODY="$(grep -v '^#' "$RENDERED_MANIFEST" 2>/dev/null | grep -v '^[[:space:]]*$')"
-expect_eq "74c: it carries one row per rendered file (six roles, four commands, the skill)" \
-  "11" "$(printf '%s\n' "$MANIFEST_BODY" | wc -l | tr -d ' ')"
+expect_eq "74c: it carries one row per rendered file (six roles, five commands, the skill)" \
+  "12" "$(printf '%s\n' "$MANIFEST_BODY" | wc -l | tr -d ' ')"
 expect_contains "74d: …including the skill file, plugin-root-relative" \
   "  skills/canonical-sdlc/SKILL.md" "$MANIFEST_BODY"
 expect_contains "74e: …and the command pages, plugin-root-relative" \

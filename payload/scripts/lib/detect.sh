@@ -752,6 +752,43 @@ detect_marketplace_source_path() {
   return 0
 }
 
+# THE "THIS CHECKOUT / OTHER checkout / unregistered" VERDICT — ONE SITE FOR THE RULE
+# (epic-22 wave-01 slice 14, E2). `detect_marketplace_source_path`'s own header says that
+# comparison is the CALLER's to make; this function IS that caller, so that doctor.sh and
+# `/bionic:version` compare against the SAME rule instead of each keeping its own copy of
+# the realpath comparison (the exact duplication this file's ownership rule forbids —
+# see "THE PARSE" above). doctor.sh:2054-2075 carried the first copy and now calls this.
+#
+# <compare-root> is the caller's OWN checkout root, realpath'd by the caller (doctor.sh
+# resolves it from its own script location; version.sh does the same) — never derived
+# here, because "which tree is asking" is a fact only the caller has.
+#
+# THREE ANSWERS, never a guess between them:
+#   "unregistered"    no marketplace registration names a source path at all
+#   "this checkout"   the registration's path resolves to the caller's own root
+#   "OTHER checkout"   it resolves to a real, different directory — OR it is a git-feed
+#                      registration naming no filesystem path (a `source.repo` string,
+#                      which can never equal a realpath) — either way, not this tree.
+detect_checkout_verdict() {  # <realpath to compare against> -> one of the three answers
+  local compare_root="${1:-}" mp_path st mp_real
+  mp_path="$(detect_marketplace_source_path)"; st=$?
+  if [ "$st" -ne 0 ] || [ -z "$mp_path" ]; then
+    printf 'unregistered\n'
+    return 0
+  fi
+  if [ -d "$mp_path" ]; then
+    mp_real="$(cd "$mp_path" 2>/dev/null && pwd -P)"
+  else
+    mp_real=""
+  fi
+  if [ -n "$mp_real" ] && [ -n "$compare_root" ] && [ "$mp_real" = "$compare_root" ]; then
+    printf 'this checkout\n'
+  else
+    printf 'OTHER checkout\n'
+  fi
+  return 0
+}
+
 detect_plugin_registered() {
   local installed_json count
   installed_json="$(_detect_installed_plugins_file)"
