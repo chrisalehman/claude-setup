@@ -626,12 +626,31 @@ $SS_DEAD_IDS
 EOF
 )"
     if [ -n "$SS_FILES" ]; then
-      # THE FLAVOUR PROBE RUNS ONCE, not per file: BSD `stat -f %m` first, GNU
-      # `-c %Y` second. `tr` + `xargs -0` rather than `stat $SS_FILES` so a residue
-      # far larger than this one cannot overflow the argument list, and so a path
-      # carrying a space is one operand rather than two.
-      SS_MTS="$(printf '%s\n' "$SS_FILES" | tr '\n' '\0' | xargs -0 stat -f %m 2>/dev/null)"
-      [ -n "$SS_MTS" ] || SS_MTS="$(printf '%s\n' "$SS_FILES" | tr '\n' '\0' | xargs -0 stat -c %Y 2>/dev/null)"
+      # THE FLAVOUR PROBE RUNS ONCE, not per file, and it DISCRIMINATES rather than
+      # falling through on emptiness (Step-6 critic, issue 1). `stat -c %Y /dev/null`
+      # is a number on GNU coreutils and on busybox, and nothing at all on BSD, which
+      # rejects `-c` outright — so the probe's OUTPUT chooses the form. What it must
+      # never do is try the BSD form first and treat a non-empty capture as proof
+      # that it worked: GNU's `-f` is `--file-system`, so `%m` is read as a FILE
+      # operand, and GNU complains about `%m` on stderr while still printing a full
+      # file-system report for the real files on STDOUT and exiting 1. That capture
+      # is non-empty and entirely non-numeric, so an emptiness test never reaches the
+      # GNU form, every line fails the numeric case below, and the gate concludes
+      # nothing is young — deleting seconds-old state on every Linux and WSL install.
+      # tests/session-sweep.test.sh §7i plants a GNU-shaped `stat` on PATH and holds
+      # this.
+      #
+      # `tr` + `xargs -0` rather than `stat $SS_FILES` so a residue far larger than
+      # this one cannot overflow the argument list, and so a path carrying a space is
+      # one operand rather than two.
+      case "$(stat -c %Y /dev/null 2>/dev/null)" in
+        ''|*[!0-9]*)
+          SS_MTS="$(printf '%s\n' "$SS_FILES" | tr '\n' '\0' | xargs -0 stat -f %m 2>/dev/null)"
+          ;;
+        *)
+          SS_MTS="$(printf '%s\n' "$SS_FILES" | tr '\n' '\0' | xargs -0 stat -c %Y 2>/dev/null)"
+          ;;
+      esac
       # A mtime NEWER than the cutoff is a file inside the interval. Spelled as a
       # comparison against the cutoff rather than as an age subtraction because the
       # two are the same statement and this one needs no clamp: a mtime in the

@@ -176,16 +176,38 @@ _TOOLS_MISSING="$(make_tool_dir "$BIN" yes)$(make_tool_dir "$BIN_NO_CLAUDE" no)"
 if [ -z "$_TOOLS_MISSING" ]; then ok "T0: the fixture's tool directory carries every program doctor runs"
 else no "T0: a program doctor runs is missing from the fixture's tool directory" "$_TOOLS_MISSING"; fi
 
-run_doctor() {  # <claude-home> [shell-rc]
-  ( cd "$REPO" && HOME="$TMP" PATH="$BIN" BIONIC_SHELL_RC="${2:-$FIXTURE_RC}" \
-      BIONIC_CLAUDE_HOME="$1" BIONIC_PLUGIN_ROOT="$PAYLOAD" BIONIC_DOCTOR_PROBE_SECONDS=3 \
-      bash "$DOCTOR_SH" < /dev/null 2>&1 )
+# THE PAGE IS STDOUT, AND STDERR IS KEPT ASIDE RATHER THAN MERGED INTO IT.
+#
+# WHY THIS IS NOT A CONVENIENCE. Every arm below that measures the column budget
+# measures "every line doctor PRINTS", and doctor prints its page on stdout: the
+# only three things it writes to stderr are a usage refusal and a cannot-load
+# fatal, none of which is a row. A merged capture makes the budget arms measure
+# whatever ANY process in the drive happened to say on stderr, so a diagnostic
+# that has nothing to do with the renderer is counted as a rendered line. That is
+# not hypothetical: in the 8-wide floor run at aa3acc4, bash's own job-control
+# message from the `set -m` in `detect_bounded` —
+#   payload/scripts/lib/detect.sh: child setpgid (25227 to 25227): Operation not permitted
+# — 151 columns, emitted by /bin/bash and not by anything in this repo, landed in
+# the capture and failed arms 21 and 23 as though doctor had rendered a second
+# over-budget line. Alone, the same suite was 69/69.
+#
+# STDERR IS NOT DISCARDED. It goes to $DOCTOR_ERR_FILE, holding the LAST drive's
+# error stream, so a doctor that dies still says why — and so the split itself can
+# be asserted rather than assumed (arms 23b/23c below).
+DOCTOR_ERR_FILE="${TMP}/doctor.stderr"
+
+run_doctor() {  # <claude-home> [shell-rc] [extra doctor args...]
+  local h="$1" rcfile="${2:-$FIXTURE_RC}"
+  if [ $# -ge 2 ]; then shift 2; else shift $#; fi
+  ( cd "$REPO" && HOME="$TMP" PATH="$BIN" BIONIC_SHELL_RC="$rcfile" \
+      BIONIC_CLAUDE_HOME="$h" BIONIC_PLUGIN_ROOT="$PAYLOAD" BIONIC_DOCTOR_PROBE_SECONDS=3 \
+      bash "$DOCTOR_SH" "$@" < /dev/null 2>"$DOCTOR_ERR_FILE" )
 }
 
 run_doctor_no_claude() {  # <claude-home> — the same page with the CLI off PATH
   ( cd "$REPO" && HOME="$TMP" PATH="$BIN_NO_CLAUDE" BIONIC_SHELL_RC="$FIXTURE_RC" \
       BIONIC_CLAUDE_HOME="$1" BIONIC_PLUGIN_ROOT="$PAYLOAD" BIONIC_DOCTOR_PROBE_SECONDS=3 \
-      bash "$DOCTOR_SH" < /dev/null 2>&1 )
+      bash "$DOCTOR_SH" < /dev/null 2>"$DOCTOR_ERR_FILE" )
 }
 
 # The version row alone — the one line in BIONIC NATIVE beginning with one of
@@ -371,6 +393,16 @@ expect_eq "21: exactly one line on that machine is over the budget" "1" "$OVER6_
 expect_match "22: and it is that paste-verbatim command" \
   "$REMOVE_CMD_LINE" "$OVER6"
 expect_all_lines_fit "23: half-uninstalled — every other line still fits" "$OUT6"
+
+# THE SPLIT ABOVE IS LOAD-BEARING, AND THIS PAIR PROVES IT IS REAL rather than a
+# capture that silently swallowed doctor's error stream. `--nonsense` is the one
+# refusal doctor renders on stderr (doctor.sh's own option parser); it must reach
+# the kept file and it must not reach the page the budget arms measure.
+OUT_BADOPT="$(run_doctor "$HOME6" "$HALF_RC" --nonsense)"
+expect_match "23b: doctor's error stream is kept, not merged — its usage refusal lands there" \
+  "*unknown option*" "$(cat "$DOCTOR_ERR_FILE" 2>/dev/null)"
+expect_no_match "23c: …and never on the page every column-budget arm measures" \
+  "*unknown option*" "$OUT_BADOPT"
 
 # The rc row is the other line the walk found over the budget (101 columns on a
 # short $HOME). The fixture rc path is far longer than that, so this proves the
