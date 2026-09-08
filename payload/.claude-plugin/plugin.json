@@ -1,6 +1,6 @@
 {
   "name": "bionic",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Bionic — hooks, skills, and agent-orchestration guardrails for Claude Code.",
   "author": {
     "name": "Chris Lehman"
