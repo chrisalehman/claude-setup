@@ -321,7 +321,8 @@ run_hook_at() {  # <hook path> <command> -> sets RC, ERRTXT and (on a refusal) V
 # THE FIXTURE LIBRARY IS THE ONE THE HOOKS ASK FOR, read out of the hooks themselves. The
 # loader qualifies a candidate directory only when it holds EVERY basename in that hook's
 # BIONIC_LIB_WANT, so a hand-kept list here goes stale the moment a hook wants one more
-# file — and it did: wave-01 slice 13 added refuse.sh to all 21 hooks, and this section's
+# file — and it did: wave-01 slice 13 added refuse.sh to the BIONIC_LIB_WANT of eleven of
+# the twenty-one hooks, these two among them, and this section's
 # POSITIVE controls then failed with "cannot load the bionic library", which reads as a
 # broken hook and was really a fixture that never built a whole library.
 GA_WANT=$(/usr/bin/grep -h '^BIONIC_LIB_WANT=' "$PROTECT_MAIN" "$EVIDENCE_GATE" \

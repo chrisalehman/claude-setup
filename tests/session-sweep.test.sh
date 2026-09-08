@@ -683,8 +683,19 @@ expect_true "7g.0 the fixture really does carry hundreds of dead-session files" 
   test "$SS_FILE_COUNT" -ge 300
 
 : > "$SS_STAT_LOG"
+# THE BOUND HERE IS A HANG-CATCHER, NOT THE THING UNDER TEST. It used to be 2s,
+# and that made 7g.4 a wall-clock assertion in disguise — plan A-47 already ruled
+# those cannot hold. Measured on this machine at this fixture's exact size (60 dead
+# sessions x 5 classes): the bounded sweep completes in ~2s idle and 4-5s beside
+# eight busy siblings, so a 2-second bound killed it 3 times out of 3 under the
+# 8-wide floor and left `sweep-failed.state` carrying `rc=124` — the bound's own
+# timeout code, not a fault in anything this section measures. At 120s only a
+# genuine hang trips it, and the hang path already has its own arm at 7e with a
+# small bound, so nothing is given up. The `stat` COUNTS this section actually
+# asserts are unaffected either way: the gate runs before the sweep, and the count
+# was 61 with the sweep killed and 61 with it finishing.
 ss_drive_start "$HOOK_SESSION_START" "$R7G" "$H7G" "$CUR_SELF" \
-  "PATH=$SS_SHIM:$PATH" BIONIC_SWEEP_BOUND_SECONDS=2
+  "PATH=$SS_SHIM:$PATH" BIONIC_SWEEP_BOUND_SECONDS=120
 SS_STATS="$(wc -l < "$SS_STAT_LOG" | tr -d ' ')"
 
 expect_eq "7g.1 session-start still exits 0" "0" "$RC"
@@ -711,7 +722,7 @@ SS_FILE_COUNT2="$(ls "$R7G2/.bionic/tmp/" | wc -l | tr -d ' ')"
 SS_STAMPS2="$(ls "$R7G2/.bionic/tmp/"patrol-*.state 2>/dev/null | wc -l | tr -d ' ')"
 : > "$SS_STAT_LOG"
 ss_drive_start "$HOOK_SESSION_START" "$R7G2" "$H7G2" "$CUR_SELF" \
-  "PATH=$SS_SHIM:$PATH" BIONIC_SWEEP_BOUND_SECONDS=2
+  "PATH=$SS_SHIM:$PATH" BIONIC_SWEEP_BOUND_SECONDS=120
 SS_STATS2="$(wc -l < "$SS_STAT_LOG" | tr -d ' ')"
 
 expect_eq "7g.2a the control fixture has the same stamp count, so only the file count differs" \
@@ -719,7 +730,11 @@ expect_eq "7g.2a the control fixture has the same stamp count, so only the file 
 expect_true "7g.2b …and the gate costs the same on $SS_FILE_COUNT files as on $SS_FILE_COUNT2 ($SS_STATS vs $SS_STATS2 stat calls)" \
   test "$(( SS_STATS - SS_STATS2 ))" -le 5
 
-expect_false "7g.4 …no sweep-failure marker: the gate finished, it was not killed" \
+# THE MARKER IS THE SWEEP'S, NOT THE GATE'S — the gate is not inside the bound at
+# all — so this arm says that the hook, at this size, reaches the end of a sweep
+# instead of timing out of one. Under the old 2-second bound its old label ("the
+# gate finished") named something it never measured.
+expect_false "7g.4 …and no sweep-failure marker: the bounded sweep ran to the end, it was not killed" \
   test -e "$R7G/.bionic/tmp/sweep-failed.state"
 expect_false "7g.5 …and the dead residue is actually gone, so the gate still OPENED" \
   test -e "$(f_of "$R7G" roster "dead-0000-aaaa-bbbb-cccccccccccc")"
@@ -735,5 +750,99 @@ ss_drive_start "$HOOK_SESSION_START" "$R7H" "$H7H" "$CUR_SELF"
 expect_eq "7h.1 session-start exits 0" "0" "$RC"
 expect_true "7h.2 one young file among 60 dead sessions still defers the whole batch" \
   test -f "$(f_of "$R7H" roster "dead-0000-aaaa-bbbb-cccccccccccc")"
+
+section "7i. the gate reads mtimes on a GNU machine too, not only on a BSD one"
+# =============================================================================
+#
+# Step-6 critic, issue 1. The gate's mtime read chose its `stat` flavour by asking
+# whether the BSD form produced any output: `stat -f %m` first, and the GNU
+# `-c %Y` form only if that came back EMPTY. GNU `stat` does not leave it empty.
+# `-f` there is `--file-system`, so `%m` is read as a FILE operand: GNU complains
+# about `%m` on stderr, still prints a full file-system report for the real files
+# on STDOUT, and exits 1. The capture is therefore non-empty, the `-c %Y` arm is
+# never reached, every captured line fails the numeric test, and the gate decides
+# NOTHING IS YOUNG — so on Linux and WSL, both supported (README's install paths),
+# session state seconds old was deleted at the next session start. That is the one
+# failure mode the whole gate exists to prevent.
+#
+# THE SHIM, NOT A CONTAINER. This arm has to run on every machine the suite runs
+# on, so the GNU behaviour is planted on PATH rather than borrowed from a Linux
+# box: a `stat` that answers `-f` the way GNU answers it (a multi-line file-system
+# dump on stdout, a complaint on stderr, exit 1) and answers `-c %Y` with the
+# real mtimes. A gate that discriminates by FLAVOUR passes; a gate that
+# discriminates by EMPTINESS cannot.
+SS_GNU="$TMPROOT/gnu-shim"; mkdir -p "$SS_GNU"
+# Whatever the REAL `stat` on this machine is, the shim has to be able to answer
+# `-c %Y` truthfully — so its flavour is settled here, by the discriminating test,
+# and baked in. (On the BSD host this suite normally runs on, `-c` is rejected.)
+if [ -n "$(/usr/bin/stat -c %Y /dev/null 2>/dev/null | tr -dc '0-9')" ]; then
+  SS_REAL_MTIME='/usr/bin/stat -c %Y'
+else
+  SS_REAL_MTIME='/usr/bin/stat -f %m'
+fi
+{
+  printf '#!/bin/bash\n'
+  printf 'REAL_MTIME="%s"\n' "$SS_REAL_MTIME"
+  cat <<'SS_GNU_SHIM'
+case "${1:-}" in
+  -c)
+    shift 2
+    for f in "$@"; do $REAL_MTIME "$f"; done
+    exit 0
+    ;;
+  -f)
+    shift 2
+    echo "stat: cannot read file system information for '%m': No such file or directory" >&2
+    for f in "$@"; do
+      printf '  File: "%s"\n' "$f"
+      printf '    ID: 28d79cb6769f8344 Namelen: 255     Type: ext2/ext3\n'
+      printf 'Block size: 4096       Fundamental block size: 4096\n'
+      printf 'Blocks: Total: 58623224   Free: 54873547   Available: 51877439\n'
+      printf 'Inodes: Total: 14966784   Free: 14381835\n'
+    done
+    exit 1
+    ;;
+esac
+exec /usr/bin/stat "$@"
+SS_GNU_SHIM
+} > "$SS_GNU/stat"
+chmod +x "$SS_GNU/stat"
+
+# THE SHIM IS THE THING UNDER TEST TOO, so it is proven before it is trusted: it
+# must answer `-f %m` the GNU way (dump on stdout, non-zero) and `-c %Y` with a
+# number. Without this pair a shim that silently degraded to the real `stat`
+# would make 7i.3 pass for the wrong reason.
+SS_SHIM_F="$( "$SS_GNU/stat" -f %m /dev/null 2>/dev/null )"; SS_SHIM_F_RC=$?
+expect_true "7i.0 the shim answers -f the GNU way: a file-system dump on stdout, not a number" \
+  test -n "$SS_SHIM_F" -a "$SS_SHIM_F_RC" -ne 0
+expect_no_match "7i.0a …and what it printed is not mtime-shaped" "*[0-9][0-9][0-9][0-9][0-9]*" \
+  "$(printf '%s' "$SS_SHIM_F" | head -1)"
+expect_match "7i.0b …while -c %Y answers with a number" "[0-9]*" \
+  "$( "$SS_GNU/stat" -c %Y /dev/null )"
+
+# 7c's fixture exactly — a dead session with FRESH mtimes against a 3600s interval,
+# which must be deferred — driven with the GNU-shaped `stat` on PATH.
+R7I="$(ss_make_project r7i 3600s)"
+H7I="$TMPROOT/home-r7i"; mkdir -p "$H7I/sessions"
+plant_session "$R7I" "$SID_DEAD"
+ss_drive_start "$HOOK_SESSION_START" "$R7I" "$H7I" "$CUR_SELF" "PATH=$SS_GNU:$PATH"
+expect_eq "7i.1 session-start exits 0 under a GNU-shaped stat" "0" "$RC"
+expect_true "7i.2 a seconds-old dead session survives on a GNU machine (deferred, not swept)" \
+  test -f "$(f_of "$R7I" roster "$SID_DEAD")"
+expect_true "7i.3 …its patrol stamp survives too" \
+  test -f "$(f_of "$R7I" patrol "$SID_DEAD")"
+
+# THE PAIRED POSITIVE (anti-vacuity): the same GNU-shaped `stat`, the same hook,
+# a dead session aged PAST a short interval — swept. So 7i.2 is the age gate
+# reading real mtimes through the GNU form, not a hook that stopped sweeping the
+# moment an unfamiliar `stat` appeared on PATH.
+R7I2="$(ss_make_project r7i2 1s)"
+H7I2="$TMPROOT/home-r7i2"; mkdir -p "$H7I2/sessions"
+plant_session "$R7I2" "$SID_DEAD"
+for f7i2 in "$R7I2/.bionic/tmp/"*"-$SID_DEAD.state"*; do ss_backdate "$f7i2" 60; done
+ss_drive_start "$HOOK_SESSION_START" "$R7I2" "$H7I2" "$CUR_SELF" "PATH=$SS_GNU:$PATH"
+expect_eq "7i.4 session-start exits 0" "0" "$RC"
+expect_false "7i.5 …and an AGED dead session is still swept under the same GNU stat" \
+  test -e "$(f_of "$R7I2" roster "$SID_DEAD")"
 
 finish

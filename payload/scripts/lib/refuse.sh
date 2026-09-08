@@ -21,6 +21,13 @@
 # and the model reads `detail` as well, over whichever channel the E1 measurement
 # proved carries it. `BIONIC_WALL_VERBOSE=1` puts `detail` on the user stream too.
 #
+# THE ONE CLASS `detail` DOES NOT HANDLE (Step-6 critic, issue 4): a raw byte >= 0x80
+# that is not valid UTF-8 passes through unescaped — `_refuse_json_escape` below
+# escapes the control bytes, not this one — and both readers of the JSON substitute
+# U+FFFD for it rather than failing, so the wire holds and the byte reaches the model
+# altered. Lossy, never fail-open, and unhandled on purpose until a wall is measured
+# putting non-UTF-8 bytes in `detail`.
+#
 # WHY IT EXISTS (surfaces map §B.3). 21 hook files carry 62 distinct refusal texts
 # across four emission modes. `hooks/stop-guard.sh`'s `deny()` frame is 12 fixed
 # lines before its reasons and reaches 18 rendered; `hooks/background-suite-guard.sh`'s
