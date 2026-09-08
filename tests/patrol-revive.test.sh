@@ -135,10 +135,15 @@ stdin_for() {  # <cwd> [session] [event] [stop_hook_active]
 # The hook takes its session key from lib/session.sh, env first, and the stamp filename
 # is built from it — so a driver that left the runner's own id in the environment would
 # have this monitor watching a file the fixture never wrote.
+PR_ERRFILE="$(mktemp)"
+HOOK_ERR_USER=""
 fire() {  # <cwd> [session] [event] [stop_hook_active]
   HOOK_OUT=$(env CLAUDE_CODE_SESSION_ID="${2:-$SID}" bash "$HOOK" \
-    <<< "$(stdin_for "$1" "${2:-$SID}" "${3:-Stop}" "${4:-false}")" 2>/dev/null)
+    <<< "$(stdin_for "$1" "${2:-$SID}" "${3:-Stop}" "${4:-false}")" 2>"$PR_ERRFILE")
   HOOK_RC=$?
+  # THE USER STREAM (slice 13). The JSON reason on stdout is what every arm below reads;
+  # this is the one line a reader is shown, and the AC-E1.3 section at the end asserts it.
+  HOOK_ERR_USER=$(cat "$PR_ERRFILE" 2>/dev/null)
 }
 
 fire_raw() {  # <stdin-json>
@@ -865,5 +870,35 @@ case "$HOOK_ERR" in
   *"$PLAN_B_REL"*) no "50c: B's path (the still-open plan) appears nowhere in the output" "$HOOK_ERR" ;;
   *) ok "50c: B's path (the still-open plan) appears nowhere in the output" ;;
 esac
+
+section "AC-E1.3/E1.5: the refusal's user stream is one line, in the criterion's shape"
+
+# fails-when: a refusal reaches the user as more than one line, or in any shape but
+# `bionic: <verb> refused — <fact> (<fix ≤ 40 cols>)`. This gate refuses over the JSON
+# `block` channel, whose model-only wire keeps the whole reason for the model while the
+# user stream is the single rendered line. The refusal is tripped through the same
+# `fire` helper every arm above uses, so nothing here drives a path the suite invented.
+
+PR_E1_RE='^bionic: [a-z-]+ refused — .+ \(.{1,40}\)$'
+# A KNOWN BLOCKING FIXTURE, built the way Group 1 builds one: armed, and the clock
+# stopped. Reusing the suite's own helpers rather than inventing a path.
+D=$(make_env); write_stamp "$D" "$SID"; backdate "$(stamp_path "$D" "$SID")" 600
+fire "$D"
+expect_status "E1.3 the stale-stamp fixture still blocks (exit 0 with a verdict)" "0" "$HOOK_RC"
+PR_E1_LINE=$(printf '%s\n' "$HOOK_ERR_USER" | /usr/bin/grep '^bionic: ' || true)
+expect_eq "E1.3 the last refusal left exactly one rendered line on the user stream" \
+  "1" "$(printf '%s\n' "$HOOK_ERR_USER" | /usr/bin/grep -c '^bionic: ')"
+if printf '%s' "$PR_E1_LINE" | /usr/bin/grep -qE "$PR_E1_RE"; then
+  ok "E1.3 …in AC-E1.3's shape"
+else
+  no "E1.3 …in AC-E1.3's shape" "line=[$PR_E1_LINE]"
+fi
+expect_eq "E1.3 …and it is the table's own wording (row 114)" \
+  "bionic: stop refused — the Patrol died mid-run and nothing said so (re-arm it, the clock first)" \
+  "$PR_E1_LINE"
+expect_absent "E1.5 the paragraph the model reads is NOT on the user stream" \
+  "blocks once per turn" "$HOOK_ERR_USER"
+expect_contains "E1.5 …and the model still gets it whole, on the JSON wire" \
+  "blocks once per turn" "$(reason_of)"
 
 finish

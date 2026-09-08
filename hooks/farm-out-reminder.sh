@@ -50,7 +50,7 @@ CWD="${CLAUDE_PROJECT_DIR:-}"
 # the hook prints one line and steps aside. Until 1.4.0 it denied instead, on the
 # same reasoning the two irreversible-action walls still use; the cost of THAT
 # mistake is what separates them.
-BIONIC_LIB_WANT="cmd-class.sh root.sh run.sh session.sh"
+BIONIC_LIB_WANT="cmd-class.sh refuse.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -202,6 +202,8 @@ if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "farm-out-reminder"; fi
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/cmd-class.sh"
 # shellcheck source=/dev/null
+. "$BIONIC_LIB/refuse.sh"
+# shellcheck source=/dev/null
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"
@@ -292,9 +294,13 @@ log_event() {  # $1=event $2=class
 
 # [WALL: tests/farm-out-reminder.test.sh]
 emit_deny() {  # $1=class $2=role
-  jq -n --arg r "$(deny_reason "$1" "$2")" \
-    '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}' 2>/dev/null
-  return 0
+  # THROUGH THE ONE RENDERER (slice 13, table row 106). `deny` is the mode this hook has
+  # always used and the one the E1 measurement showed carries a model-only channel, so
+  # the user gets the single line and the whole existing instruction rides the JSON
+  # reason unchanged. `refuse` EXITS — with status 0 on this mode, which is what the
+  # JSON verdict needs — so the caller's own `exit 0` after it is unreachable and gone.
+  refuse deny run "this command belongs in a subagent" "dispatch it with the Agent tool" \
+    "$(deny_reason "$1" "$2")"
 }
 
 emit_nudge() {  # $1=class $2=role
@@ -357,7 +363,7 @@ emit_tier1() {  # $1=class $2=role — deny, or downgrade to a nudge under advis
   if [ "$MODE" = "advisory" ]; then
     log_event "deny-downgraded" "$1"; emit_nudge "$1" "$2"; exit 0
   fi
-  log_event "deny" "$1"; emit_deny "$1" "$2"; exit 0
+  log_event "deny" "$1"; emit_deny "$1" "$2"
 }
 
 classify_tier2() {  # $1=flat cmd → sets CLASS ROLE, rc 0 on match

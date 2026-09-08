@@ -308,7 +308,7 @@ CWD=$(_jq '.cwd')
 # payload/scripts/lib/loader.sh. FAIL OPEN: the landing verdict is advisory or repeatable, and a
 # hook that refused because a file was missing would hold every turn in every session
 # on the machine hostage to it.
-BIONIC_LIB_WANT="root.sh run.sh session.sh worktree.sh"
+BIONIC_LIB_WANT="refuse.sh root.sh run.sh session.sh worktree.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -457,6 +457,8 @@ BIONIC_LOADER_REFUSE
 }
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "landing-gate"; fi
+# shellcheck source=/dev/null
+. "$BIONIC_LIB/refuse.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
@@ -715,6 +717,12 @@ _field() {  # <key> — by key, never by position, as every reader of these line
 }
 
 REFUSALS=""
+# WHICH FACT THE ONE LINE CARRIES when a sweep finds both kinds (slice 13, table rows
+# 107 and 108). The gate accumulates a paragraph per failing row and prints them all;
+# ruling D-1 gives the reader ONE line, so the FIRST kind found names it and every
+# accumulated paragraph rides `detail`. The alternative — a third, summarising fact —
+# would be user-facing text the ruled table does not carry.
+REFUSE_KIND=""
 
 # ONE DERIVATION BUDGET FOR THE WHOLE SWEEP (review-c C-17). The impact command below is
 # the same call hooks/dispatch-preflight.sh makes and costs the same ~2.6-6.5 s, but it
@@ -875,7 +883,8 @@ LGDIFF
               rm -f "$LG_IMPACT_TMP"
             fi
           fi
-          REFUSALS="${REFUSALS}LANDING DIFF OUTSIDE Files: — ${NAME} touched: ${LG_OUTSIDE}${LG_SUITES:+ (suites: ${LG_SUITES})}${LG_SUITES_NOTE} — not declared. Add the file(s) to Files: and re-derive, or revert them before landing.
+          [ -n "$REFUSE_KIND" ] || REFUSE_KIND=undeclared
+  REFUSALS="${REFUSALS}LANDING DIFF OUTSIDE Files: — ${NAME} touched: ${LG_OUTSIDE}${LG_SUITES:+ (suites: ${LG_SUITES})}${LG_SUITES_NOTE} — not declared. Add the file(s) to Files: and re-derive, or revert them before landing.
 "
         fi
       fi
@@ -903,6 +912,7 @@ LGDIFF
   # reader told only "unmet" has nothing to act on. The ROW NAME is what the sweep adds and
   # the per-agent gate did not need: a sweep answers about contracts rather than about
   # whoever is stopping, so without it the reader cannot tell which dispatch to chase.
+  [ -n "$REFUSE_KIND" ] || REFUSE_KIND=unmet
   REFUSALS="${REFUSALS}LANDING CONTRACT UNMET — ${NAME}: $(_field detail). Land the contract (write the named artifacts), or stop again to pass — this gate blocks once.
 "
 done <<EOF
@@ -910,5 +920,7 @@ $CANDIDATES
 EOF
 
 [ -n "$REFUSALS" ] || exit 0
-printf '%s' "$REFUSALS" >&2
-exit 2
+case "$REFUSE_KIND" in
+  undeclared) refuse exit2 stop "this branch touched undeclared files" "declare them, or revert them" "$REFUSALS" ;;
+  *)          refuse exit2 stop "a dispatched agent's contract is unmet" "write the named artifacts" "$REFUSALS" ;;
+esac

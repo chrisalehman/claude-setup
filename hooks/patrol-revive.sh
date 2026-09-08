@@ -190,7 +190,7 @@ CWD=$(_jq '.cwd')
 # One loader idiom, byte-identical in every hook (spec AC-16). FAIL OPEN: a monitor
 # that refused a stop because a file was missing would be a worse outage than the one
 # it watches for.
-BIONIC_LIB_WANT="root.sh run.sh session.sh"
+BIONIC_LIB_WANT="refuse.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -339,6 +339,8 @@ BIONIC_LOADER_REFUSE
 }
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "patrol-revive"; fi
+# shellcheck source=/dev/null
+. "$BIONIC_LIB/refuse.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
@@ -516,5 +518,5 @@ Then stop again — this notice blocks once per turn, and it returns on the next
 # channel hooks/patrol-duties-gate.sh uses. (hooks/landing-gate.sh refuses through
 # exit 2 + stderr instead; both are live in this CLI, and gates that share no code
 # path deliberately do not share a mechanism either.)
-jq -nc --arg r "$REASON" '{decision:"block",reason:$r}'
-exit 0
+refuse block stop "the Patrol died mid-run and nothing said so" "re-arm it, the clock first" \
+  "$REASON"

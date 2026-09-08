@@ -160,7 +160,7 @@ CWD="${CLAUDE_PROJECT_DIR:-}"
 #
 # One loader idiom, byte-identical in every hook (spec AC-16). FAIL OPEN: this gate
 # refuses a STOP, and a stop refused for a missing file is a turn nobody can end.
-BIONIC_LIB_WANT="root.sh run.sh session.sh"
+BIONIC_LIB_WANT="refuse.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -309,6 +309,8 @@ BIONIC_LOADER_REFUSE
 }
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "patrol-duties-gate"; fi
+# shellcheck source=/dev/null
+. "$BIONIC_LIB/refuse.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
@@ -538,8 +540,8 @@ Do the resume ritual, in order, then stop again — this gate blocks once:
   3. CronCreate
   4. bash ${HOOK_DIR}/session-poker.sh arm
   5. … adopt"
-  jq -nc --arg r "$RITUAL_REASON" '{decision:"block",reason:$r}'
-  exit 0
+  refuse block stop "a cron was created with no CronList first" "list and delete stray jobs first" \
+    "$RITUAL_REASON"
 fi
 
 # ---------- WHAT COUNTS AS A TICK (AC-22) ----------
@@ -653,7 +655,8 @@ fi
 # would hide the second behind the one-shot: the next stop passes by design.
 if [ "$VERDICT" = "quiet" ] || [ -z "$VERDICT" ]; then
   if [ -n "$FILL_REASON" ]; then
-    jq -nc --arg r "$FILL_REASON" '{decision:"block",reason:$r}'
+    refuse block stop "the tick printed FILL and nothing answered" "dispatch each slice, or decline" \
+      "$FILL_REASON"
   fi
   exit 0
 fi
@@ -668,12 +671,17 @@ fi
 # exception and it carries slice ids read out of the transcript — filtered in the
 # fold above to `[A-Za-z0-9_.-]+` and handed to jq through `--arg`, so neither a
 # shell nor a JSON quoting surface is opened by them.
+# THE FACT AND THE FIX COME FROM THE VERDICT, one row per duty missed (table rows
+# 111-113); the existing paragraph stays whole as `detail`.
 case "$VERDICT" in
   both)
+    FACT='no ListAgents and no task-list refresh'; FIX='do both, then stop again'
     REASON='Patrol duties incomplete: no ListAgents call, and no task-list refresh — TaskList or a plan-ledger write. Do both, then stop again — this gate blocks once.' ;;
   listagents)
+    FACT='no ListAgents call since this Patrol tick'; FIX='call ListAgents, then stop'
     REASON='Patrol duties incomplete: no ListAgents call since this Patrol tick. Refresh the subagent panel, then stop again — this gate blocks once.' ;;
   tasklist)
+    FACT='no task-list refresh since this tick'; FIX='refresh it, then stop again'
     REASON='Patrol duties incomplete: no task-list refresh since this Patrol tick — TaskList or a plan-ledger write. Do one, then stop again — this gate blocks once.' ;;
   *)
     exit 0 ;;
@@ -684,5 +692,4 @@ esac
 # (hooks/landing-gate.sh refuses through exit 2 + stderr instead; both are live
 # Stop-hook block channels in this CLI, and the two gates deliberately do not
 # share a mechanism they never share a code path with.)
-jq -nc --arg r "$REASON" '{decision:"block",reason:$r}'
-exit 0
+refuse block stop "$FACT" "$FIX" "$REASON"
