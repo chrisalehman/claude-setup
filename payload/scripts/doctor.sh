@@ -2060,19 +2060,17 @@ echo "Bionic Doctor — payload ${PLUGIN_VERSION} @ ${PAYLOAD_SHA}"
 # is the one word ("OTHER") a reader on a two-checkout machine cannot afford to
 # lose to an ellipsis, so `bionic_line` eats the shortfall out of the path, never
 # the bracket.
+# THE VERDICT ITSELF COMES FROM ONE SHARED SITE, `detect_checkout_verdict`
+# (epic-22 wave-01 slice 14) — the realpath comparison used to live here alone;
+# it is now the same function `/bionic:version` calls, so the two surfaces can
+# never disagree about what "this checkout" means.
 if [ "$MP_SOURCE_STATE" -eq 0 ] && [ -n "$MP_SOURCE_PATH" ]; then
-  if [ -d "$MP_SOURCE_PATH" ]; then
-    _mp_source_real="$(cd "$MP_SOURCE_PATH" 2>/dev/null && pwd -P)"
-  else
-    _mp_source_real=""
-  fi
-  if [ -n "$_mp_source_real" ] && [ "$_mp_source_real" = "$DOCTOR_REPO_ROOT" ]; then
+  if [ "$(detect_checkout_verdict "$DOCTOR_REPO_ROOT")" = "this checkout" ]; then
     printf '%s\n' "$(_doctor_rtrim "$(bionic_line "plugin source: " "$MP_SOURCE_PATH" " [this checkout]")")"
   else
     printf '%s\n' "$(_doctor_rtrim "$(bionic_line "plugin source: " "$MP_SOURCE_PATH" \
       " [OTHER checkout — the CLI loads the plugin from THERE]")")"
   fi
-  unset _mp_source_real
 else
   echo "plugin source: unregistered"
 fi
