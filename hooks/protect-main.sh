@@ -23,7 +23,7 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command')
 # command must not wave it through. `loader_fail_closed` permits exactly four repair
 # commands by whole-string match first, so a broken publish can still be repaired —
 # the lockout R-1 §(5) measured and this wave is named for.
-BIONIC_LIB_WANT="git-argv.sh root.sh run.sh session.sh"
+BIONIC_LIB_WANT="git-argv.sh refuse.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -175,6 +175,8 @@ if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_closed "protect-main" "$COMMAN
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/git-argv.sh"
 # shellcheck source=/dev/null
+. "$BIONIC_LIB/refuse.sh"
+# shellcheck source=/dev/null
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"
@@ -240,16 +242,15 @@ while IFS= read -r segment; do
     if [ "$dest" = "$rest" ]; then rest=""; else rest="${rest#*"$GIT_ARGV_US"}"; fi
     [ -n "$dest" ] || continue
     if git_branch_protected "$dest"; then
-      echo "BLOCKED: Pushing to main/master is not allowed from Claude Code." >&2
-      echo "Push to main must be done manually by the user." >&2
-      exit 2
+      refuse exit2 push "main is a protected branch here" "push from your own terminal" \
+        "A push to main is the user's own act, never Claude's. The destination this segment resolved to is \"$dest\"."
     fi
   done
 
   # Block 2: force pushes (always dangerous) [WALL: tests/protect-main.test.sh]
   if [ "$GIT_FORCE" -eq 1 ]; then
-    echo "BLOCKED: Force pushing is not allowed from Claude Code." >&2
-    exit 2
+    refuse exit2 push "this is a force push" "push from your own terminal" \
+      "A force push rewrites published history and has no undo from here. Run it from your own terminal if you mean it."
   fi
 done <<< "$(git_argv_expand "$COMMAND")"
 
@@ -263,9 +264,8 @@ fi
 # [WALL: tests/protect-main.test.sh]
 CURRENT_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
 if [ -n "$CURRENT_BRANCH" ] && git_branch_protected "$CURRENT_BRANCH"; then
-  echo "BLOCKED: Cannot push while on '$CURRENT_BRANCH' branch from Claude Code." >&2
-  echo "Switch to a feature branch or push manually from your terminal." >&2
-  exit 2
+  refuse exit2 push "the current branch is protected" "switch to a feature branch" \
+    "The current branch is \"$CURRENT_BRANCH\". Switch to a feature branch, or push by hand from your own terminal."
 fi
 
 exit 0
