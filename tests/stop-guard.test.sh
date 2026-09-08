@@ -143,8 +143,13 @@ run_guard() {  # <payload-json>
   # which reaches a reader only under BIONIC_WALL_VERBOSE=1. `$GUARD_ERR` is therefore
   # the LINE and `$GUARD_VERR` is the line plus the detail; an arm that read the detail
   # off `$GUARD_ERR` would now be asserting that the wall leaks it.
-  GUARD_VERR=$(printf '%s' "$1" | env CLAUDE_CODE_SESSION_ID="$_sid" BIONIC_WALL_VERBOSE=1 \
-    bash "$GUARD" 2>&1 >/dev/null)
+  # ONLY WHEN THE FIRST DRIVE REFUSED: a PERMITTED stop consumes the observation
+  # record, and a second drive would consume a second one.
+  GUARD_VERR=""
+  if [ "$GUARD_ST" -ne 0 ]; then
+    GUARD_VERR=$(printf '%s' "$1" | env CLAUDE_CODE_SESSION_ID="$_sid" BIONIC_WALL_VERBOSE=1 \
+      bash "$GUARD" 2>&1 >/dev/null)
+  fi
   return 0
 }
 

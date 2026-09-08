@@ -125,9 +125,13 @@ guarded() {  # <repo> <command> [agent_id] [bg]
   # the wall leaks it.
   run_hook "$(mk_payload "$1" "$2" "${3-$ACTOR}" "${4:-omit}")" "$CTX_GUARD" "$GUARD"
   local _st="$ST" _out="$OUT" _err="$ERR" _saved="$EXTRA_ENV"
-  EXTRA_ENV="$EXTRA_ENV BIONIC_WALL_VERBOSE=1"
-  run_hook "$(mk_payload "$1" "$2" "${3-$ACTOR}" "${4:-omit}")" "$CTX_GUARD" "$GUARD"
-  VERR="$ERR"
+  VERR=""
+  # ONLY WHEN THE FIRST DRIVE REFUSED, so an allowed command is never run twice.
+  if [ "$_st" -ne 0 ]; then
+    EXTRA_ENV="$EXTRA_ENV BIONIC_WALL_VERBOSE=1"
+    run_hook "$(mk_payload "$1" "$2" "${3-$ACTOR}" "${4:-omit}")" "$CTX_GUARD" "$GUARD"
+    VERR="$ERR"
+  fi
   EXTRA_ENV="$_saved"; ST="$_st"; OUT="$_out"; ERR="$_err"
 }
 
