@@ -132,10 +132,19 @@ GUARD_OUT=""; GUARD_ERR=""; GUARD_ST=0
 # The gate's siblings — the sweeper, stop-check — take the session key from the
 # environment, and since bionic 1.4.0 so does the gate, so a driver that left the
 # runner's own id there would split one fixture session into two.
+GUARD_VERR=""
 run_guard() {  # <payload-json>
   local _sid; _sid=$(printf '%s' "$1" | jq -r '.session_id // ""' 2>/dev/null) || _sid=""
   GUARD_OUT=$(printf '%s' "$1" | env CLAUDE_CODE_SESSION_ID="$_sid" bash "$GUARD" 2>"$SANDBOX/.err"); GUARD_ST=$?
   GUARD_ERR=$(cat "$SANDBOX/.err")
+  # THE SAME CALL AGAIN, WITH THE KNOB (slice 13, ruling D-1). This gate's refusal is
+  # now ONE line — `bionic: stop refused — <fact> (<fix>)` — and the twelve-line frame
+  # this suite reads for counts, spellings, ages and the pasteable Fix line is `detail`,
+  # which reaches a reader only under BIONIC_WALL_VERBOSE=1. `$GUARD_ERR` is therefore
+  # the LINE and `$GUARD_VERR` is the line plus the detail; an arm that read the detail
+  # off `$GUARD_ERR` would now be asserting that the wall leaks it.
+  GUARD_VERR=$(printf '%s' "$1" | env CLAUDE_CODE_SESSION_ID="$_sid" BIONIC_WALL_VERBOSE=1 \
+    bash "$GUARD" 2>&1 >/dev/null)
   return 0
 }
 
@@ -520,7 +529,7 @@ plant_agent "$W4_SUB" "adouble-5555555555555555" "twin"
 plant_agent "$W4_SUB" "adouble-6666666666666666" "twin"
 run_guard "$(mk_stop_payload "$SID_A" "$W4_TR" "$W4_REPO" "twin")"
 expect_status "active wave + ambiguous name: REFUSED" 2 "$GUARD_ST"
-expect_contains "…and the refusal says how many answer to it" "2 live agents answer to 'twin'" "$GUARD_ERR"
+expect_contains "…and the refusal says how many answer to it" "2 live agents answer to 'twin'" "$GUARD_VERR"
 
 # A plan with CR-only line endings is still a plan. `tr -d` on those separators
 # collapses the file to one line, the run-state marker goes unseen, and the gate
@@ -696,7 +705,10 @@ plant_agent "$R2_SUB" "ablocked-aaaaaaaaaaaaaaaa" "blocked"
 sg_roster_row "$R2_REPO" "$SID_A" "blocked" "ablocked-aaaaaaaaaaaaaaaa"
 run_guard "$(mk_stop_payload "$SID_A" "$R2_TR" "$R2_REPO" "blocked")"
 expect_status "the stop with no observation is refused (setup for R2)" 2 "$GUARD_ST"
-FIXLINE=$(printf '%s\n' "$GUARD_ERR" | grep '^Fix: ' | sed 's/^Fix: //')
+# THE PASTEABLE FIX LINE IS IN THE DETAIL NOW (slice 13, D-1): the user line names the
+# repair in six words and the runnable command is what the knob carries, so this is read
+# off the verbose stream. That it still EXECUTES is what the three arms below prove.
+FIXLINE=$(printf '%s\n' "$GUARD_VERR" | grep '^Fix: ' | sed 's/^Fix: //')
 expect_contains "a fix line was captured to execute" "stop-check.sh" "$FIXLINE"
 
 # The world's OWN home, so the observation genuinely resolves the target and
@@ -806,7 +818,7 @@ observe "$SID_A" "$S_TR" "$S_REPO" "victim"
 run_guard "$(mk_stop_payload "$SID_A" "$S_TR" "$S_REPO" "victim")"
 expect_status "a symlinked state path refuses the stop" 2 "$GUARD_ST"
 expect_contains "…for the symlink reason specifically, not a fallback missing-observation one" \
-  "nothing here will read or write through it" "$GUARD_ERR"
+  "nothing here will read or write through it" "$GUARD_VERR"
 
 IFS='|' read -r S2_REPO S2_TR S2_SUB <<< "$(make_world sec2 yes)"
 plant_agent "$S2_SUB" "avictim-ffffffffffffffff" "victim"
@@ -827,7 +839,7 @@ observe "$SID_A" "$S2_TR" "$S2_REPO" "victim"
 run_guard "$(mk_stop_payload "$SID_A" "$S2_TR" "$S2_REPO" "victim")"
 expect_status "a symlinked state DIRECTORY refuses the stop too" 2 "$GUARD_ST"
 expect_contains "…for the symlink reason specifically, not a fallback missing-observation one" \
-  "nothing here will read or write through it" "$GUARD_ERR"
+  "nothing here will read or write through it" "$GUARD_VERR"
 
 # The ROSTER is repo-controlled state too, so a symlink at its own level would let
 # a repo choose which file answers a question the gate asks — the OPEN direction §8
@@ -846,7 +858,7 @@ ln -s "$SANDBOX/plantedroster/.bionic/tmp/roster-$SID_A.state" \
 run_guard "$(mk_stop_payload "$SID_A" "$SR_TR_B" "$SR_REPO" "victim")"
 expect_status "a symlinked roster refuses the stop" 2 "$GUARD_ST"
 expect_contains "…because it was not read through: the id claim is never made" \
-  "no agent id" "$GUARD_ERR"
+  "no agent id" "$GUARD_VERR"
 
 # Unpredictable temp names: mktemp with an X-template, and no PID-based name.
 expect_regex "temp files use an mktemp X-template" 'mktemp.*XXXXXX' "$(cat "$GUARD")"
@@ -991,7 +1003,7 @@ sg_roster_row "$PU_REPO" "$SID_A" "runner" "arunner-1515151515151515" "$PROG_REL
 run_guard "$(mk_stop_payload "$SID_A" "$PU_TR" "$PU_REPO" "runner")"
 expect_status "a look that skipped the contracted channel discharges nothing" 2 "$GUARD_ST"
 expect_contains "…and the refusal names the channel the look never opened" \
-  "$PROG_REL" "$GUARD_ERR"
+  "$PROG_REL" "$GUARD_VERR"
 # Following the fix as printed clears the refusal — the loop has a stated exit.
 observe "$SID_A" "$PU_TR" "$PU_REPO" "runner" "--progress" "$PROG_REL"
 run_guard "$(mk_stop_payload "$SID_A" "$PU_TR" "$PU_REPO" "runner")"
@@ -1054,7 +1066,7 @@ sg_roster_row "$LV_REPO" "$SID_A" "w2-rc" "aw2-rc-e0886335875ba2d2" "" "confirme
 run_guard "$(mk_stop_payload "$SID_A" "$LV_TR" "$LV_REPO" "w2-rc")"
 expect_status "the same double file, contract UNMET: the ceremony survives — REFUSED" 2 "$GUARD_ST"
 expect_contains "…and it is the observation demand, not an ambiguity" \
-  "No observation" "$GUARD_ERR"
+  "No observation" "$GUARD_VERR"
 expect_absent "…nothing calls the double file ambiguous" "ambiguous" "$GUARD_ERR"
 
 # (b) A NAME THE ANSWER DOES NOT CARRY is not live, and the refusal says so. `ghost` is on
@@ -1062,7 +1074,7 @@ expect_absent "…nothing calls the double file ambiguous" "ambiguous" "$GUARD_E
 plant_agent "$LV_SUB_B" "aghost-9999999999999999" "ghost"
 run_guard "$(mk_stop_payload "$SID_A" "$LV_TR" "$LV_REPO" "ghost@session-${SID_B:0:8}")"
 expect_status "a target absent from the live set: REFUSED" 2 "$GUARD_ST"
-expect_contains "…and the refusal says it is not live" "is not live" "$GUARD_ERR"
+expect_contains "…and the refusal says it is not live" "is not live" "$GUARD_VERR"
 expect_absent "…and never calls it foreign — that rule is gone" "FOREIGN" "$GUARD_ERR"
 
 # (c) TWO LIVE ENTRIES OF ONE NAME. The refusal names both, and it does NOT offer the
@@ -1074,12 +1086,12 @@ plant_agent "$TW_SUB" "atwin-2222222222222222" "twin"
 sg_roster_row "$TW_REPO" "$SID_A" "twin" "atwin-1111111111111111"
 run_guard "$(mk_stop_payload "$SID_A" "$TW_TR" "$TW_REPO" "twin")"
 expect_status "a name the live set carries twice: REFUSED" 2 "$GUARD_ST"
-expect_contains "…the refusal counts them" "2 live agents answer to 'twin'" "$GUARD_ERR"
+expect_contains "…the refusal counts them" "2 live agents answer to 'twin'" "$GUARD_VERR"
 expect_regex "…and prints both entries as the harness reported them" \
-  'twin\|bionic:senior-implementor\|running' "$GUARD_ERR"
+  'twin\|bionic:senior-implementor\|running' "$GUARD_VERR"
 run_guard "$(mk_stop_payload "$SID_A" "$TW_TR" "$TW_REPO" "twin@session-${SID_A:0:8}")"
 expect_status "…and the alias spelling of an ambiguous name is refused too" 2 "$GUARD_ST"
-expect_contains "…for the ambiguity, not for the alias" "2 live agents answer to 'twin'" "$GUARD_ERR"
+expect_contains "…for the ambiguity, not for the alias" "2 live agents answer to 'twin'" "$GUARD_VERR"
 
 # (c2) A NAME CARRYING A REGEX METACHARACTER must count and list ONLY its own two entries,
 # never a bystander name that merely LOOKS like it under BRE matching (Step-6 security review
@@ -1093,9 +1105,9 @@ sg_roster_row "$RX_REPO" "$SID_A" "a.b" "arxa-1111111111111111"
 run_guard "$(mk_stop_payload "$SID_A" "$RX_TR" "$RX_REPO" "a.b")"
 expect_status "a name with a regex metacharacter, two live entries: REFUSED" 2 "$GUARD_ST"
 expect_contains "…the refusal counts exactly the two of that exact name" \
-  "2 live agents answer to 'a.b'" "$GUARD_ERR"
+  "2 live agents answer to 'a.b'" "$GUARD_VERR"
 expect_regex "…and prints both entries as the harness reported them" \
-  'a\.b\|bionic:senior-implementor\|running' "$GUARD_ERR"
+  'a\.b\|bionic:senior-implementor\|running' "$GUARD_VERR"
 expect_absent "…never widened to the bystander name the dot happens to match" \
   "axb" "$GUARD_ERR"
 
@@ -1106,14 +1118,14 @@ expect_absent "…never widened to the bystander name the dot happens to match" 
 plant_agent "$LV_SUB" "aunrostered-8888888888888888" "unrostered"
 run_guard "$(mk_stop_payload "$SID_A" "$LV_TR" "$LV_REPO" "unrostered")"
 expect_status "a live agent with no confirmed id on the roster: REFUSED" 2 "$GUARD_ST"
-expect_contains "…and the refusal names the missing fact" "no agent id" "$GUARD_ERR"
+expect_contains "…and the refusal names the missing fact" "no agent id" "$GUARD_VERR"
 
 # …and an `intended` row is still not an ownership claim: its id is a claim about a launch
 # nothing has observed. Unchanged from slice 4/9, on the channel that now carries it.
 sg_roster_row "$LV_REPO" "$SID_A" "unrostered" "aunrostered-8888888888888888" "" "intended"
 run_guard "$(mk_stop_payload "$SID_A" "$LV_TR" "$LV_REPO" "unrostered")"
 expect_status "an INTENDED row's id establishes nothing: still REFUSED" 2 "$GUARD_ST"
-expect_contains "…for the same missing fact" "no agent id" "$GUARD_ERR"
+expect_contains "…for the same missing fact" "no agent id" "$GUARD_VERR"
 
 # …and the paired positive: the same row `identified` carries the id, and the ordinary
 # ceremony resumes.
@@ -1136,7 +1148,7 @@ expect_status "a transcript-form id no roster row carries: REFUSED" 2 "$GUARD_ST
 # (f) `name@team` is not an address form this gate accepts — the suffix must name a session.
 run_guard "$(mk_stop_payload "$SID_A" "$LV_TR" "$LV_REPO" "unrostered@team")"
 expect_status "name@team is not an accepted alias: REFUSED" 2 "$GUARD_ST"
-expect_contains "…and the refusal names the accepted form" "@session-" "$GUARD_ERR"
+expect_contains "…and the refusal names the accepted form" "@session-" "$GUARD_VERR"
 
 section "Section 11: FACTS DISCHARGE THE STOP (epic-16 w2 S3, AC-1/AC-2, R2)"
 #
@@ -1167,7 +1179,7 @@ sg_roster_row "$F_REPO" "$SID_A" "slacker" "aslacker-2222222222222222" "" "confi
 run_guard "$(mk_stop_payload "$SID_A" "$F_TR" "$F_REPO" "slacker")"
 expect_status "UNMET contract: the ceremony survives — REFUSED" 2 "$GUARD_ST"
 expect_contains "…with the observation refusal, not a landing one" \
-  "No observation has been recorded" "$GUARD_ERR"
+  "No observation has been recorded" "$GUARD_VERR"
 
 # --- WAIVED: an explicit designation discharges as surely as an artifact ---
 plant_agent "$F_SUB" "awaived-3333333333333333" "waived-one"
@@ -1331,9 +1343,9 @@ observe "$SID_A" "$AL_TR" "$AL_REPO" "roamer"
 run_guard "$(mk_stop_payload "$SID_A" "$AL_TR" "$AL_REPO" "roamer@session-deadbeef")"
 expect_status "an alias naming a launcher with no such row: REFUSED" 2 "$GUARD_ST"
 expect_contains "…and the refusal says the launcher's roster does not carry the name" \
-  "does not carry" "$GUARD_ERR"
-expect_contains "…and prints an accepted spelling" "roamer@session-${SID_B:0:8}" "$GUARD_ERR"
-expect_contains "…including this session's own" "roamer@session-${SID_A:0:8}" "$GUARD_ERR"
+  "does not carry" "$GUARD_VERR"
+expect_contains "…and prints an accepted spelling" "roamer@session-${SID_B:0:8}" "$GUARD_VERR"
+expect_contains "…including this session's own" "roamer@session-${SID_A:0:8}" "$GUARD_VERR"
 
 # The refusal above did NOT spend the observation: a refused stop consumes nothing (D-2),
 # so the very next well-spelled stop still has its evidence.
@@ -1383,7 +1395,7 @@ sg_roster_row "$AD_REPO" "$SID_A" "adoptee2" "aadoptee-2222222222222222" "" "ide
 run_guard "$(mk_stop_payload "$SID_A" "$AD_TR" "$AD_REPO" "adoptee2")"
 expect_status "an UNOBSERVED adopted agent is still refused" 2 "$GUARD_ST"
 expect_contains "…and the refusal is the observation demand, not an unresolved one" \
-  "No observation" "$GUARD_ERR"
+  "No observation" "$GUARD_VERR"
 
 # THE DISCRIMINATOR. An agent sitting in the predecessor's directory that this session's
 # live set does not name stays invisible — the scope is the harness's statement, not the
@@ -1393,7 +1405,7 @@ plant_live "$AD_TR" fresh "adoptee" "adoptee2"
 sg_roster_row "$AD_REPO" "$SID_A" "stranger" "astranger-4444444444444444" "" "identified"
 run_guard "$(mk_stop_payload "$SID_A" "$AD_TR" "$AD_REPO" "stranger@session-${SID_B:0:8}")"
 expect_status "an agent on disk but absent from the live set: REFUSED" 2 "$GUARD_ST"
-expect_contains "…because it is not live, whatever the disk says" "is not live" "$GUARD_ERR"
+expect_contains "…because it is not live, whatever the disk says" "is not live" "$GUARD_VERR"
 
 section "Section 15: the answer must be FRESH, and a refusal names the fix (AC-9, D1′)"
 #
@@ -1418,15 +1430,15 @@ plant_live "$FR_TR" stale "worker"
 run_guard "$(mk_stop_payload "$SID_A" "$FR_TR" "$FR_REPO" "worker")"
 expect_status "a STALE answer refuses the stop even though the target is in it" 2 "$GUARD_ST"
 expect_contains "…and the refusal names the fix" "call ListAgents" "$GUARD_ERR"
-expect_contains "…and says the answer is stale" "stale" "$GUARD_ERR"
-expect_regex "…and prints the newest answer's age" 'age' "$GUARD_ERR"
+expect_contains "…and says the answer is stale" "stale" "$GUARD_VERR"
+expect_regex "…and prints the newest answer's age" 'age' "$GUARD_VERR"
 
 # NONE — no ListAgents answer in the transcript at all.
 : > "$FR_TR"
 run_guard "$(mk_stop_payload "$SID_A" "$FR_TR" "$FR_REPO" "worker")"
 expect_status "no answer at all refuses the stop" 2 "$GUARD_ST"
 expect_contains "…and names the same fix" "call ListAgents" "$GUARD_ERR"
-expect_contains "…reporting no answer was found" "none" "$GUARD_ERR"
+expect_contains "…reporting no answer was found" "none" "$GUARD_VERR"
 
 # A GARBLED newest answer is `none`, never "all gone" (S4 §F): the reader recognises no
 # section marker, so the gate refuses rather than reading an empty roster out of it.
@@ -1499,6 +1511,79 @@ plant_live "$I_TR" fresh "idle-slacker:idle"
 run_guard "$(mk_stop_payload "$SID_A" "$I_TR" "$I_REPO" "idle-slacker")"
 expect_status "an IDLE agent with an UNMET contract still meets the ceremony: REFUSED" 2 "$GUARD_ST"
 expect_contains "…with the observation refusal, not a resolution one" \
-  "No observation has been recorded" "$GUARD_ERR"
+  "No observation has been recorded" "$GUARD_VERR"
+
+section "AC-E1.3/E1.5 — every refusal this gate makes is one line, in the shape"
+
+# fails-when: a refusal reaches the user as more than one line, or in any shape but
+# `bionic: <verb> refused — <fact> (<fix ≤ 40 cols>)`.
+#
+# WHY A SWEEP AND NOT ONE ROW PER SITE. All twenty-two of this gate's refusals go
+# through one frame (`deny`), and the sweep below re-drives EVERY refusal this suite
+# already sets up: `run_guard` is wrapped so that each refusing call is checked, so the
+# arms are as many as the suite has refusals and no site can be migrated without one.
+# The three rows the ruled table puts at exactly 100 columns (draft F-9) are among them,
+# which is the reason the check is on columns and not on bytes.
+
+SG_RE='^bionic: [a-z-]+ refused — .+ \(.{1,40}\)$'
+. "${BIONIC_SCRIPTS_DIR}/payload/scripts/lib/width.sh"
+
+SG_SEEN=0; SG_BAD_SHAPE=""; SG_BAD_LINES=""; SG_BAD_COLS=""; SG_FACTS=""
+sg_check() {  # <stderr> — called for every refusing run_guard below
+  local err="$1" n cols
+  n="$(printf '%s\n' "$err" | wc -l | tr -d ' ')"
+  cols="$(bionic_cols "$err")"
+  SG_SEEN=$((SG_SEEN + 1))
+  printf '%s' "$err" | /usr/bin/grep -qE "$SG_RE" || SG_BAD_SHAPE="${SG_BAD_SHAPE}[$err] "
+  [ "$n" = "1" ] || SG_BAD_LINES="${SG_BAD_LINES}[$err] "
+  [ "${cols:-999}" -le 100 ] || SG_BAD_COLS="${SG_BAD_COLS}[$cols: $err] "
+  SG_FACTS="${SG_FACTS}${err}
+"
+}
+
+# Re-drive the refusals this suite already builds worlds for, through the same driver.
+sg_sweep() {  # <payload>
+  run_guard "$1"
+  [ "$GUARD_ST" = "2" ] && sg_check "$GUARD_ERR"
+  return 0
+}
+
+sg_sweep "$(mk_stop_payload "$SID_A" "$R2_TR" "$R2_REPO" "blocked")"
+sg_sweep "$(mk_stop_payload "$SID_A" "$R2_TR" "$R2_REPO" "")"
+sg_sweep "$(mk_stop_payload "$SID_A" "$S_TR" "$S_REPO" "victim")"
+sg_sweep "$(mk_stop_payload "$SID_A" "$TW_TR" "$TW_REPO" "twin")"
+sg_sweep "$(jq -n --arg c "$R2_REPO" --arg t "$R2_TR" \
+  '{cwd:$c, transcript_path:$t, hook_event_name:"PreToolUse", tool_name:"TaskStop",
+    tool_input:{task_id:"blocked"}}')"
+
+expect_eq "E1.3 the sweep drove real refusals (not counting over air)" "yes" \
+  "$([ "$SG_SEEN" -ge 4 ] && echo yes || echo no)"
+expect_eq "E1.3 every refusal matched the criterion's shape" "" "$SG_BAD_SHAPE"
+expect_eq "E1.3 every refusal was exactly one line" "" "$SG_BAD_LINES"
+expect_eq "E1.3 every refusal fitted the 100-column budget" "" "$SG_BAD_COLS"
+expect_contains "E1.3 …and the facts are this gate's own, from the ruled table" \
+  "bionic: stop refused — " "$SG_FACTS"
+
+# THE TABLE'S EXACT WORDING at three sites, one per shape of reason: a missing target,
+# a symlinked state path, an ambiguous name.
+run_guard "$(mk_stop_payload "$SID_A" "$R2_TR" "$R2_REPO" "")"
+expect_eq "E1.3 row 15 (no target) is the table's line" \
+  "bionic: stop refused — this stop names no target (name the agent to stop)" "$GUARD_ERR"
+run_guard "$(mk_stop_payload "$SID_A" "$S_TR" "$S_REPO" "victim")"
+expect_eq "E1.3 row 18 (a symlinked state path) is the table's line" \
+  "bionic: stop refused — the observation state path is a symlink (remove that symlink)" "$GUARD_ERR"
+run_guard "$(mk_stop_payload "$SID_A" "$TW_TR" "$TW_REPO" "twin")"
+expect_eq "E1.3 row 20 (an ambiguous name) is the table's line" \
+  "bionic: stop refused — several live agents answer to that name (name the full agent id)" "$GUARD_ERR"
+
+# AC-E1.5, the pair: the frame's twelve lines are off the user stream and on the knob.
+expect_absent "E1.5 the pasteable observe command is NOT on the user stream" \
+  "Fix: " "$GUARD_ERR"
+expect_contains "E1.5 …and BIONIC_WALL_VERBOSE=1 puts it back" "Fix: " "$GUARD_VERR"
+expect_contains "E1.5 …along with the human-order route the frame teaches" \
+  "If a human ordered this stop" "$GUARD_VERR"
+expect_eq "E1.5 …with the one line still first" \
+  "bionic: stop refused — several live agents answer to that name (name the full agent id)" \
+  "$(printf '%s\n' "$GUARD_VERR" | head -1)"
 
 finish

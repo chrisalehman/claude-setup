@@ -164,7 +164,7 @@ CWD=$(_jq '.cwd')
 # payload/scripts/lib/loader.sh. FAIL OPEN: the stop verdict is advisory or repeatable, and a
 # hook that refused because a file was missing would hold every turn in every session
 # on the machine hostage to it.
-BIONIC_LIB_WANT="root.sh run.sh session.sh agents.sh"
+BIONIC_LIB_WANT="refuse.sh root.sh run.sh session.sh agents.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -314,6 +314,8 @@ BIONIC_LOADER_REFUSE
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "stop-guard"; fi
 # shellcheck source=/dev/null
+. "$BIONIC_LIB/refuse.sh"
+# shellcheck source=/dev/null
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/run.sh"
@@ -393,39 +395,39 @@ ACTOR=$(_jq '.agent_id')
 FIX_TARGET="${RAW:-<agent-name-or-id>}"
 FIX_EXTRA=""
 
-deny() {  # <reason line>...
-  echo "BLOCKED: a stop needs a fresh observation of its target — a wave is active." >&2
-  echo "" >&2
-  local line
-  for line in "$@"; do echo "$line" >&2; done
-  echo "" >&2
-  # Runnable AS PRINTED: a blocked orchestrator pastes this line verbatim, and
-  # bracketed placeholders on it became three positional arguments the
-  # observation reported as absent deliverables (Step-6 review R2). The optional
-  # arguments are described beneath the command, never inside it.
-  echo "Fix: ${OBSERVE_CMD} ${FIX_TARGET}${FIX_EXTRA}" >&2
-  echo "     (pass each contracted deliverable path as a further argument)" >&2
-  echo "Then read what it prints, and stop again if the evidence supports it." >&2
-  echo "One observation discharges exactly one stop (D-2), and it goes stale the" >&2
-  echo "moment the target writes again (D-1)." >&2
-  echo "" >&2
-  # THE OTHER TWO WAYS PAST THIS GATE, named at the refusal because a wall that only
-  # names its ceremony teaches the ceremony. A landed contract needs neither of them —
-  # this gate never asked in the first place.
-  echo "If a human ordered this stop, it executes — record the order and stop again:" >&2
-  echo "     ${ORDER_CMD} ${FIX_TARGET}" >&2
-  echo "A stop the human performs themselves does not reach this gate at all." >&2
-  exit 2
+deny() {  # <fact> <fix> <reason line>...
+  # THE FRAME KEEPS ITS PARAMETERS AND LOSES ITS VOICE (slice 13, ruling D-1). It used
+  # to print twelve fixed lines and then the caller's reasons, all to the one stream the
+  # reader is interrupted on. Now the caller's FACT and FIX — the ruled wording, one row
+  # per reason, s12-refusal-wording-draft.md §1 rows 15-36 — render as the single user
+  # line, and everything the frame used to print becomes `detail`: the pasteable observe
+  # command, the one-observation-one-stop rule, and the human-order route. The verb is
+  # `stop` for all three Stop hooks (D-3); the fact discriminates the gate.
+  local fact="$1" fix="$2"; shift 2
+  local reasons="" line
+  for line in "$@"; do reasons="${reasons}${line}
+"; done
+  refuse exit2 stop "$fact" "$fix" "${reasons}A stop needs a fresh observation of its target, and a wave is active.
+
+Fix: ${OBSERVE_CMD} ${FIX_TARGET}${FIX_EXTRA}
+     (pass each contracted deliverable path as a further argument)
+Then read what it prints, and stop again if the evidence supports it.
+One observation discharges exactly one stop (D-2), and it goes stale the
+moment the target writes again (D-1).
+
+If a human ordered this stop, it executes — record the order and stop again:
+     ${ORDER_CMD} ${FIX_TARGET}
+A stop the human performs themselves does not reach this gate at all."
 }
 
-[ -n "$RAW" ] || deny "The stop names no target: tool_input.task_id is empty."
+[ -n "$RAW" ] || deny "this stop names no target" "name the agent to stop" "The stop names no target: tool_input.task_id is empty."
 
 SID=$(_jq '.session_id')
-[ -n "$SID" ] || deny "This stop request carries no session key, so no observation can be proven mine."
+[ -n "$SID" ] || deny "this stop carries no session key" "run /bionic:doctor" "This stop request carries no session key, so no observation can be proven mine."
 
 TRANSCRIPT=$(_jq '.transcript_path')
 SUB=$(session_subagents_dir "$TRANSCRIPT") \
-  || deny "This stop request carries no usable transcript path, so its session's agents cannot be resolved."
+  || deny "this stop carries no transcript path" "run /bionic:doctor" "This stop request carries no usable transcript path, so its session's agents cannot be resolved."
 
 # ---------- RESOLUTION AGAINST THE LIVE SET (D1′/D2′, AC-9…AC-11) ----------
 #
@@ -433,7 +435,7 @@ SUB=$(session_subagents_dir "$TRANSCRIPT") \
 # id, and for the rosters an `@session-` alias is checked against. `state_paths` declines a
 # symlinked state path, which is the same refusal it always made, one step earlier.
 PATHS=$(state_paths "$REPO") \
-  || deny "The observation state path is a symlink; nothing here will read or write through it."
+  || deny "the observation state path is a symlink" "remove that symlink" "The observation state path is a symlink; nothing here will read or write through it."
 STATE_DIR="${PATHS%|*}"; STATE_FILE="${PATHS#*|}"
 
 # THE TYPED REFERENCE, split. `TaskStop` hands this gate the operator's string as typed and
@@ -573,7 +575,7 @@ case "$LIVE_RC" in
     # than concluding "all gone" — but only a FRESH answer is a statement about now, and this
     # gate refuses on anything else. The model is the only thing that can ask again, so the
     # fix is named and the newest answer's age is printed with it.
-    deny "Target '${RAW}' cannot be resolved: this session has no fresh ListAgents answer." \
+    deny "no fresh ListAgents answer names it" "call ListAgents, then retry" "Target '${RAW}' cannot be resolved: this session has no fresh ListAgents answer." \
          "    newest answer: ${LIVE_STATE}   ·   age: ${LIVE_AGE}" \
          "The live set belongs to the harness and only the model can ask for it (D1′), so this" \
          "gate reads the answer rather than guessing at it: call ListAgents, then stop." \
@@ -591,7 +593,7 @@ case "$LIVE_RC" in
     LIVE_DUPES=$(live_agents "$TRANSCRIPT" 2>/dev/null | awk -F'|' -v want="$BASE" '$1 == want') || LIVE_DUPES=""
     LIVE_N=0
     [ -n "$LIVE_DUPES" ] && LIVE_N=$(printf '%s\n' "$LIVE_DUPES" | grep -c .)
-    deny "Target '${RAW}' is ambiguous: ${LIVE_N} live agents answer to '${BASE}'." \
+    deny "several live agents answer to that name" "name the full agent id" "Target '${RAW}' is ambiguous: ${LIVE_N} live agents answer to '${BASE}'." \
          "The harness reports them as:" \
          "$(printf '%s\n' "$LIVE_DUPES" | sed 's/^/    /')" \
          "A name is not an identity, and the @session- alias cannot separate these either — it" \
@@ -601,7 +603,7 @@ case "$LIVE_RC" in
   1)
     # Naming the SCOPE is what makes this refusal clearable (Step-6 review R4). Only a target
     # this gate has standing over reaches here — the carve above returned for every other.
-    deny "Target '${RAW}' is not live: the fresh ListAgents answer names no teammate '${BASE}'." \
+    deny "no live teammate answers to that name" "call ListAgents, then stop again" "Target '${RAW}' is not live: the fresh ListAgents answer names no teammate '${BASE}'." \
          "The platform hands this gate the name AS TYPED and resolves nothing for it (P5)." \
          "What resolves here is the harness's own answer about which teammates exist now —" \
          "not metadata on disk, which outlives the agents that wrote it. An agent that has" \
@@ -648,7 +650,7 @@ if [ -n "$ALIAS_SUFFIX" ]; then
     ACCEPTED=$(accepted_addresses)
     [ -n "$ACCEPTED" ] || ACCEPTED="    (no roster in this repo carries the name '${BASE}')
 "
-    deny "Target '${RAW}' is not an accepted alias for '${BASE}'." \
+    deny "that alias is not accepted for this agent" "use the agent's own name" "Target '${RAW}' is not an accepted alias for '${BASE}'." \
          "An alias suffix names the session that LAUNCHED the agent, spelled" \
          "@session-<first eight of that session's id>, and it is checked against that" \
          "session's own roster: the roster named here does not carry a row for '${BASE}'." \
@@ -817,7 +819,7 @@ esac
 # it cannot establish. The refusal names the missing fact instead of demanding a look that
 # cannot be taken, and both other ways past this gate are printed beneath it as always.
 if [ -z "$AGENT_ID" ]; then
-  deny "Target '${RAW}' is live, but this session's roster carries no agent id for '${AGENT_NAME}'." \
+  deny "the session roster carries no id for it" "call ListAgents, then retry" "Target '${RAW}' is live, but this session's roster carries no agent id for '${AGENT_NAME}'." \
        "An observation is a look at a particular agent's working log, and the log is filed" \
        "under its agent id — which a dispatch records on its roster row when the agent starts" \
        "(status \`identified\`), and which nothing else in this repo knows. Without it there is" \
@@ -828,7 +830,7 @@ fi
 LOG="$LOG_DIR/agent-${AGENT_ID}.jsonl"
 
 [ -f "$STATE_FILE" ] \
-  || deny "No observation has been recorded in this repo at all."
+  || deny "no observation exists in this repo" "observe it with stop-check" "No observation has been recorded in this repo at all."
 
 # Find this target's record. A record for the target under another session key
 # or another schema version is reported for what it is — never guessed at.
@@ -846,13 +848,13 @@ while IFS= read -r line; do
 done < "$STATE_FILE"
 
 if [ -z "$RECORD" ]; then
-  [ -n "$BAD_VERSION" ] && deny \
+  [ -n "$BAD_VERSION" ] && deny "the observation record is unreadable" "observe it with stop-check" \
     "The only observation of '${RAW}' carries schema version '${BAD_VERSION}', which this gate does not read." \
     "A record it cannot read is a record it will not trust. Observe again."
-  [ -n "$FOREIGN" ] && deny \
+  [ -n "$FOREIGN" ] && deny "that observation is another session's" "observe it with stop-check" \
     "The only observation of '${RAW}' was recorded by a different session (${FOREIGN})." \
     "Another session's look is not evidence that I looked."
-  deny "No observation of '${RAW}' (${AGENT_ID}) has been recorded by this session."
+  deny "this session has not observed it" "observe it with stop-check" "No observation of '${RAW}' (${AGENT_ID}) has been recorded by this session."
 fi
 
 # ---------- D-3: the look must be the STOPPER'S OWN (AC-4) ----------
@@ -868,11 +870,11 @@ fi
 # lands on the closed side (§7): the cost is one re-observation.
 REC_OBSERVER=$(record_field "$RECORD" observer)
 if [ -z "$REC_OBSERVER" ]; then
-  deny "The observation of '${RAW}' records no observer, so it cannot be shown to be yours." \
+  deny "the observation records no observer" "observe it with stop-check" "The observation of '${RAW}' records no observer, so it cannot be shown to be yours." \
        "A look nobody signed is not evidence that YOU looked (D-3). Observe again."
 fi
 if [ "$REC_OBSERVER" != "$ACTOR" ]; then
-  deny "The observation of '${RAW}' was made by a different actor." \
+  deny "another actor made that observation" "observe it yourself, then stop" "The observation of '${RAW}' was made by a different actor." \
        "    it was looked at by:  ${REC_OBSERVER}" \
        "    this stop comes from: ${ACTOR}" \
        "A look you did not take is not evidence that you looked (D-3): the reader of the" \
@@ -896,12 +898,12 @@ NOW_MTIME=0; NOW_SIZE=0
 if [ -f "$LOG" ]; then NOW_MTIME=$(file_mtime "$LOG"); NOW_SIZE=$(file_size "$LOG"); fi
 
 if [ "$REC_LOG" != "$LOG" ]; then
-  deny "The observation of '${RAW}' recorded a different working log than the one that resolves now." \
+  deny "the observation names another working log" "observe it with stop-check" "The observation of '${RAW}' recorded a different working log than the one that resolves now." \
        "Something about this target's identity changed since you looked."
 fi
 
 if [ "$NOW_MTIME" != "$REC_MTIME" ] || [ "$NOW_SIZE" != "$REC_SIZE" ]; then
-  deny "'${RAW}' has written to its working log SINCE your observation, so that observation is stale." \
+  deny "it has written since your observation" "observe it again, then stop" "'${RAW}' has written to its working log SINCE your observation, so that observation is stale." \
        "(Any CHANGE counts, not only a later write: a truncated or rewritten log is a changed log.)" \
        "Its evidence tier now includes work you have not seen — which may be the very work a stop would destroy." \
        "This is an activity boundary, not a timer: an agent dormant since your look stays stoppable however long ago it was."
@@ -941,7 +943,7 @@ case "$REC_PSTATE" in
       NOW_PSTATE="absent"; NOW_PMTIME=0
       if [ -e "$PROG_ABS" ]; then NOW_PSTATE="present"; NOW_PMTIME=$(file_mtime "$PROG_ABS"); fi
       if [ "$NOW_PSTATE" != "$REC_PSTATE" ] || [ "$NOW_PMTIME" != "$REC_PMTIME" ]; then
-        deny "'${RAW}' has written to its contracted PROGRESS ARTIFACT since your observation," \
+        deny "its progress artifact changed since you looked" "observe it again" "'${RAW}' has written to its contracted PROGRESS ARTIFACT since your observation," \
              "so that observation is stale." \
              "    artifact: ${PROG_ABS}" \
              "    at your look: ${REC_PSTATE} (mtime ${REC_PMTIME})   ·   now: ${NOW_PSTATE} (mtime ${NOW_PMTIME})" \
@@ -960,7 +962,7 @@ case "$REC_PSTATE" in
       ROSTER_PROGRESS=$(record_field "$ROSTER_ROW" progress)
       if [ -n "$ROSTER_PROGRESS" ]; then
         FIX_EXTRA=" --progress ${ROSTER_PROGRESS}"
-        deny "The work contract for '${RAW}' names a progress artifact your observation never looked at." \
+        deny "your observation skipped the progress artifact" "observe with --progress" "The work contract for '${RAW}' names a progress artifact your observation never looked at." \
              "    contracted progress: ${ROSTER_PROGRESS}   (from this session's roster)" \
              "An observation that skips a contracted channel cannot be staled by it, so it is" \
              "not evidence about the work this stop would end (D-6). Look at it, then stop."
@@ -996,7 +998,7 @@ while ! mkdir "$LOCK" 2>/dev/null; do
         continue
       fi
     fi
-    deny "The observation record could not be consumed (the state lock at $STATE_DIR could not be taken), and an unconsumed record would discharge a second stop." \
+    deny "the state lock is held, so nothing was consumed" "retry in a moment" "The observation record could not be consumed (the state lock at $STATE_DIR could not be taken), and an unconsumed record would discharge a second stop." \
          "Either another writer holds it, or this repo's .bionic/tmp is not writable by you."
   fi
   sleep 0.1 2>/dev/null || sleep 1
@@ -1004,7 +1006,7 @@ done
 
 TMP=$(mktemp "$STATE_DIR/.stop-check.XXXXXX" 2>/dev/null) || {
   rm -rf "$LOCK"
-  deny "The observation record could not be consumed (no writable temp file), and an unconsumed record would discharge a second stop."
+  deny "no writable temp file, so nothing was consumed" "free space, then retry" "The observation record could not be consumed (no writable temp file), and an unconsumed record would discharge a second stop."
 }
 {
   printf '# bionic observation records — schema stop-check-state/%s\n' "$STATE_VERSION"
@@ -1021,7 +1023,7 @@ TMP=$(mktemp "$STATE_DIR/.stop-check.XXXXXX" 2>/dev/null) || {
 mv -f "$TMP" "$STATE_FILE" 2>/dev/null || {
   rm -f "$TMP"
   rm -rf "$LOCK"
-  deny "The observation record could not be consumed (the state file could not be replaced), and an unconsumed record would discharge a second stop."
+  deny "the state file could not be replaced" "retry in a moment" "The observation record could not be consumed (the state file could not be replaced), and an unconsumed record would discharge a second stop."
 }
 rm -rf "$LOCK"
 
