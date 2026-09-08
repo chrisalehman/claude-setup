@@ -4541,13 +4541,13 @@ q_spawn_echo "$Q_TX" toolu_q6 "Read first: review-close.md. The marker is $Q_MAR
 
 # Each reader answers from ITS OWN file, in its own subshell: the poker's counters are
 # extracted and called for real (§I.1's precedent), patrol is sourced as doctor sources it.
-q_poker() {  # <fn-name> <transcript>
+q_poker() {  # <fn-name> <transcript> [<since ISO>]
   ( eval "$(awk -v n="$1" '$0 ~ "^" n "\\(\\)" {f=1} f{print; if ($0=="}") exit}' "$PARTY_PK")"
-    "$1" "$2" ) 2>/dev/null
+    "$1" "$2" "${3:-}" ) 2>/dev/null
 }
-q_patrol() {  # <transcript> -> "<dispatches> <refused>"
+q_patrol() {  # <transcript> [<since ISO>] -> "<dispatches> <refused>"
   ( . "$PARTY_PT" >/dev/null 2>&1
-    _patrol_scan "$1" ) 2>/dev/null \
+    _patrol_scan "$1" "${2:-}" ) 2>/dev/null \
   | awk -F'\t' '$1=="AGENTS"{a=$2} $1=="REFUSED"{r=$2} END{printf "%d %d", a+0, r+0}'
 }
 
@@ -4593,6 +4593,57 @@ Q_MUT_R="$( ( . "$Q_MUT" >/dev/null 2>&1; _patrol_scan "$Q_C1" ) 2>/dev/null \
             | awk -F'\t' '$1=="REFUSED"{print $2+0}' )"
 expect_eq "…and the truncating copy misses the late marker, so the pair splits (§Q discriminates)" \
   "0" "$Q_MUT_R"
+
+# --- Q.3 the WINDOW: one rule, two readers ----------------------------------
+#
+# §Q above proved the refusal-JOIN rule is one rule on two files with `since` left empty
+# ("the whole transcript") on both sides. This is the sibling proof for the WINDOW itself:
+# hooks/session-poker.sh scopes count_main_thread_dispatches/count_refused_dispatches to
+# the roster's own window (`roster_window()`, exposed as the `window` verb) and
+# payload/scripts/lib/patrol.sh takes the identical `since` parameter through
+# `_patrol_scan` (patrol_window() shells out to that verb the same way patrol_interval()
+# already shells out for the interval). Windowing either file alone splits this pair, which
+# is why the whole cluster is one commit.
+#
+# THE FIXTURE IS A FILE ON DISK, tests/fixtures/patrol-two-wave.jsonl, rather than built
+# inline: this section's whole claim is about which entries a reader counts, so the entries
+# are reviewable as one artifact instead of as a sequence of jq calls. It can be a static
+# file precisely because `since` here is a LITERAL instant. tests/doctor-patrol.test.sh
+# Section 12 asks the same question end-to-end through doctor, where the window is the
+# roster file's own creation time and the waves have to be dated against it at run time —
+# a static file cannot express that, so Section 12 builds its own dated transcript.
+#
+# TWO WAVES: three entries before 2026-09-01T00:00:00Z carrying one refusal, four entries
+# after it carrying one refusal. Lifetime 5 dispatches / 2 refusals, windowed 3 / 1.
+Q3_TX="$REPO_ROOT/tests/fixtures/patrol-two-wave.jsonl"
+Q3_SINCE="2026-09-01T00:00:00Z"
+
+expect_true "Q.3 fixture: the two-wave transcript is on disk" test -f "$Q3_TX"
+
+Q3_PK_D="$(q_poker count_main_thread_dispatches "$Q3_TX" "$Q3_SINCE")"
+Q3_PK_R="$(q_poker count_refused_dispatches "$Q3_TX" "$Q3_SINCE")"
+Q3_PT="$(q_patrol "$Q3_TX" "$Q3_SINCE")"; Q3_PT_D="${Q3_PT%% *}"; Q3_PT_R="${Q3_PT##* }"
+
+expect_eq "windowed DISPATCHES: the poker counts only wave two (3)" "3" "$Q3_PK_D"
+expect_eq "windowed DISPATCHES: poker and patrol agree" "$Q3_PK_D" "$Q3_PT_D"
+expect_eq "windowed REFUSED: the poker counts only wave two's refusal, not wave one's (1)" \
+  "1" "$Q3_PK_R"
+expect_eq "windowed REFUSED: poker and patrol agree" "$Q3_PK_R" "$Q3_PT_R"
+
+# THE DISCRIMINATOR: with no window at all (since="") both readers fall back to the
+# transcript's whole life, so BOTH counts rise (5 dispatches, 2 refusals — one refusal per
+# wave) — proof `since`, not some other difference, is what produced the smaller windowed
+# counts above, and that this is not the coincidence of a fixture with one refusal in it.
+Q3_PK_D_LIFE="$(q_poker count_main_thread_dispatches "$Q3_TX" "")"
+Q3_PK_R_LIFE="$(q_poker count_refused_dispatches "$Q3_TX" "")"
+Q3_PT_LIFE="$(q_patrol "$Q3_TX" "")"; Q3_PT_D_LIFE="${Q3_PT_LIFE%% *}"; Q3_PT_R_LIFE="${Q3_PT_LIFE##* }"
+expect_eq "…and with no window at all, both readers count the earlier wave's dispatches too (5)" \
+  "5" "$Q3_PK_D_LIFE"
+expect_eq "…poker and patrol agree on the lifetime dispatch count too" \
+  "$Q3_PK_D_LIFE" "$Q3_PT_D_LIFE"
+expect_eq "…and the earlier wave's refusal too (2, not 1)" "2" "$Q3_PK_R_LIFE"
+expect_eq "…poker and patrol agree on the lifetime refused count too" \
+  "$Q3_PK_R_LIFE" "$Q3_PT_R_LIFE"
 
 # ============================================================
 section "Section R — the ADOPTED address: one construction, three sites"

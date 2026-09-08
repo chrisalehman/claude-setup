@@ -278,7 +278,8 @@ _patrol_scan_jq='
   | select(.isSidechain != true)
   | select((tostring | test("\"agent_?[Ii][dD]\"[ \t]*:[ \t]*\"[^\"]")) | not)
   | select((.message.content? | type) == "array")
-  | .message.content[]
+  | . as $entry
+  | $entry.message.content[]
   | if (.type == "tool_use" and .name == "CronCreate") then
       ["C", .id,
        ((.input.cron // "") | tostring),
@@ -288,14 +289,17 @@ _patrol_scan_jq='
     elif (.type == "tool_use" and .name == "CronDelete") then
       ["D", ((.input.id // "") | tostring)]
     elif (.type == "tool_use" and .name == "Agent") then
-      ["A", .id]
+      # THE TIMESTAMP RIDES ALONG: the ENTRY own `timestamp` field, the same one
+      # hooks/session-poker.sh window-scopes count_main_thread_dispatches against, read off
+      # $entry rather than off this content item (a tool_use block carries none of its own).
+      ["A", .id, ($entry.timestamp // "")]
     elif (.type == "tool_result") then
       ((if (.content | type) == "string" then .content
         elif (.content | type) == "array" then ([.content[]? | select(.type == "text") | .text] | join(" "))
         else "" end) | gsub("[\n\r\t|]"; " ")) as $full
       | ["R", (.tool_use_id // ""),
          (if ($full | test("PreToolUse:Agent hook error:")) then "1" else "0" end),
-         ($full | .[0:200])]
+         ($full | .[0:200]), ($entry.timestamp // "")]
     else empty end
   | @tsv
 '
@@ -328,12 +332,36 @@ _patrol_scan_jq='
 # content: a real refusal carries the marker at offset 482 (the CLI prefixes the
 # hook's own stderr with the tool name and the hook's path), so the 200-character
 # cut the job join reads by belongs after the test, never before it.
+#
+# THE WINDOW APPLIES HERE TOO. `agents` and `refused` used to be counted over the
+# transcript's WHOLE LIFE, while hooks/session-poker.sh's own counters scope to the
+# roster's own window (`roster_window()`, exposed as its `window` verb) — and since a
+# `.bionic/tmp` wipe re-opens the roster at zero, a session running a second wave read its
+# first wave's dispatches against a roster that only began at the wipe, and doctor printed
+# `N launches unrostered` for a wall that had rostered everything asked of it since. The
+# two readers are now the SAME RULE: `since` (passed in by patrol_window(), or empty for
+# "the whole transcript" — exactly the fallback hooks/session-poker.sh takes when a roster
+# cannot be dated at all) gates BOTH the `A` records that build `isagent`/`agents` and the
+# `R` records that credit a refusal, each on its own entry's timestamp. An agent dispatched
+# before the window never enters `isagent`, and a refusal recorded before the window is
+# never credited, matching a wall that is only being asked about from the window forward.
+#
+# AN ENTRY WITH NO TIMESTAMP IS IN, the same answer hooks/session-poker.sh's own
+# in_window() gives a line whose `timestamp` field it cannot find: a reader that dropped
+# undatable entries would silently shrink every count on a transcript shape neither reader
+# has seen, which is the wrong direction for a wall.
 _patrol_join_awk='
   BEGIN { FS = "\t"; n = 0; agents = 0; refused = 0 }
+  function in_window(ts,   d) {
+    if (since == "") return 1
+    if (ts == "") return 1
+    d = substr(ts, 1, 19)
+    return (d >= substr(since, 1, 19))
+  }
   $1 == "C" { ord[++n] = $2; cron[$2] = $3; rec[$2] = $4; kind[$2] = $5; head[$2] = $6 }
   $1 == "D" { del[$2] = 1 }
-  $1 == "R" { res[$2] = $4; if ($3 == "1" && ($2 in isagent)) refused++ }
-  $1 == "A" { agents++; isagent[$2] = 1 }
+  $1 == "R" { res[$2] = $4; if ($3 == "1" && ($2 in isagent) && in_window($5)) refused++ }
+  $1 == "A" { if (in_window($3)) { agents++; isagent[$2] = 1 } }
   END {
     for (i = 1; i <= n; i++) {
       tid = ord[i]
@@ -353,15 +381,15 @@ _patrol_join_awk='
   }
 '
 
-_patrol_scan() {  # <transcript> -> JOB/AGENTS records
-  local t="${1:-}" secs
+_patrol_scan() {  # <transcript> [<since ISO>] -> JOB/AGENTS/REFUSED records
+  local t="${1:-}" since="${2:-}" secs
   [ -f "$t" ] || return 1
   command -v jq >/dev/null 2>&1 || return 1
   secs="${BIONIC_DOCTOR_PROBE_SECONDS:-15}"
   if command -v detect_bounded >/dev/null 2>&1; then
-    detect_bounded "$secs" jq -r "$_patrol_scan_jq" "$t" 2>/dev/null | awk "$_patrol_join_awk"
+    detect_bounded "$secs" jq -r "$_patrol_scan_jq" "$t" 2>/dev/null | awk -v since="$since" "$_patrol_join_awk"
   else
-    jq -r "$_patrol_scan_jq" "$t" 2>/dev/null | awk "$_patrol_join_awk"
+    jq -r "$_patrol_scan_jq" "$t" 2>/dev/null | awk -v since="$since" "$_patrol_join_awk"
   fi
 }
 
@@ -382,6 +410,34 @@ patrol_interval() {  # <repo-root> -> "<seconds> <configured|default|last-resort
     if [ -n "$secs" ] && [ "$secs" -gt 0 ]; then printf '%s default' "$secs"; return 0; fi
   fi
   printf '%s last-resort' "$PATROL_INTERVAL_LAST_RESORT"
+}
+
+# THE WINDOW, from its owner. "Since when does THIS roster's own record of this session
+# begin" is hooks/session-poker.sh's own question — its `window` verb answers it with the
+# roster file's own creation time, or the Patrol stamp beside it when the roster itself
+# cannot be dated (`roster_window()`). This shells out to that verb rather than
+# re-deriving `file_birth`/`epoch_iso`/`roster_window` here, the same call
+# `patrol_interval()` above already makes for the interval and for the identical reason: a
+# copy grown in a lib/ file that cannot source hooks/ would be a second, silently
+# driftable answer to one question. tests/cross-gate-agreement.test.sh §Q.3 compares the
+# two COUNTING functions this window feeds (hooks/session-poker.sh's
+# count_main_thread_dispatches/count_refused_dispatches against this file's own
+# _patrol_scan) on one shared fixture, the same way §Q already does for the refusal-join
+# rule.
+#
+# EVERY FAILURE IS AN EMPTY STRING, never a refusal: an unreachable poker, an unresolvable
+# root or a filesystem that keeps no creation time all mean "no window", and the counters
+# fall back to the whole transcript — the answer doctor gave before this existed.
+patrol_window() {  # <repo-root> <sid> -> ISO instant on stdout, empty for "the whole transcript"
+  local repo="${1:-}" sid="${2:-}" poker w
+  [ -n "$repo" ] && [ -n "$sid" ] || { printf ''; return 0; }
+  poker="$(plugin_root 2>/dev/null)/hooks/session-poker.sh"
+  [ -f "$poker" ] || { printf ''; return 0; }
+  w=$( cd "$repo" 2>/dev/null && CLAUDE_CODE_SESSION_ID="$sid" bash "$poker" window 2>/dev/null )
+  case "$w" in
+    ''|*[!0-9TZ:.-]*) printf '' ;;
+    *) printf '%s' "$w" ;;
+  esac
 }
 
 _patrol_mtime() {  # <file>
@@ -467,7 +523,7 @@ EOF
 # machine. Emitted as keyed records rather than prose so the renderer decides
 # what a reader sees and this file decides nothing about presentation.
 patrol_report() {  # -> patrol-session/v1 … patrol-job/v1 … patrol-stamp/v1 … patrol-roster/v1 … patrol-wall/v1
-  local sess sid pid cwd repo here_repo tr scan agents refused cause blind
+  local sess sid pid cwd repo here_repo tr scan since agents refused cause blind
   local id cron rec kind phead rline dispatches tag a b c d e
 
   here_repo="$(project_root "$PWD")"
@@ -491,7 +547,8 @@ patrol_report() {  # -> patrol-session/v1 … patrol-job/v1 … patrol-stamp/v1 
 
     agents=""; refused=""
     if [ -n "$tr" ] && [ -z "$cause" ]; then
-      scan="$(_patrol_scan "$tr")"
+      since="$(patrol_window "$repo" "$sid")"
+      scan="$(_patrol_scan "$tr" "$since")"
       while IFS=$'\t' read -r tag a b c d e; do
         case "$tag" in
           JOB)

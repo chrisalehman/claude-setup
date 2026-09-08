@@ -1179,6 +1179,28 @@ CHECK_OUT2="$(bash "$CLONE2/agents-src/render.sh" --check 2>&1)"
 expect_ne "67a: one hand edit to a rendered command page turns --check red" "0" "$?"
 expect_match "67b: …and the diff names that page" "*commands/help.md*" "$CHECK_OUT2"
 
+# A STRAY TEMPLATE IN THE ROLE UNIT'S OWN DIRECTORY (W4 4/4, AC-15). A `.md.tmpl` that
+# names anything other than a current role and lands directly in `agents-src/templates/`
+# must never render — no `agents/<name>.md`, no row in either manifest — or a future
+# addition there would ship an un-rostered seventh role file invisible to --check.
+CLONE3="$TMP/render-clone-3"
+clone_render_tree "$CLONE3" || true
+{
+  echo '---'
+  echo 'name: not-a-role'
+  echo '---'
+  echo '<!-- GENERATED-HEADER -->'
+  echo 'stray, never rendered'
+} > "$CLONE3/agents-src/templates/not-a-role.md.tmpl"
+WRITE_OUT3="$(bash "$CLONE3/agents-src/render.sh" 2>&1)"
+WRITE_RC3=$?
+expect_eq "68a: a stray template beside the six roles does not fail the render" "0" "$WRITE_RC3"
+expect_true "68b: …and it renders no agents/not-a-role.md at all" \
+  bash -c '[ ! -e "$1" ]' _ "$CLONE3/agents/not-a-role.md"
+CHECK_OUT3="$(bash "$CLONE3/agents-src/render.sh" --check 2>&1)"
+expect_eq "68c: …so --check still passes with the stray template still sitting there" \
+  "0" "$?"
+
 # ── The four passages: one text, every surface ──────────────────────────────
 #
 # marker_span reads the injection markers render.sh writes, so the extraction follows the

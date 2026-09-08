@@ -413,6 +413,28 @@ STALE=""
 # the only list of what a --check has staged.
 RENDERED_RELS=""
 
+# RENDER.SH ITSELF IS A RENDER INPUT, AND THE ARCHIVE ARM DOES NOT COMPARE IT (A-18,
+# s01-render-pipeline A-S01-1). Every OTHER source below is read from $SRC_ROOT, which
+# --archive points at the `git archive HEAD` copy — but the loop that reads them runs as
+# THIS invocation of the script, on disk, possibly mid-edit. So an uncommitted change to
+# render.sh itself is exercised by the archive arm rather than compared by it, exactly the
+# gap the archive arm exists to close for every other input. One digest closes it: the
+# running script against its own committed copy, checked only under --archive (a plain
+# --check has no archived copy to compare against, and a write run has no comparison to
+# make at all).
+if [ "$ARCHIVE" = yes ]; then
+  SELF_REL="agents-src/render.sh"
+  if [ ! -f "$ARCH/$SELF_REL" ]; then
+    echo "render.sh: $SELF_REL is missing from git archive HEAD (uncommitted new script?)" >&2
+    STALE="$STALE $SELF_REL"; RC=1
+  elif ! cmp -s "$SELF_DIR/render.sh" "$ARCH/$SELF_REL"; then
+    echo "── $SELF_REL differs from its committed copy at HEAD ──" >&2
+    echo "  this run of render.sh is not the render.sh that HEAD carries, so this archive" >&2
+    echo "  check exercised an uncommitted renderer instead of comparing against it." >&2
+    STALE="$STALE $SELF_REL"; RC=1
+  fi
+fi
+
 for unit in $RENDER_UNITS; do
   tmpl_dir="${unit%%|*}"
   out_dir="${unit##*|}"
@@ -424,6 +446,19 @@ for unit in $RENDER_UNITS; do
   for tmpl in "$SRC_ROOT/$tmpl_dir"/*.md.tmpl; do
     [ -f "$tmpl" ] || continue
     base="$(basename "$tmpl")"; base="${base%.md.tmpl}"
+
+    # A15 GUARD (S10): the role unit's directory is a flat *.md.tmpl glob with no
+    # membership check of its own, so a stray template dropped there — one that
+    # names no role in $ROLES — would render as a phantom role file nothing else
+    # in the tree references. Skip it rather than write it; --check then stays
+    # honest about what the committed roster actually is.
+    if [ "$tmpl_dir" = "agents-src/templates" ]; then
+      case " $ROLES " in
+        *" $base "*) ;;
+        *) continue ;;
+      esac
+    fi
+
     rel="$out_dir/$base.md"
 
     if ! render_one "$tmpl" "$tmpl_dir/$base.md.tmpl" > "$WORK/$rel"; then

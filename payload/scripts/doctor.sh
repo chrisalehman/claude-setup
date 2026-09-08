@@ -115,6 +115,16 @@ _doctor_self_dir() {
 }
 DOCTOR_LIB="$(cd "$(_doctor_self_dir)" && pwd -P)/lib"
 
+# THIS CHECKOUT'S OWN ROOT (W4 4/4), three levels up from DOCTOR_LIB the same way
+# `_detect_plugin_root`'s fallback climbs from lib to the payload directory (lib ->
+# scripts -> payload), one level further still: a marketplace registration's
+# `source.path` names a REPO root — it holds `.claude-plugin/marketplace.json`
+# beside `payload/`, not the payload directory by itself. Resolved from doctor's
+# own location, never from BIONIC_PLUGIN_ROOT: the "which tree" question this line
+# answers is about where THIS SCRIPT physically lives, and an env override that
+# redirected it would make the comparison answer a question nobody asked.
+DOCTOR_REPO_ROOT="$(cd "${DOCTOR_LIB}/../../.." && pwd -P)"
+
 # THE PAYLOAD-INTEGRITY GUARD, WHICH SETUP HAS CARRIED SINCE 1.5.1 AND THIS FILE
 # DID NOT (Step-5 walk, Walk-D3). A payload copy missing lib/checks.sh answered
 # `doctor` with three raw bash diagnostics — `No such file or directory`,
@@ -672,6 +682,10 @@ REG_SHA_CAUSE="${REG_SHA_FACT##*cause=}"
 # branches on it (the header's sha choice, and F5's version row) — the same
 # "gather once" discipline as every other fact on this page.
 FEED_KIND="$(detect_marketplace_feed_kind)"
+
+# WHICH TREE THE CLI LOADS THE PLUGIN FROM (W4 4/4). Read once here, printed once
+# near the header below — the same "gather once" discipline as FEED_KIND above.
+MP_SOURCE_PATH="$(detect_marketplace_source_path)"; MP_SOURCE_STATE=$?
 
 # THE COMMIT THE HEADER NAMES IS THE ONE THE CLI IS RUNNING, which is not always
 # the one the registry recorded. On a directory-source feed the CLI reads the
@@ -2031,6 +2045,37 @@ fi
 # carrying a plugin install, a checkout and a marketplace copy of the same thing,
 # that is the fact every other line below is relative to.
 echo "Bionic Doctor — payload ${PLUGIN_VERSION} @ ${PAYLOAD_SHA}"
+
+# WHICH CHECKOUT THE CLI ACTUALLY LOADS THE PLUGIN FROM (W4 4/4) — the other half
+# of the header's provenance claim, on a machine that can carry more than one
+# checkout of this same marketplace name. A directory-source registration resolves
+# to a real path on this disk; comparing its realpath against `DOCTOR_REPO_ROOT`
+# (also resolved to a realpath, so a relative registration or a symlinked checkout
+# reads the same as an absolute one) answers "this checkout" or "OTHER checkout" —
+# a git-feed registration names no filesystem path at all and prints as-is,
+# never matching either verdict.
+#
+# THE BRACKET VERDICT MUST SURVIVE TRUNCATION, NOT THE PATH — the opposite of
+# every other row on this page. A long path is merely informational; the verdict
+# is the one word ("OTHER") a reader on a two-checkout machine cannot afford to
+# lose to an ellipsis, so `bionic_line` eats the shortfall out of the path, never
+# the bracket.
+if [ "$MP_SOURCE_STATE" -eq 0 ] && [ -n "$MP_SOURCE_PATH" ]; then
+  if [ -d "$MP_SOURCE_PATH" ]; then
+    _mp_source_real="$(cd "$MP_SOURCE_PATH" 2>/dev/null && pwd -P)"
+  else
+    _mp_source_real=""
+  fi
+  if [ -n "$_mp_source_real" ] && [ "$_mp_source_real" = "$DOCTOR_REPO_ROOT" ]; then
+    printf '%s\n' "$(_doctor_rtrim "$(bionic_line "plugin source: " "$MP_SOURCE_PATH" " [this checkout]")")"
+  else
+    printf '%s\n' "$(_doctor_rtrim "$(bionic_line "plugin source: " "$MP_SOURCE_PATH" \
+      " [OTHER checkout — the CLI loads the plugin from THERE]")")"
+  fi
+  unset _mp_source_real
+else
+  echo "plugin source: unregistered"
+fi
 
 # ─── The verdict, on the line under it ───────────────────────────────────────
 #

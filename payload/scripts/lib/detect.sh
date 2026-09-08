@@ -723,6 +723,35 @@ detect_marketplace_feed_kind() {
   return 0
 }
 
+# WHICH TREE THIS INSTALL'S CODE ACTUALLY COMES FROM, keyed the same honest way as
+# the feed-kind lookup above — `_detect_marketplace_name`, never the literal `bionic`
+# (W4 4/4, AC-18/L-DETECT-4.1's own fix applied to this second reader of the same
+# file). A directory feed records `source.path`: the checkout doctor.sh is about to
+# compare its own location against. A git feed has no filesystem path at all, only
+# `source.repo` — that string comes back unresolved, because turning either shape
+# into a "this checkout" verdict is doctor.sh's comparison to make, not this
+# function's.
+#
+# EMPTY STDOUT AND EXIT 1 is the one shape for "unregistered", covering every way
+# that can be true — the file is absent, unparseable, names no entry for the
+# resolved marketplace name, or no jq is on PATH to read it honestly. No fallback
+# parse: this feeds a path a caller is about to compare its own root against, and a
+# wrong guess there is worse than an honest refusal — the same posture
+# `detect_plugin_root` already keeps for its own path.
+detect_marketplace_source_path() {
+  local mp name val
+  mp="$(_detect_known_marketplaces_file)"
+  [ -f "$mp" ] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  name="$(_detect_marketplace_name)"
+  val="$(jq -r --arg n "$name" '.[$n].source.path // .[$n].source.repo // empty' "$mp" 2>/dev/null)"
+  case "$val" in
+    ''|null) return 1 ;;
+  esac
+  printf '%s\n' "$val"
+  return 0
+}
+
 detect_plugin_registered() {
   local installed_json count
   installed_json="$(_detect_installed_plugins_file)"

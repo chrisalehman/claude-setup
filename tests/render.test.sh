@@ -231,4 +231,128 @@ expect_match "6b: …and says what it needed" "*git work tree*" "$RT_OUT"
 expect_true "6c: the renderer documents the arm in its own usage block" \
   grep -qF 'THE ARCHIVE ARM' "$RENDER_SH"
 
+# ─────────────────────────────────────────────────────────────────────────────
+section "Section 7: a stray template under the role unit never becomes a phantom role file (A15, S10, AC-R4.3)"
+
+# THE DEFECT THIS GUARDS AGAINST. `agents-src/templates` (the role unit) is a flat
+# `*.md.tmpl` glob with no membership check of its own — RENDER_UNITS names the
+# directory, never the files inside it. A template dropped there whose basename names no
+# role in $ROLES would render exactly like a real role template: a phantom output file
+# nothing else in the tree references, silently added to the manifest by a bare write run.
+FIX_A15="$TMPROOT/a15-stray"
+RT_A15_READY=no
+if rt_fixture "$FIX_A15"; then
+  # A WELL-FORMED TEMPLATE, not garbage — the defect is a role-shaped file that simply
+  # names no role in $ROLES (e.g. an orchestrator template dropped in the role unit by
+  # mistake), never a template render_one would reject on its own merits. Built from a
+  # real role template's own frontmatter shape so it clears render_one's GENERATED-HEADER
+  # and frontmatter requirements exactly as a real stray would.
+  {
+    printf -- '---\nname: not-a-role\ndescription: fixture only, plugin ships no such role.\nmodel: opus\neffort: high\n---\n\n'
+    printf -- '<!-- GENERATED-HEADER -->\n\n## Role\n\nSTRAY TEMPLATE BODY — this file names no role in $ROLES.\n'
+  } > "$FIX_A15/agents-src/templates/not-a-role.md.tmpl"
+  RT_A15_READY=yes
+fi
+expect_eq "7a: the stray-template fixture is built" "yes" "$RT_A15_READY"
+
+rt_check "$FIX_A15" --check
+expect_status "7b: --check on a tree carrying an un-rendered stray template stays green" \
+  0 "$RT_RC"
+
+bash "$FIX_A15/agents-src/render.sh" >/dev/null 2>&1
+expect_true "7c: a write run creates no phantom output file for the stray template" \
+  bash -c "[ ! -e '$FIX_A15/agents/not-a-role.md' ]"
+expect_false "7d: …and the phantom path never enters the manifest" \
+  grep -qF 'not-a-role.md' "$FIX_A15/payload/integrity/rendered.sha256"
+
+# THE PAIRED POSITIVE: a template that DOES name a role still renders, so 7c/7d are the
+# guard discriminating on membership, not merely on being new.
+FIX_A15R="$TMPROOT/a15-real-role"
+RT_A15R_READY=no
+if rt_fixture "$FIX_A15R"; then
+  cp "$FIX_A15R/agents-src/templates/auditor.md.tmpl" \
+     "$FIX_A15R/agents-src/templates/auditor.md.tmpl.orig" 2>/dev/null
+  RT_A15R_READY=yes
+fi
+expect_eq "7e: the real-role control fixture is built" "yes" "$RT_A15R_READY"
+bash "$FIX_A15R/agents-src/render.sh" >/dev/null 2>&1
+expect_true "7f: …a template naming a real role still renders (7c-7d discriminate on membership)" \
+  test -f "$FIX_A15R/agents/auditor.md"
+
+# ─────────────────────────────────────────────────────────────────────────────
+section "Section 8: render.sh itself is a render input the archive arm compares (A-18)"
+
+# THE GAP THIS CLOSES (A-18; s01-render-pipeline's A-S01-1). Every OTHER source under
+# --archive is read from the `git archive HEAD` copy, but the loop that reads them runs
+# as THIS invocation of render.sh, on disk — so an uncommitted edit to the renderer
+# itself was exercised by the archive arm, never compared by it, until now.
+FIX_SELF="$TMPROOT/self-edit"
+RT_SELF_READY=no
+if rt_fixture "$FIX_SELF"; then
+  printf '\n# UNCOMMITTED RENDERER EDIT — never reached HEAD\n' \
+    >> "$FIX_SELF/agents-src/render.sh"
+  RT_SELF_READY=yes
+fi
+expect_eq "8a: the self-edited-renderer fixture is built" "yes" "$RT_SELF_READY"
+
+rt_check "$FIX_SELF" --check
+expect_status "8b: the TREE arm is GREEN — the edit touches no rendered final or manifest" \
+  0 "$RT_RC"
+
+rt_check "$FIX_SELF" --check --archive
+expect_ne "8c: the ARCHIVE arm is RED — this run of render.sh is not what HEAD carries" \
+  "0" "$RT_RC"
+expect_match "8d: …and it names render.sh itself" "*agents-src/render.sh*" "$RT_OUT"
+
+# THE CONTROL: an unedited fixture's archive arm (Section 2) stays green with the digest
+# arm wired in — 8c is the digest arm firing, not a false positive on every fixture.
+rt_check "$FIX_OK" --check --archive
+expect_status "8e: …while an honestly-committed renderer keeps the archive arm green" \
+  0 "$RT_RC"
+
+# ─────────────────────────────────────────────────────────────────────────────
+section "Section 9: browser-verify's frontmatter description is valid YAML (A19, AC-R4.3)"
+
+# THE DEFECT (A19). A `description:` scalar with an unquoted `: ` sequence deep inside its
+# own value ("picking the input rung by surface: ref-based commands…") is ambiguous YAML —
+# a bare colon-space inside a plain scalar opens a second mapping a strict parser is
+# entitled to reject. The fix wraps the whole value in double quotes.
+#
+# NO PyYAML on this machine — `python3 -c 'import yaml'` fails here — so this is the
+# "strict awk" alternative the brief allows: an unquoted top-level scalar containing its
+# own `: ` is flagged; a quoted scalar is valid as long as its closing quote is present.
+rt_yaml_frontmatter_ok() {  # <file> -> exit 0 (valid) or 1 (first violation), on stdout
+  awk '
+    /^---[ \t]*$/ { d++; next }
+    d==1 {
+      if ($0 !~ /^[A-Za-z_][A-Za-z0-9_-]*:[ \t]*/) next
+      line=$0
+      sub(/^[A-Za-z0-9_-]+:[ \t]*/, "", line)
+      val=line
+      if (val ~ /^"/) { if (val !~ /"[ \t]*$/) { print "UNTERMINATED: " $0; bad=1 } }
+      else if (val ~ /^\x27/) { if (val !~ /\x27[ \t]*$/) { print "UNTERMINATED: " $0; bad=1 } }
+      else if (val ~ /: /) { print "UNQUOTED COLON: " $0; bad=1 }
+    }
+    d>=2 { exit }
+    END { exit bad }
+  ' "$1"
+}
+
+BV_SKILL="$REPO/skills/browser-verify/SKILL.md"
+expect_true "9a: browser-verify/SKILL.md exists" test -f "$BV_SKILL"
+
+rt_yaml_frontmatter_ok "$BV_SKILL" >/dev/null
+expect_status "9b: its frontmatter's description parses as a valid scalar (quoted, A19)" \
+  0 "$?"
+
+# THE PAIRED NEGATIVE: the pre-A19 shape (same text, unquoted) really does fail the same
+# check, so 9b is not vacuous.
+BV_BROKEN="$TMPROOT/browser-verify-broken.md"
+sed 's/^description: "\(.*\)"$/description: \1/' "$BV_SKILL" > "$BV_BROKEN"
+expect_true "9c: …the un-A19'd text really did lose its quoting in the fixture" \
+  bash -c "! grep -q '^description: \"' '$BV_BROKEN'"
+rt_yaml_frontmatter_ok "$BV_BROKEN" >/dev/null
+expect_ne "9d: …and reverting the quoting on the same text really does fail it (9b discriminates)" \
+  "0" "$?"
+
 finish

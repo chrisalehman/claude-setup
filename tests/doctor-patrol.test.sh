@@ -68,7 +68,11 @@ expect_true "payload/scripts/doctor.sh exists" test -f "$DOCTOR_SH"
 # (measured: `sleep 100 &` inside `$(...)` was already gone by the caller's
 # next line). Called plain, never captured.
 spawn_live_pid() {
-  sleep 100 &
+  # 3600, not 100: the fixture must outlive the SUITE, not a case — under load this suite
+  # has taken 323 s (tests-floor3, 2026-09-07), and a fake session whose process has exited
+  # before the case that reads it is honestly reported dead (doctor-patrol case 44). The
+  # EXIT trap kills every one of these; nothing waits on them.
+  sleep 3600 &
   LIVE_PID=$!
   LIVE_PIDS="${LIVE_PIDS} ${LIVE_PID}"
 }
@@ -389,7 +393,15 @@ expect_match "27: an absent roster is rendered as absent, not as a count" \
 # withdrawn, because a session with no roster has no open-dispatch count to make.
 expect_no_match "28: and the row makes no open-dispatch claim at all" \
   "*open dispatch*" "$PB7"
-expect_match "29: the fix line names the unrostered launches and ends in the cure" \
+# ALL THREE, AND THE WINDOW IS WHY THAT IS STILL THE RIGHT NUMBER (S9). Since the
+# windowing cluster landed, `blind` is counted from the roster's own birth — and with no
+# roster on disk that window falls back to the Patrol stamp planted above. These launches
+# carry no `timestamp` field at all, which both readers treat as in-window (the
+# alternative, dropping undatable entries, would silently shrink every count on a
+# transcript shape neither reader has seen). Section 12 is where a DATED transcript
+# separates the two behaviours; here the count is the whole transcript because the
+# transcript has nothing to scope by, and that is the fallback the window must not disturb.
+expect_match "29: an undatable transcript is counted whole — the fix line names all three" \
   "*session ${SHORT7}: 3 launches unrostered → re-invoke /bionic:canonical-sdlc*" "$OUT7"
 
 section "Section 8: a firing Patrol whose roster is PRESENT and incomplete"
@@ -419,7 +431,11 @@ expect_match "30: a present roster still prints its own open count, unchanged" \
   "*✓ session ${SHORT8} · 1 open dispatch*" "$PB8"
 expect_no_match "31: and a present roster is never re-rendered as absent" \
   "*roster absent*" "$PB8"
-expect_match "32: the fix line reports only the launches the roster never saw" \
+# THE ROSTER IS PRESENT HERE, so the window is its own birth — and these launches are
+# undated, so all three are in it and `blind` is the roster's real shortfall rather than a
+# lifetime tally that happens to match. The distinction is invisible on this fixture by
+# construction; Section 12 is the fixture where it is not.
+expect_match "32: an undatable transcript, present roster — only the launches it never saw" \
   "*session ${SHORT8}: 2 launches unrostered → re-invoke /bionic:canonical-sdlc*" "$OUT8"
 
 section "Section 9: one cure, two surfaces — and the column budget"
@@ -605,6 +621,146 @@ expect_no_match "42: nor does its duplicate-Patrol fix line reach this page" \
   "*CronDelete*bbb11111*" "$OUT11"
 expect_no_match "43: and no row is attributed to the other project's roster" \
   "*2 open dispatches*" "$PB11"
+
+section "Section 12: the wall-blind window is scoped to the roster's OWN birth"
+# ============================================================
+#
+# THE FALSE ALARM THIS CLOSES (S9, ledger P2/T4; the live site is
+# payload/scripts/doctor.sh:1381). lib/patrol.sh counted `agents` and `refused` over the
+# transcript's WHOLE LIFE, so a session that ran a wave BEFORE `.bionic/tmp` was last wiped
+# read that earlier wave's dispatches against a roster that only began at the wipe — and
+# doctor printed `N launches unrostered → re-invoke /bionic:canonical-sdlc` at a wall that
+# had rostered everything asked of it since. The cure it names clears nothing, which is the
+# worst shape a fix line can take.
+#
+# WHY IT NEEDS ITS OWN FIXTURE. Sections 7 and 8 plant launches with no `timestamp` field,
+# so no window can move their counts — they pin the undatable fallback and say so. Here
+# every launch is DATED, on both sides of the roster's own creation instant, which is the
+# only fixture shape where the windowed answer and the lifetime answer differ.
+#
+# 12a is the false alarm itself: silent after the fix, and the RED before it. 12b is the
+# paired negative — a REAL gap INSIDE the window is still named, so 12a is not the fix
+# line being switched off. 12c pins the fallback 12a must not have disturbed.
+#
+# ASSERTION NUMBERS CONTINUE THE FILE'S SEQUENCE (75+) rather than the section's position:
+# the labels are identities a red line is looked up by, and renumbering 44-74 to make room
+# would rewrite the identity of every assertion below this one.
+
+plant_agent_dispatch_at() {  # <transcript> <tool_use_id> <iso ts>
+  local t="$1" tid="$2" ts="$3"
+  jq -nc --arg id "$tid" --arg ts "$ts" \
+    '{type:"assistant",isSidechain:false,timestamp:$ts,
+      message:{role:"assistant",content:[{type:"tool_use",id:$id,name:"Agent",
+        input:{description:"fixture slice",subagent_type:"general-purpose",
+               prompt:"Do the fixture work and report back."}}]}}' \
+    >> "$t"
+  jq -nc --arg id "$tid" --arg ts "$ts" \
+    '{type:"user",isSidechain:false,timestamp:$ts,
+      message:{role:"user",content:[{type:"tool_result",tool_use_id:$id,
+        content:"The agent finished and reported back."}]}}' \
+    >> "$t"
+}
+
+# CLOCK DISCIPLINE, the house rule: nothing here sleeps. "Before the roster" is a
+# timestamp a day old and "inside the window" is now — the roster file is created by
+# `make_repo_with_roster` on the line above the planting, so its birth instant is already
+# past by the time these entries are written.
+iso_ago() {  # <seconds ago> -> UTC ISO-8601
+  date -u -v-"$1"S +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+    || date -u -d "-$1 seconds" +%Y-%m-%dT%H:%M:%SZ
+}
+
+# THE WINDOW NEEDS A FILESYSTEM THAT KEEPS CREATION TIMES. `roster_window` reads `stat %B`
+# / `%W`, and a filesystem answering 0 means "no birth recorded" — the window then falls
+# back to empty and every arm below would read the whole transcript. That is a correct
+# fallback and a useless test, so it is named out loud rather than passed over.
+S12_BIRTH_OK=yes
+S12_PROBE="$TMP/birth-probe"; : > "$S12_PROBE"
+S12_B="$(stat -f %B "$S12_PROBE" 2>/dev/null || stat -c %W "$S12_PROBE" 2>/dev/null)"
+case "${S12_B:-0}" in ''|*[!0-9]*|0) S12_BIRTH_OK=no ;; esac
+
+if [ "$S12_BIRTH_OK" = no ]; then
+  no "75: this filesystem records no file birth time — Section 12 cannot run" \
+     "stat %B/%W returned '${S12_B:-}' for $S12_PROBE"
+else
+
+# --- 12a: a wave BEFORE this roster's birth, one rostered dispatch inside the window ---
+SID12A="12aaaaaa-1111-2222-3333-444455556666"
+SHORT12A="${SID12A%%-*}"
+spawn_live_pid; PID12A="$LIVE_PID"
+REPO12A="$(make_repo_with_roster "$SID12A" wave-two-row)"   # <- the roster is born HERE
+HOME12A="$(make_claude_home "$SID12A" "$PID12A" "$REPO12A")"
+TR12A="$(transcript_of "$HOME12A" "$SID12A")"
+plant_patrol_job "$TR12A" "toolu_1" "abc12345"
+plant_agent_dispatch_at "$TR12A" "toolu_w1a" "$(iso_ago 86400)"   # wave one, before the wipe
+plant_agent_dispatch_at "$TR12A" "toolu_w1b" "$(iso_ago 86400)"
+plant_agent_dispatch_at "$TR12A" "toolu_w1c" "$(iso_ago 86400)"
+plant_agent_dispatch_at "$TR12A" "toolu_w1d" "$(iso_ago 86400)"
+plant_agent_dispatch_at "$TR12A" "toolu_w2a" "$(iso_ago 0)"       # wave two, and it IS rostered
+plant_patrol_stamp "$REPO12A" "$SID12A"
+
+OUT12A="$(run_doctor "$HOME12A" "$REPO12A")"
+PB12A="$(patrol_block "$OUT12A")"
+
+expect_match "75: a live wall's row prints its true, in-window open count (1)" \
+  "*✓ session ${SHORT12A} · 1 open dispatch*" "$PB12A"
+expect_no_match "76: …and earns NO fix line — the earlier wave is not this roster's blind spot" \
+  "*session ${SHORT12A}: * unrostered*" "$OUT12A"
+
+# --- 12b: the paired negative — a REAL gap INSIDE the window still fires ---
+SID12B="12bbbbbb-1111-2222-3333-444455556666"
+SHORT12B="${SID12B%%-*}"
+spawn_live_pid; PID12B="$LIVE_PID"
+REPO12B="$(make_repo_with_roster "$SID12B" wave-two-row)"
+HOME12B="$(make_claude_home "$SID12B" "$PID12B" "$REPO12B")"
+TR12B="$(transcript_of "$HOME12B" "$SID12B")"
+plant_patrol_job "$TR12B" "toolu_1" "abc12345"
+plant_agent_dispatch_at "$TR12B" "toolu_w1a" "$(iso_ago 86400)"
+plant_agent_dispatch_at "$TR12B" "toolu_w1b" "$(iso_ago 86400)"
+plant_agent_dispatch_at "$TR12B" "toolu_w1c" "$(iso_ago 86400)"
+plant_agent_dispatch_at "$TR12B" "toolu_w1d" "$(iso_ago 86400)"
+plant_agent_dispatch_at "$TR12B" "toolu_w2a" "$(iso_ago 0)"   # rostered
+plant_agent_dispatch_at "$TR12B" "toolu_w2b" "$(iso_ago 0)"   # NOT rostered
+plant_agent_dispatch_at "$TR12B" "toolu_w2c" "$(iso_ago 0)"   # NOT rostered
+plant_patrol_stamp "$REPO12B" "$SID12B"
+
+OUT12B="$(run_doctor "$HOME12B" "$REPO12B")"
+PB12B="$(patrol_block "$OUT12B")"
+
+expect_match "77: …and a wall that missed a dispatch INSIDE the window is still caught" \
+  "*✓ session ${SHORT12B} · 1 open dispatch*" "$PB12B"
+expect_match "78: the fix line counts the window's own gap (2), not the transcript's lifetime (6)" \
+  "*session ${SHORT12B}: 2 launches unrostered → re-invoke /bionic:canonical-sdlc*" "$OUT12B"
+
+# --- 12c: the fallback the fix must not disturb — no roster at all, undatable launches ---
+SID12C="12cccccc-1111-2222-3333-444455556666"
+SHORT12C="${SID12C%%-*}"
+spawn_live_pid; PID12C="$LIVE_PID"
+REPO12C="$(make_repo_without_roster)"
+HOME12C="$(make_claude_home "$SID12C" "$PID12C" "$REPO12C")"
+TR12C="$(transcript_of "$HOME12C" "$SID12C")"
+plant_patrol_job "$TR12C" "toolu_1" "abc12345"
+plant_agent_dispatch "$TR12C" "toolu_c1"
+plant_agent_dispatch "$TR12C" "toolu_c2"
+plant_patrol_stamp "$REPO12C" "$SID12C"
+
+OUT12C="$(run_doctor "$HOME12C" "$REPO12C")"
+PB12C="$(patrol_block "$OUT12C")"
+
+expect_match "79: no roster to scope a window by — the row still says the record is absent" \
+  "*✓ session ${SHORT12C} · roster absent — launches unrecorded*" "$PB12C"
+expect_match "80: …with a fix line for both unrostered launches" \
+  "*session ${SHORT12C}: 2 launches unrostered → re-invoke /bionic:canonical-sdlc*" "$OUT12C"
+
+# THE WINDOW ITSELF, ASKED DIRECTLY. 75-80 read doctor's rendering; this reads the
+# instant the whole cluster turns on, so a section that went green because the window
+# came back EMPTY (every count falling back to the lifetime) cannot pass unnoticed.
+S12_WIN="$( cd "$REPO12A" && CLAUDE_CODE_SESSION_ID="$SID12A" \
+            bash "${BIONIC_HOOKS_DIR}/session-poker.sh" window 2>/dev/null )"
+expect_regex "81: the poker dates 12a's roster — the window is a real instant, not empty" \
+  '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' "$S12_WIN"
+
+fi
 
 section "Section 13: a NESTED .bionic below a git root — roster must resolve through project_root"
 # ============================================================
