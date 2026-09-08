@@ -57,7 +57,7 @@ fi
 # FAIL-CLOSED (design ledger S4, Chris D1 2026-08-30): this is a wall over an
 # IRREVERSIBLE action, so it refuses rather than waving a command through it cannot
 # read — after permitting the four repair commands by whole-string match.
-BIONIC_LIB_WANT="git-argv.sh root.sh run.sh session.sh"
+BIONIC_LIB_WANT="git-argv.sh refuse.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -265,6 +265,8 @@ if [ -n "$BIONIC_LIB_MISSING" ]; then
 fi
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/git-argv.sh"
+# shellcheck source=/dev/null
+. "$BIONIC_LIB/refuse.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
@@ -512,13 +514,16 @@ if [ -z "$PLAN" ]; then
   fi
 
   if [ -n "$MISPLACED_PLAN" ]; then
-    echo "BLOCKED: a canonical-sdlc plan is misplaced — this commit would pass ungated." >&2
-    echo "Misplaced plan: $MISPLACED_PLAN" >&2
-    echo "Docs root:      $DOCS_ROOT" >&2
-    echo "The evidence gate searches only the plan directories for this project, so a plan" >&2
-    echo "outside them silently disables it — no step evidence is checked at all." >&2
-    echo "Fix: move it under $DOCS_ROOT/plans/ (or $DOCS_ROOT/incidents/ for an incident run)." >&2
-    exit 2
+    _eg_detail="$(cat <<EG_REFUSE_DETAIL
+a canonical-sdlc plan is misplaced — this commit would pass ungated.
+Misplaced plan: $MISPLACED_PLAN
+Docs root:      $DOCS_ROOT
+The evidence gate searches only the plan directories for this project, so a plan
+outside them silently disables it — no step evidence is checked at all.
+Fix: move it under $DOCS_ROOT/plans/ (or $DOCS_ROOT/incidents/ for an incident run).
+EG_REFUSE_DETAIL
+    )"
+    refuse exit2 commit "a plan sits outside the docs root" "move the plan under docs root" "$_eg_detail"
   fi
 
   # ABSENCE: nothing misplaced and nothing to validate. Never blocks — this is
@@ -618,10 +623,13 @@ MULTI_AGENT=$(frontmatter_get multi_agent)
 SUPPORTED_SDLC_VERSION=14
 
 if [ "$SDLC_VERSION" != "$SUPPORTED_SDLC_VERSION" ]; then
-  echo "BLOCKED: canonical-sdlc evidence-gate: plan declares canonical_sdlc_version: '$SDLC_VERSION'." >&2
-  echo "Plan: $PLAN" >&2
-  echo "Fix: set 'canonical_sdlc_version: ${SUPPORTED_SDLC_VERSION}' — the only supported version." >&2
-  exit 2
+  _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc evidence-gate: plan declares canonical_sdlc_version: '$SDLC_VERSION'.
+Plan: $PLAN
+Fix: set 'canonical_sdlc_version: ${SUPPORTED_SDLC_VERSION}' — the only supported version.
+EG_REFUSE_DETAIL
+  )"
+  refuse exit2 commit "this plan declares an unsupported sdlc version" "set the supported version" "$_eg_detail"
 fi
 
 # Whole-value placeholder test: trim leading/trailing whitespace, lowercase,
@@ -809,10 +817,13 @@ apply_rigor_lanes() {  # $1=id $2=status $3=effective-rigor $4=evidence-value
   case "$eff" in
     peer-reviewed|audited)
       if ! is_proof_shaped "$ev"; then
-        echo "BLOCKED: canonical-sdlc task ${id} evidence must show a command + counts, not prose, at rigor '${eff}' ('${ev}')." >&2
-        echo "Plan: $PLAN" >&2
-        echo "Fix: replace the '- ${id}:' evidence with the actual command invocation and result counts (e.g. 'bash test.sh 12/12 green')." >&2
-        exit 2
+        _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc task ${id} evidence must show a command + counts, not prose, at rigor '${eff}' ('${ev}').
+Plan: $PLAN
+Fix: replace the '- ${id}:' evidence with the actual command invocation and result counts (e.g. 'bash test.sh 12/12 green').
+EG_REFUSE_DETAIL
+        )"
+        refuse exit2 commit "that task's evidence is prose" "record the command and counts" "$_eg_detail"
       fi
       ;;
   esac
@@ -820,19 +831,25 @@ apply_rigor_lanes() {  # $1=id $2=status $3=effective-rigor $4=evidence-value
     case "$eff" in
       peer-reviewed|audited)
         if ! echo "$ev" | grep -Ewq 'auditor'; then
-          echo "BLOCKED: canonical-sdlc task ${id} is done at rigor '${eff}' but its evidence has no 'auditor' verdict ('${ev}')." >&2
-          echo "Plan: $PLAN" >&2
-          echo "Fix: record the independent auditor's verdict in the '- ${id}:' evidence line before marking done." >&2
-          exit 2
+          _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc task ${id} is done at rigor '${eff}' but its evidence has no 'auditor' verdict ('${ev}').
+Plan: $PLAN
+Fix: record the independent auditor's verdict in the '- ${id}:' evidence line before marking done.
+EG_REFUSE_DETAIL
+          )"
+          refuse exit2 commit "that task is done with no auditor verdict" "record the auditor's verdict" "$_eg_detail"
         fi
         ;;
     esac
     if [ "$eff" = "audited" ]; then
       if ! echo "$ev" | grep -Ewq 'critic'; then
-        echo "BLOCKED: canonical-sdlc task ${id} is done at rigor 'audited' but its evidence has no 'critic' verdict ('${ev}')." >&2
-        echo "Plan: $PLAN" >&2
-        echo "Fix: record the adversarial critic's verdict in the '- ${id}:' evidence line before marking done." >&2
-        exit 2
+        _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc task ${id} is done at rigor 'audited' but its evidence has no 'critic' verdict ('${ev}').
+Plan: $PLAN
+Fix: record the adversarial critic's verdict in the '- ${id}:' evidence line before marking done.
+EG_REFUSE_DETAIL
+        )"
+        refuse exit2 commit "that task is done with no critic verdict" "record the critic's verdict" "$_eg_detail"
       fi
     fi
   fi
@@ -866,10 +883,13 @@ enforce_rigor_floor() {  # $1=id  $2=effective-rigor  $3=evidence-value
   if echo "$ev" | grep -Ewq 'waiver'; then
     return 0  # recorded downgrade — proceed at the lower cell lane
   fi
-  echo "BLOCKED: canonical-sdlc task ${id} lowers rigor from '${RIGOR}' to '${eff}', below the plan's floor." >&2
-  echo "Plan: $PLAN" >&2
-  echo "Fix: raise the cell to at least '${RIGOR}', or record a downgrade: add 'waiver: <user> <date> <reason>' to the '- ${id}:' evidence line (Waiver Protocol)." >&2
-  exit 2
+  _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc task ${id} lowers rigor from '${RIGOR}' to '${eff}', below the plan's floor.
+Plan: $PLAN
+Fix: raise the cell to at least '${RIGOR}', or record a downgrade: add 'waiver: <user> <date> <reason>' to the '- ${id}:' evidence line (Waiver Protocol).
+EG_REFUSE_DETAIL
+  )"
+  refuse exit2 commit "that task lowers rigor below the floor" "raise the rigor, or waive it" "$_eg_detail"
 }
 
 # Router for the previously-log-only NON-addressed-row ledger-shape checks
@@ -880,14 +900,19 @@ enforce_rigor_floor() {  # $1=id  $2=effective-rigor  $3=evidence-value
 # rigor lanes (4/2) are NOT routed through here — they already block
 # unconditionally where they should.
 # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
-ledger_shape_fail() {  # $1 = detail
+ledger_shape_fail() {  # <fact> <fix> <observation>
+  # TWO EXITS AND ONLY ONE IS A REFUSAL (F-P2). At `rigor: audited` this blocks; at any
+  # other rigor it logs a finding and RETURNS. `refuse` always exits, so it goes INSIDE
+  # the audited branch — a frame-level substitution would turn every log-only finding
+  # into a hard block. The policy sentence the frame used to print as its Fix is about
+  # audited rigor, not about repairing the row, so under D-1 it becomes `detail` and the
+  # caller supplies a real repair (F-P7).
   if [ "$RIGOR" = audited ]; then
-    echo "BLOCKED: canonical-sdlc task-ledger: $1" >&2
-    echo "Plan: $PLAN" >&2
-    echo "Fix: resolve the ledger-shape defect above before committing (audited rigor makes the ledger-shape checks blocking; a non-audited plan would log this as a finding instead)." >&2
-    exit 2
+    refuse exit2 commit "$1" "$2" "canonical-sdlc task-ledger: $3
+Plan: $PLAN
+Audited rigor makes the ledger-shape checks blocking; a non-audited plan would log this as a finding instead."
   fi
-  log_finding task-ledger "$1"
+  log_finding task-ledger "$3"
 }
 
 # Task-scale ledger validation (D12). Reads the `## Tasks` registration
@@ -927,7 +952,8 @@ validate_task_ledger() {
     /^## / { f=0 }
     f')
   if [ -z "$tasks" ]; then
-    ledger_shape_fail "task-scale plan has no '## Tasks' registration section"
+    ledger_shape_fail "this task-scale plan has no tasks table yet" "add a row per task" \
+      "task-scale plan has no '## Tasks' registration section"
     return 0
   fi
   rows=$(echo "$tasks" | grep -E '^[[:space:]]*\|[[:space:]]*T[0-9]+')
@@ -940,7 +966,8 @@ validate_task_ledger() {
     # plans, log-only otherwise (was unconditionally log-only in D12).
     case "$status" in
       pending|active|done|dropped) : ;;
-      *) ledger_shape_fail "task ${id} has invalid status '${status:-empty}' (want pending|active|done|dropped)" ;;
+      *) ledger_shape_fail "task ${id}'s status is unknown" "use pending, active, done or dropped" \
+        "task ${id} has invalid status '${status:-empty}' (want pending|active|done|dropped)" ;;
     esac
     # Per-row INVALID rigor-cell guard (4/7): resolve this row's rigor cell and
     # block if it is off-enum. A malformed rigor cell makes the row's lane
@@ -959,10 +986,13 @@ validate_task_ledger() {
     # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
     eff=$(effective_row_rigor "$rigor_cell")
     if [ "$eff" = "INVALID" ]; then
-      echo "BLOCKED: canonical-sdlc task ${id} has an invalid rigor '${rigor_cell}' (want tested|peer-reviewed|audited)." >&2
-      echo "Plan: $PLAN" >&2
-      echo "Fix: set the '${id}' row's rigor cell to one of tested, peer-reviewed, audited before committing." >&2
-      exit 2
+      _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc task ${id} has an invalid rigor '${rigor_cell}' (want tested|peer-reviewed|audited).
+Plan: $PLAN
+Fix: set the '${id}' row's rigor cell to one of tested, peer-reviewed, audited before committing.
+EG_REFUSE_DETAIL
+      )"
+      refuse exit2 commit "that task's rigor value is not valid" "use tested, peer-reviewed or audited" "$_eg_detail"
     fi
     # Evidence line for this task in ## SDLC State (anchored so T2 never matches T20).
 # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
@@ -972,16 +1002,22 @@ validate_task_ledger() {
       # THE ADDRESSED UNIT: the tested floor is BLOCKING (slice 4/1).
       addressed_found=1
       if [ -z "$ev" ]; then
-        echo "BLOCKED: canonical-sdlc task ${id} has no '- ${id}:' evidence line in '## SDLC State'." >&2
-        echo "Plan: $PLAN" >&2
-        echo "Fix: record the evidence artifact on a '- ${id}:' line before committing." >&2
-        exit 2
+        _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc task ${id} has no '- ${id}:' evidence line in '## SDLC State'.
+Plan: $PLAN
+Fix: record the evidence artifact on a '- ${id}:' line before committing.
+EG_REFUSE_DETAIL
+        )"
+        refuse exit2 commit "that task has no evidence line" "add a '- <id>:' evidence line" "$_eg_detail"
       fi
       if is_placeholder_value "$ev"; then
-        echo "BLOCKED: canonical-sdlc task ${id} evidence line is a placeholder ('${ev}')." >&2
-        echo "Plan: $PLAN" >&2
-        echo "Fix: replace the '- ${id}:' placeholder with the actual evidence artifact before committing." >&2
-        exit 2
+        _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc task ${id} evidence line is a placeholder ('${ev}').
+Plan: $PLAN
+Fix: replace the '- ${id}:' placeholder with the actual evidence artifact before committing.
+EG_REFUSE_DETAIL
+        )"
+        refuse exit2 commit "that task's evidence line is a placeholder" "replace it with real evidence" "$_eg_detail"
       fi
       # 4/8: FLOOR check — a cell lowering this row below the frontmatter rigor
       # blocks unless the evidence line records a waiver. Runs after the
@@ -999,9 +1035,11 @@ validate_task_ledger() {
       case "$status" in
         active|done)
           if [ -z "$ev" ]; then
-            ledger_shape_fail "task ${id} is ${status} but has no evidence on a '- ${id}:' line in ## SDLC State"
+            ledger_shape_fail "task ${id} is ${status} and shows no evidence" "record what proves it" \
+              "task ${id} is ${status} but has no evidence on a '- ${id}:' line in ## SDLC State"
           elif is_placeholder_value "$ev"; then
-            ledger_shape_fail "task ${id} is ${status} but its evidence is a placeholder ('${ev}')"
+            ledger_shape_fail "task ${id}'s evidence is still a placeholder" "record what actually ran" \
+              "task ${id} is ${status} but its evidence is a placeholder ('${ev}')"
           elif [ "$status" = "done" ]; then
             # 4/2: a done row WITH real evidence is in scope for the
             # rigor-keyed lanes (BLOCKING) — a false-done claim at
@@ -1022,10 +1060,13 @@ validate_task_ledger() {
   # The addressed unit (current: T<n>) must have a row in ## Tasks (BLOCKING).
 # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
   if [ "$addressed_found" -eq 0 ]; then
-    echo "BLOCKED: canonical-sdlc task ${CURRENT} has no row in the '## Tasks' registration table." >&2
-    echo "Plan: $PLAN" >&2
-    echo "Fix: add a '| ${CURRENT} | <intent> | <rigor> | <description> | <status> |' row to '## Tasks' before committing." >&2
-    exit 2
+    _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc task ${CURRENT} has no row in the '## Tasks' registration table.
+Plan: $PLAN
+Fix: add a '| ${CURRENT} | <intent> | <rigor> | <description> | <status> |' row to '## Tasks' before committing.
+EG_REFUSE_DETAIL
+    )"
+    refuse exit2 commit "that task has no row in '## Tasks'" "add the task's registration row" "$_eg_detail"
   fi
   return 0
 }
@@ -1047,10 +1088,13 @@ SECTION=$(normalize_newlines "$PLAN" | awk '
   flag')
 
 if [ -z "$SECTION" ]; then
-  echo "BLOCKED: canonical-sdlc plan file has an empty '## SDLC State' section." >&2
-  echo "Plan: $PLAN" >&2
-  echo "Fix: populate the section with 'current: N' and per-step evidence lines." >&2
-  exit 2
+  _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc plan file has an empty '## SDLC State' section.
+Plan: $PLAN
+Fix: populate the section with 'current: N' and per-step evidence lines.
+EG_REFUSE_DETAIL
+  )"
+  refuse exit2 commit "'## SDLC State' is empty" "add current: and the step lines" "$_eg_detail"
 fi
 
 # The `## Verification Matrix` section body (newline-normalized, like SECTION at
@@ -1159,10 +1203,13 @@ validate_approved_by() {
     | sed -E 's/^[[:space:]]*approved-by[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
   [ -n "$approved" ] && return 0
 
-  echo "BLOCKED: canonical-sdlc step ${CURRENT} — '## SDLC State' carries no 'approved-by:' line; the Step-3 approval is what admits Step 4." >&2
-  echo "Plan: $PLAN" >&2
-  echo "Fix: on the user's literal 'approved', record 'approved-by: <user> <ISO-UTC> \"<verbatim reply>\"' under '## SDLC State' — never on silence, a question, or a partial reply." >&2
-  exit 2
+  _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc step ${CURRENT} — '## SDLC State' carries no 'approved-by:' line; the Step-3 approval is what admits Step 4.
+Plan: $PLAN
+Fix: on the user's literal 'approved', record 'approved-by: <user> <ISO-UTC> "<verbatim reply>"' under '## SDLC State' — never on silence, a question, or a partial reply.
+EG_REFUSE_DETAIL
+  )"
+  refuse exit2 commit "'## SDLC State' has no 'approved-by:' line" "record the literal approval" "$_eg_detail"
 }
 
 # ---------- the fails-when arm (AC-K2.3, AC-K2.5) ----------
@@ -1205,10 +1252,13 @@ validate_fails_when() {
     fw=$(echo "$block_txt" | grep -E '^[[:space:]]*fails-when[[:space:]]*:' | head -1 \
       | sed -E 's/^[[:space:]]*fails-when[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
     [ -n "$fw" ] && continue
-    echo "BLOCKED: canonical-sdlc step ${CURRENT} — matrix row '${ac}' names no 'fails-when:'; an eval with no nameable failure is not an eval." >&2
-    echo "Plan: $PLAN" >&2
-    echo "Fix: add 'fails-when: <the planted defect this eval must go red on>' to the '${ac}:' block — it is authored in the spec's '## Eval design' and rendered here." >&2
-    exit 2
+    _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc step ${CURRENT} — matrix row '${ac}' names no 'fails-when:'; an eval with no nameable failure is not an eval.
+Plan: $PLAN
+Fix: add 'fails-when: <the planted defect this eval must go red on>' to the '${ac}:' block — it is authored in the spec's '## Eval design' and rendered here.
+EG_REFUSE_DETAIL
+    )"
+    refuse exit2 commit "that matrix row names no 'fails-when:'" "add a 'fails-when:' line" "$_eg_detail"
   done <<< "$rows"
   return 0
 }
@@ -1283,10 +1333,13 @@ validate_prototype_no_matrix_row() {
     [ -n "$ac_slice" ] || continue
     for n in $proto_nums; do
       [ "$ac_slice" = "$n" ] || continue
-      echo "BLOCKED: canonical-sdlc step ${CURRENT} — matrix row '${ac}' names 'slice: ${ac_slice}', a 'kind: prototype' row in '## Slices'; a prototype ships nothing and never discharges a matrix row." >&2
-      echo "Plan: $PLAN" >&2
-      echo "Fix: remove the '${ac}:' block, or repoint its 'slice:' to the build slice that cites the prototype's ruling — the prototype's own output is a design decision written to the spec, never a matrix discharge." >&2
-      exit 2
+      _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc step ${CURRENT} — matrix row '${ac}' names 'slice: ${ac_slice}', a 'kind: prototype' row in '## Slices'; a prototype ships nothing and never discharges a matrix row.
+Plan: $PLAN
+Fix: remove the '${ac}:' block, or repoint its 'slice:' to the build slice that cites the prototype's ruling — the prototype's own output is a design decision written to the spec, never a matrix discharge.
+EG_REFUSE_DETAIL
+      )"
+      refuse exit2 commit "that row's slice ships nothing" "point it at a shipping slice" "$_eg_detail"
     done
   done <<< "$rows"
   return 0
@@ -1319,10 +1372,13 @@ if echo "$CURRENT" | grep -qE '^T[0-9]+$' && [ "$SCALE" = "task" ]; then
 fi
 
 if [ -z "$CURRENT" ] || ! echo "$CURRENT" | grep -qE '^[0-9]+[ab]?$'; then
-  echo "BLOCKED: canonical-sdlc plan file's '## SDLC State' section is missing a valid 'current: N' line." >&2
-  echo "Plan: $PLAN" >&2
-  echo "Fix: add a line like 'current: 5' (or 'current: 8b') before committing." >&2
-  exit 2
+  _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc plan file's '## SDLC State' section is missing a valid 'current: N' line.
+Plan: $PLAN
+Fix: add a line like 'current: 5' (or 'current: 8b') before committing.
+EG_REFUSE_DETAIL
+  )"
+  refuse exit2 commit "'## SDLC State' has no valid 'current:' line" "add a 'current: N' line" "$_eg_detail"
 fi
 
 # ---------- THE RUN PREDICATE (AC-7, AC-8): no open run, nothing to gate ----------
@@ -1362,10 +1418,13 @@ LINE=$(echo "$SECTION" \
        | head -1)
 
 if [ -z "$LINE" ]; then
-  echo "BLOCKED: canonical-sdlc plan file has no 'Step ${CURRENT}:' line in '## SDLC State'." >&2
-  echo "Plan: $PLAN" >&2
-  echo "Fix: add the evidence artifact for step ${CURRENT} before committing." >&2
-  exit 2
+  _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc plan file has no 'Step ${CURRENT}:' line in '## SDLC State'.
+Plan: $PLAN
+Fix: add the evidence artifact for step ${CURRENT} before committing.
+EG_REFUSE_DETAIL
+  )"
+  refuse exit2 commit "the plan has no line for the current step" "add the step's evidence line" "$_eg_detail"
 fi
 
 RAW_VALUE=$(echo "$LINE" | sed -E "s/^[[:space:]]*-?[[:space:]]*Step[[:space:]]+${CURRENT}[[:space:]]*:[[:space:]]*//")
@@ -1400,10 +1459,13 @@ fi
 BLOCK_STRIPPED=$(echo "$BLOCK" | tr -d '[:space:]')
 
 if [ -z "$BLOCK_STRIPPED" ]; then
-  echo "BLOCKED: canonical-sdlc step ${CURRENT} evidence line is empty in '## SDLC State'." >&2
-  echo "Plan: $PLAN" >&2
-  echo "Fix: record the evidence artifact (commit SHA, path, link) for step ${CURRENT} before committing." >&2
-  exit 2
+  _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc step ${CURRENT} evidence line is empty in '## SDLC State'.
+Plan: $PLAN
+Fix: record the evidence artifact (commit SHA, path, link) for step ${CURRENT} before committing.
+EG_REFUSE_DETAIL
+  )"
+  refuse exit2 commit "this step's evidence line is empty" "record the step's evidence" "$_eg_detail"
 fi
 
 # R7 intent-scoped Step-5 keys (D14 log-only — see validate_intent_evidence
@@ -1429,10 +1491,13 @@ while IFS= read -r _bline; do
     continue
   fi
   if is_placeholder_value "${_bline#*:}"; then
-    echo "BLOCKED: canonical-sdlc step ${CURRENT} evidence line is a placeholder (\"${BLOCK}\")." >&2
-    echo "Plan: $PLAN" >&2
-    echo "Fix: replace with the actual evidence artifact before committing." >&2
-    exit 2
+    _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc step ${CURRENT} evidence line is a placeholder ("${BLOCK}").
+Plan: $PLAN
+Fix: replace with the actual evidence artifact before committing.
+EG_REFUSE_DETAIL
+    )"
+    refuse exit2 commit "this step's evidence line is a placeholder" "replace it with real evidence" "$_eg_detail"
   fi
 done <<< "$BLOCK"
 
@@ -1491,24 +1556,33 @@ validate_requirements_pointer() {
         | sed -E 's/^[[:space:]]*requirements[[:space:]]*:[[:space:]]*//' \
         | sed -E 's/;.*$//' | sed -E 's/[[:space:]]+$//')
   if [ -z "$raw" ]; then
-    echo "BLOCKED: canonical-sdlc step ${CURRENT} — the Step 1 evidence has no 'requirements:' field." >&2
-    echo "Plan: $PLAN" >&2
-    echo "Fix: add 'requirements: specs/<epic>/<wave>.requirements.md' to the Step 1 line, naming the Step-1 artifact (K5)." >&2
-    exit 2
+    _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc step ${CURRENT} — the Step 1 evidence has no 'requirements:' field.
+Plan: $PLAN
+Fix: add 'requirements: specs/<epic>/<wave>.requirements.md' to the Step 1 line, naming the Step-1 artifact (K5).
+EG_REFUSE_DETAIL
+    )"
+    refuse exit2 commit "Step 1's evidence names no requirements file" "add a 'requirements:' field" "$_eg_detail"
   fi
 
   if echo "$raw" | grep -qE '(^|/)\.\.(/|$)'; then
-    echo "BLOCKED: canonical-sdlc step ${CURRENT} — Step 1 'requirements: ${raw}' climbs out with a '..' component." >&2
-    echo "Plan: $PLAN" >&2
-    echo "Fix: name the requirements file relative to the docs root, e.g. 'requirements: specs/<epic>/<wave>.requirements.md'." >&2
-    exit 2
+    _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc step ${CURRENT} — Step 1 'requirements: ${raw}' climbs out with a '..' component.
+Plan: $PLAN
+Fix: name the requirements file relative to the docs root, e.g. 'requirements: specs/<epic>/<wave>.requirements.md'.
+EG_REFUSE_DETAIL
+    )"
+    refuse exit2 commit "the requirements path climbs out with '..'" "name it under the docs root" "$_eg_detail"
   fi
   abs=$(resolve_requirements_path "$raw")
   if [ ! -f "$abs" ]; then
-    echo "BLOCKED: canonical-sdlc step ${CURRENT} — Step 1 'requirements: ${raw}' does not resolve to a real file (resolved to ${abs})." >&2
-    echo "Plan: $PLAN" >&2
-    echo "Fix: write the requirements document at that path (K5 Step-1 artifact) before committing at step ${CURRENT}." >&2
-    exit 2
+    _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc step ${CURRENT} — Step 1 'requirements: ${raw}' does not resolve to a real file (resolved to ${abs}).
+Plan: $PLAN
+Fix: write the requirements document at that path (K5 Step-1 artifact) before committing at step ${CURRENT}.
+EG_REFUSE_DETAIL
+    )"
+    refuse exit2 commit "the named requirements file does not exist" "write the requirements file" "$_eg_detail"
   fi
   return 0
 }
@@ -1558,11 +1632,14 @@ shape_block() {
     fi
   done
   if [ "${#missing[@]}" -gt 0 ]; then
-    echo "BLOCKED: canonical-sdlc step ${CURRENT} evidence missing required field(s): ${missing[*]}" >&2
-    echo "Plan: $PLAN" >&2
-    echo "Required for step ${CURRENT}: $*" >&2
-    echo "Fix: rewrite the Step ${CURRENT} block as multi-line YAML-style fields. See canonical-sdlc/SKILL.md \"Evidence (two tiers)\" → verification shape table." >&2
-    exit 2
+    _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc step ${CURRENT} evidence missing required field(s): ${missing[*]}
+Plan: $PLAN
+Required for step ${CURRENT}: $*
+Fix: rewrite the Step ${CURRENT} block as multi-line YAML-style fields. See canonical-sdlc/SKILL.md "Evidence (two tiers)" → verification shape table.
+EG_REFUSE_DETAIL
+    )"
+    refuse exit2 commit "this step's evidence is missing fields" "add the fields the step owes" "$_eg_detail"
   fi
 }
 
@@ -1583,15 +1660,21 @@ validate_tests_block() {
   total=$(block_get total)
   prefix=$(step_prefix "$step")
   if ! echo "$pass" | grep -qE '^[0-9]+$' || ! echo "$total" | grep -qE '^[0-9]+$'; then
-    echo "BLOCKED: ${prefix} 'pass:' and 'total:' must be integers (got pass='${pass}', total='${total}')." >&2
-    echo "Plan: $PLAN" >&2
-    exit 2
+    _eg_detail="$(cat <<EG_REFUSE_DETAIL
+${prefix} 'pass:' and 'total:' must be integers (got pass='${pass}', total='${total}').
+Plan: $PLAN
+EG_REFUSE_DETAIL
+    )"
+    refuse exit2 commit "'pass:' and 'total:' are not both integers" "write both as integers" "$_eg_detail"
   fi
   if [ "$pass" -ne "$total" ]; then
-    echo "BLOCKED: ${prefix} evidence has pass=${pass} but total=${total}; the suite is not fully green." >&2
-    echo "Plan: $PLAN" >&2
-    echo "Fix: do not commit step ${step} until pass equals total." >&2
-    exit 2
+    _eg_detail="$(cat <<EG_REFUSE_DETAIL
+${prefix} evidence has pass=${pass} but total=${total}; the suite is not fully green.
+Plan: $PLAN
+Fix: do not commit step ${step} until pass equals total.
+EG_REFUSE_DETAIL
+    )"
+    refuse exit2 commit "the suite is not fully green" "make pass equal total" "$_eg_detail"
   fi
 }
 
@@ -1601,9 +1684,12 @@ validate_document_step() {
   local step="$1" prefix
   if ! block_has adr && ! block_has rca && ! block_has_na; then
     prefix=$(step_prefix "$step")
-    echo "BLOCKED: ${prefix} evidence requires 'adr: <path>', 'rca: <path>' (incident-response mode), or 'n/a: <reason>'." >&2
-    echo "Plan: $PLAN" >&2
-    exit 2
+    _eg_detail="$(cat <<EG_REFUSE_DETAIL
+${prefix} evidence requires 'adr: <path>', 'rca: <path>' (incident-response mode), or 'n/a: <reason>'.
+Plan: $PLAN
+EG_REFUSE_DETAIL
+    )"
+    refuse exit2 commit "this step names no adr, rca or n/a" "add adr:, rca: or n/a:" "$_eg_detail"
   fi
 }
 
@@ -1669,10 +1755,13 @@ validate_ship_step() {
   done
   [ "${#missing[@]}" -eq 0 ] && return 0
   prefix=$(step_prefix "$step")
-  echo "BLOCKED: ${prefix} frontmatter names deploy_target=${DEPLOY_TARGET}, so the close-out owes the deploy trio; missing: ${missing[*]}" >&2
-  echo "Plan: $PLAN" >&2
-  echo "Fix: add 'deployed:', 'verified:', and 'monitored:' to the Step ${step} block — or, if this run operates no live surface, set 'deploy_target: n/a' in frontmatter (the trio is owed exactly when a target is named)." >&2
-  exit 2
+  _eg_detail="$(cat <<EG_REFUSE_DETAIL
+${prefix} frontmatter names deploy_target=${DEPLOY_TARGET}, so the close-out owes the deploy trio; missing: ${missing[*]}
+Plan: $PLAN
+Fix: add 'deployed:', 'verified:', and 'monitored:' to the Step ${step} block — or, if this run operates no live surface, set 'deploy_target: n/a' in frontmatter (the trio is owed exactly when a target is named).
+EG_REFUSE_DETAIL
+  )"
+  refuse exit2 commit "the close-out owes the deploy trio" "add deployed:, verified:, monitored:" "$_eg_detail"
 }
 
 # ---------- pre-registered Verification Matrix ----------
@@ -1791,12 +1880,16 @@ plan_write_note() {
 # every other validator uses), plus the edit-then-commit note when the refused
 # command also writes the plan. $1 = message tail, $2 = fix line.
 # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
-block_matrix() {
-  echo "BLOCKED: canonical-sdlc step ${CURRENT} — $1" >&2
-  echo "Plan: $PLAN" >&2
-  echo "Fix: $2" >&2
-  plan_write_note >&2
-  exit 2
+block_matrix() {  # <fact> <fix> <observation> <repair prose>
+  # THE FRAME KEEPS ITS PARAMETERS AND LOSES ITS VOICE (slice 13, ruling D-1, parametric
+  # table v2). $1 and $2 are the ruled fact and fix and render as the one user line; the
+  # step number, the caller's long observation — the only place ${ac}, ${tier}, ${key},
+  # ${val}, ${aud}, the walk paths and the environment lists are spelled — the plan path,
+  # the caller's own repair prose and the plan-write note all become `detail` (F-P1, F-P3).
+  refuse exit2 commit "$1" "$2" "canonical-sdlc step ${CURRENT} — $3
+Plan: $PLAN
+Fix: $4
+$(plan_write_note 2>&1)"
 }
 
 # Placeholder-token test on a single field value. The matrix section lives
@@ -1815,20 +1908,23 @@ validate_matrix() {
   UNDISCHARGED=0
   MATRIX=$(matrix_section)
   if [ -z "$MATRIX" ]; then
-    block_matrix "the Verify gate requires a '## Verification Matrix' section." \
+    block_matrix "this plan has no verification matrix yet" "add one row per criterion" \
+      "the Verify gate requires a '## Verification Matrix' section." \
       "add the '## Verification Matrix' section: a stack-health line, the AC tier table, and one per-AC evidence block. See canonical-sdlc/SKILL.md Step 5."
   fi
 
   # stack-health: non-empty proof, or `n/a: <reason>` with a reason.
   if ! echo "$MATRIX" | grep -qE '^[[:space:]]*stack-health[[:space:]]*:'; then
-    block_matrix "'## Verification Matrix' is missing the 'stack-health:' line." \
+    block_matrix "the matrix says nothing about stack health" "add a before/after snapshot" \
+      "'## Verification Matrix' is missing the 'stack-health:' line." \
       "add 'stack-health: <before/after snapshot>' or 'stack-health: n/a: <reason>' above the table."
   fi
   sh=$(echo "$MATRIX" | grep -E '^[[:space:]]*stack-health[[:space:]]*:' | head -1 \
        | sed -E 's/^[[:space:]]*stack-health[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
   case "$sh" in
     ""|n/a|n/a:)
-      block_matrix "'stack-health:' needs a non-empty snapshot, or 'n/a: <reason>' with a non-empty reason." \
+      block_matrix "the health snapshot is empty or a bare n/a" "paste it, or say why not" \
+        "'stack-health:' needs a non-empty snapshot, or 'n/a: <reason>' with a non-empty reason." \
         "paste the before/after snapshot showing no delta, or give the reason stack-health does not apply." ;;
   esac
 
@@ -1837,14 +1933,16 @@ validate_matrix() {
   # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
   if echo "$MATRIX" | grep -qE '^[[:space:]]*false-green[[:space:]]*:'; then
     if ! echo "$MATRIX" | grep -qE '^[[:space:]]*rewritten[[:space:]]*:'; then
-      block_matrix "a 'false-green:' entry in the matrix has no paired 'rewritten:' entry." \
+      block_matrix "a false green is logged but never rewritten" "rewrite it, then say where" \
+        "a 'false-green:' entry in the matrix has no paired 'rewritten:' entry." \
         "add 'rewritten: <commit/test ref>' for the false-green test — a logged-but-unfixed false green is a blocking defect."
     fi
   fi
 
   rows=$(echo "$MATRIX" | grep -E '^[[:space:]]*\|')
   if [ -z "$rows" ]; then
-    block_matrix "'## Verification Matrix' has no tier table rows." \
+    block_matrix "the verification matrix has no rows" "add one row per criterion" \
+      "'## Verification Matrix' has no tier table rows." \
       "add the '| AC | tier | status | evidence | auditor |' table with one row per AC."
   fi
 
@@ -1862,12 +1960,14 @@ validate_matrix() {
     [ "$ac" = "AC" ] && continue
     # malformed: a well-formed 5-cell row splits into exactly 7 fields on '|'.
     if [ "$ncols" -ne 7 ]; then
-      block_matrix "matrix row for '${ac}' is malformed (wrong cell count — no literal '|' inside cells)." \
+      block_matrix "row ${ac} does not have five cells" "give it five cells" \
+        "matrix row for '${ac}' is malformed (wrong cell count — no literal '|' inside cells)." \
         "write the row as '| AC | tier | status | evidence | auditor |' with exactly five cells and no literal pipe inside any cell."
     fi
     # tier enum
     if ! echo "$tier" | grep -qE '^T[0-4]$'; then
-      block_matrix "matrix row for '${ac}' has an invalid tier '${tier}' (want T0..T4)." \
+      block_matrix "${ac}'s tier is unknown" "use T0 through T4" \
+        "matrix row for '${ac}' has an invalid tier '${tier}' (want T0..T4)." \
         "set the tier cell to one of T0, T1, T2, T3, T4."
     fi
     # status enum — the status cell is load-bearing (pending/blocked
@@ -1877,7 +1977,8 @@ validate_matrix() {
     case "$status" in
       pending|blocked|discharged|waived) : ;;
       *)
-        block_matrix "matrix row '${ac}' has an invalid status '${status:-empty}' (want pending|blocked|discharged|waived)." \
+        block_matrix "${ac}'s status is unknown" "use pending, blocked, discharged, waived" \
+          "matrix row '${ac}' has an invalid status '${status:-empty}' (want pending|blocked|discharged|waived)." \
           "set the status cell to one of: pending, blocked, discharged, waived." ;;
     esac
     block_txt=$(matrix_block "$ac")
@@ -1909,7 +2010,8 @@ validate_matrix() {
       | sed -E 's/^[[:space:]]*provenance[[:space:]]*:[[:space:]]*//' | sed -E 's/[[:space:]]+$//')
     prov_val_lc=$(echo "$prov_val" | tr '[:upper:]' '[:lower:]')
     if [ "$prov_val_lc" = "implementation" ]; then
-      block_matrix "matrix row '${ac}' cites 'provenance: implementation' — the implementation cannot be the source of its own requirement." \
+      block_matrix "row ${ac} cites the code as its own source" "cite what asked for it" \
+        "matrix row '${ac}' cites 'provenance: implementation' — the implementation cannot be the source of its own requirement." \
         "cite the real requirement source (user quote, spec section, ticket, report) for '${ac}', not the implementation itself."
     fi
     # `slice: 9` (B-2, 2026-08-30): a criterion whose only evidence is a Step-9
@@ -1946,7 +2048,8 @@ validate_matrix() {
       # intends to discharge. The unwaived mis-tag still blocks at every step.
       # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
       if [ "$tier" != "T0" ] && [ "$row_is_waived" = "0" ]; then
-        block_matrix "matrix row '${ac}' is ${tier} and carries 'slice: 9' — only a T0 row defers its evidence to the close-out." \
+        block_matrix "row ${ac} defers its evidence to close-out" "prove it now, or retier T0" \
+          "matrix row '${ac}' is ${tier} and carries 'slice: 9' — only a T0 row defers its evidence to the close-out." \
           "a ${tier} row's evidence exists before Step 9 — discharge '${ac}' at its own tier, or retier the row to T0 if the criterion really is a close-out obligation."
       fi
       slice9=1
@@ -1973,17 +2076,20 @@ validate_matrix() {
     else
       for key in $(keys_for_tier "$tier"); do
         if ! echo "$block_txt" | grep -qE "^[[:space:]]*${key}[[:space:]]*:"; then
-          block_matrix "matrix row '${ac}' (${tier}) is missing evidence key '${key}' in its AC block." \
+          block_matrix "row ${ac} has no ${key} evidence" "record it, or waive the row" \
+            "matrix row '${ac}' (${tier}) is missing evidence key '${key}' in its AC block." \
             "add '${key}: <evidence>' to the '${ac}:' block, or waive the row via the Waiver Protocol."
         fi
         val=$(echo "$block_txt" | grep -E "^[[:space:]]*${key}[[:space:]]*:" | head -1 \
               | sed -E "s/^[[:space:]]*${key}[[:space:]]*:[[:space:]]*//" | sed -E 's/[[:space:]]+$//')
         if [ -z "$val" ]; then
-          block_matrix "matrix row '${ac}' (${tier}) evidence key '${key}' is empty." \
+          block_matrix "${ac}'s ${key} evidence is blank" "record it, or waive the row" \
+            "matrix row '${ac}' (${tier}) evidence key '${key}' is empty." \
             "record the evidence for '${key}' in the '${ac}:' block, or waive the row."
         fi
         if matrix_is_placeholder "$val"; then
-          block_matrix "matrix row '${ac}' (${tier}) evidence key '${key}' is a placeholder (\"${val}\")." \
+          block_matrix "${ac} has placeholder ${key} evidence" "record what actually ran" \
+            "matrix row '${ac}' (${tier}) evidence key '${key}' is a placeholder (\"${val}\")." \
             "replace '${key}' with the real evidence before committing."
         fi
         # live-tier (T3/T4) fields cannot be self-written n/a — that is a
@@ -1997,7 +2103,8 @@ validate_matrix() {
           T3|T4)
             case "$val_lc" in
               n/a|n/a:*)
-                block_matrix "matrix row '${ac}' (${tier}) key '${key}' is a self-written 'n/a' on a live tier." \
+                block_matrix "${ac} calls its ${key} evidence n/a" "record it, or waive the row" \
+                  "matrix row '${ac}' (${tier}) key '${key}' is a self-written 'n/a' on a live tier." \
                   "a live-tier field cannot be n/a — downgrade the row via the Waiver Protocol (record 'waiver: <user> <date> <reason>'), a user decision." ;;
             esac ;;
         esac
@@ -2045,13 +2152,16 @@ validate_matrix() {
       elif [ "$aud" != "CONFIRMED" ]; then
         if [ "$tier" = "T4" ]; then
           if user_confirmed_form_ok "$block_txt"; then
-            block_matrix "matrix row '${ac}' (T4) carries a well-formed 'user-confirmed:', but the independent auditor's standing verdict on it is '${aud}', at step ${CURRENT}." \
+            block_matrix "the auditor's finding on ${ac} stands" "settle it with the auditor" \
+              "matrix row '${ac}' (T4) carries a well-formed 'user-confirmed:', but the independent auditor's standing verdict on it is '${aud}', at step ${CURRENT}." \
               "a user's confirmation does not overturn an auditor's finding — it replaces the WAIVER a T4 row used to need, not the audit. Resolve the '${aud}' verdict (re-run the audit and record CONFIRMED, or clear the cell if the finding was withdrawn), or waive the row."
           fi
-          block_matrix "matrix row '${ac}' (T4) auditor verdict is '${aud:-empty}', not CONFIRMED, and its 'user-confirmed:' names no attributed user, at step ${CURRENT}." \
+          block_matrix "${ac} says confirmed but names nobody" "name who confirmed it, and when" \
+            "matrix row '${ac}' (T4) auditor verdict is '${aud:-empty}', not CONFIRMED, and its 'user-confirmed:' names no attributed user, at step ${CURRENT}." \
             "record the user's own confirmation as 'user-confirmed: <user> <date> <what they confirmed>' in the '${ac}:' block — a T4 row discharges on that, no waiver needed. An unattributed or agent-written claim is not one."
         fi
-        block_matrix "matrix row '${ac}' auditor verdict is '${aud:-empty}', not CONFIRMED, at step ${CURRENT}." \
+        block_matrix "the auditor has not confirmed ${ac}" "get the auditor to confirm it" \
+          "matrix row '${ac}' auditor verdict is '${aud:-empty}', not CONFIRMED, at step ${CURRENT}." \
           "the independent auditor must CONFIRM every non-waived row before advancing past the Verify gate, or the row must be waived."
       fi
     fi
@@ -2142,7 +2252,8 @@ validate_walk_artifact() {
         | sed -E 's/^[[:space:]]*walk-artifact[[:space:]]*:[[:space:]]*//' \
         | sed -E 's/;.*$//' | sed -E 's/[[:space:]]+$//')
   if [ -z "$raw" ]; then
-    block_matrix "the walk gate: matrix rows are discharged but the Step 5 evidence has no 'walk-artifact:' line." \
+    block_matrix "rows are discharged with no walk recorded" "walk it, then name the file" \
+      "the walk gate: matrix rows are discharged but the Step 5 evidence has no 'walk-artifact:' line." \
       "run the walk first and record 'walk-artifact: record/<file>.md' in the Step 5 block. Frontmatter 'walk: exempt' is the only way past this arm, and it is a Step-0 decision."
   fi
 
@@ -2150,21 +2261,25 @@ validate_walk_artifact() {
   # the artifact belongs in record/, and a path that climbs out of it is a
   # placement error whatever it lands on.
   if echo "$raw" | grep -qE '(^|/)\.\.(/|$)'; then
-    block_matrix "the walk gate: walk-artifact '${raw}' climbs out of the record directory and so does not resolve under ${DOCS_ROOT}/record/." \
+    block_matrix "the walk file's path climbs out of record/" "name it under record/" \
+      "the walk gate: walk-artifact '${raw}' climbs out of the record directory and so does not resolve under ${DOCS_ROOT}/record/." \
       "name the walk narration relative to the docs root, e.g. 'walk-artifact: record/<file>.md'."
   fi
   abs=$(resolve_walk_path "$raw")
   case "$abs" in
     "$DOCS_ROOT"/record/*) : ;;
     *)
-      block_matrix "the walk gate: walk-artifact '${raw}' does not resolve under ${DOCS_ROOT}/record/ (resolved to ${abs})." \
+      block_matrix "the walk file sits outside record/" "move it into record/" \
+        "the walk gate: walk-artifact '${raw}' does not resolve under ${DOCS_ROOT}/record/ (resolved to ${abs})." \
         "move the walk narration into <docs-root>/record/ and name it there, e.g. 'walk-artifact: record/<file>.md'." ;;
   esac
   if [ ! -f "$abs" ]; then
-    block_matrix "the walk gate: walk-artifact '${raw}' is named in the Step 5 evidence but no file exists at ${abs}." \
+    block_matrix "no file exists where the walk should be" "write the walk narration there" \
+      "the walk gate: walk-artifact '${raw}' is named in the Step 5 evidence but no file exists at ${abs}." \
       "write the walk narration to that path before discharging any matrix row (and do not delete it afterwards — the arm re-checks at every later step)."
   elif [ ! -s "$abs" ]; then
-    block_matrix "the walk gate: walk-artifact '${raw}' is named in the Step 5 evidence but the file is empty at ${abs}." \
+    block_matrix "the walk file is empty" "narrate what you drove" \
+      "the walk gate: walk-artifact '${raw}' is named in the Step 5 evidence but the file is empty at ${abs}." \
       "write real narration into the walk artifact before discharging any matrix row — an empty file is not a walk."
   fi
 
@@ -2174,7 +2289,8 @@ validate_walk_artifact() {
   # have. This grep is the whole enforcement.
   # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
   if grep -qE 'AC-[0-9]' "$abs" 2>/dev/null; then
-    block_matrix "the walk gate: walk artifact ${abs} names acceptance criteria (matched 'AC-<n>')." \
+    block_matrix "the walk narration names acceptance criteria" "drop the criteria names" \
+      "the walk gate: walk artifact ${abs} names acceptance criteria (matched 'AC-<n>')." \
       "rewrite the walk as narration of what was driven and what came back, with no AC identifiers — the walk is written without reading the criteria."
   fi
   return 0
@@ -2269,7 +2385,8 @@ validate_environments() {
   done <<< "$entries"
 
   if [ -n "$fog_missing_cure" ]; then
-    block_matrix "environments: fog entry with no cure named: ${fog_missing_cure} (declared: '${raw}')." \
+    block_matrix "a fog environment names no way to cover it" "say how it gets covered" \
+      "environments: fog entry with no cure named: ${fog_missing_cure} (declared: '${raw}')." \
       "name each fog environment's cure in the frontmatter, e.g. '<name> (fog — cure: <how it gets covered>)'."
   fi
 
@@ -2279,7 +2396,8 @@ validate_environments() {
       | sed -E 's/^[[:space:]]*environments-covered[[:space:]]*:[[:space:]]*//' \
       | sed -E 's/;.*$//' | sed -E 's/[[:space:]]+$//')
     if [ -z "$covered_line" ]; then
-      block_matrix "environments: declared covered set (${covered_names}) but the Step 5 evidence has no 'environments-covered:' line." \
+      block_matrix "the plan never says which environments ran" "list what you covered" \
+        "environments: declared covered set (${covered_names}) but the Step 5 evidence has no 'environments-covered:' line." \
         "record 'environments-covered: <name>[, <name>...]' in the Step 5 block naming every declared non-fog environment."
     fi
     covered_norm=$(printf '%s' "$covered_line" | tr ',' ' ' | tr -s '[:space:]' ' ')
@@ -2291,7 +2409,8 @@ validate_environments() {
       esac
     done
     if [ -n "$missing" ]; then
-      block_matrix "environments-covered '${covered_line}' omits declared environment(s): ${missing} (declared covered set: ${covered_names}; fog: ${fog_names:-none})." \
+      block_matrix "a declared environment went uncovered" "cover it, or mark it fog" \
+        "environments-covered '${covered_line}' omits declared environment(s): ${missing} (declared covered set: ${covered_names}; fog: ${fog_names:-none})." \
         "run the Step-5 tests floor on every declared non-fog environment and list it in 'environments-covered:', or move it to a fog entry naming its cure."
     fi
 
@@ -2313,11 +2432,13 @@ validate_environments() {
       claimed_undeclared="${claimed_undeclared:+$claimed_undeclared }$name"
     done
     if [ -n "$claimed_fog" ]; then
-      block_matrix "environments-covered '${covered_line}' claims coverage of environment(s) this plan declares as FOG: ${claimed_fog} (fog: ${fog_names:-none})." \
+      block_matrix "a fog environment is claimed as covered" "drop it, or test it there" \
+        "environments-covered '${covered_line}' claims coverage of environment(s) this plan declares as FOG: ${claimed_fog} (fog: ${fog_names:-none})." \
         "a fog entry means NOT covered — either drop the name from 'environments-covered:', or run the Step-5 tests floor there and move it out of fog in the frontmatter."
     fi
     if [ -n "$claimed_undeclared" ]; then
-      block_matrix "environments-covered '${covered_line}' names environment(s) the frontmatter never declared: ${claimed_undeclared} (declared: '${raw}')." \
+      block_matrix "the covered list names an undeclared environment" "declare it, or drop it" \
+        "environments-covered '${covered_line}' names environment(s) the frontmatter never declared: ${claimed_undeclared} (declared: '${raw}')." \
         "declare the environment in the frontmatter's 'environments:' list, or drop it from 'environments-covered:' — the covered set is a subset of the declared one."
     fi
   fi
@@ -2342,12 +2463,14 @@ validate_verify_step() {
   # [WALL: tests/canonical-sdlc-evidence-gate.test.sh]
   if [ "$UNDISCHARGED" -eq 0 ] && matrix_auditor_required; then
     if ! block_has auditor; then
-      block_matrix "the Verify gate requires 'auditor: <verdict summary + report pointer>' in the Step 5 block." \
+      block_matrix "this plan has no auditor verdict yet" "record what the auditor said" \
+        "the Verify gate requires 'auditor: <verdict summary + report pointer>' in the Step 5 block." \
         "record the independent auditor's one-line verdict summary and report pointer as 'auditor: ...'."
     fi
     aud=$(block_get auditor)
     if [ -z "$aud" ]; then
-      block_matrix "the Step 5 'auditor:' pointer is empty." \
+      block_matrix "the auditor verdict is blank" "record what the auditor said" \
+        "the Step 5 'auditor:' pointer is empty." \
         "record the auditor's verdict summary and report pointer."
     fi
   fi
@@ -2457,10 +2580,13 @@ validate_dispatch_ledger() {
     /^## / { f=0 }
     f')
   if [ -z "$tasks" ]; then
-    echo "BLOCKED: canonical-sdlc audited multi_agent wave plan has no '## Tasks' dispatched-task ledger section." >&2
-    echo "Plan: $PLAN" >&2
-    echo "Fix: add a '## Tasks' section (a header plus a 'none dispatched' line is fine); the orchestrator appends one row per dispatched task-shaped unit (D7)." >&2
-    exit 2
+    _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc audited multi_agent wave plan has no '## Tasks' dispatched-task ledger section.
+Plan: $PLAN
+Fix: add a '## Tasks' section (a header plus a 'none dispatched' line is fine); the orchestrator appends one row per dispatched task-shaped unit (D7).
+EG_REFUSE_DETAIL
+    )"
+    refuse exit2 commit "this wave plan has no '## Tasks' ledger" "add a '## Tasks' section" "$_eg_detail"
   fi
   rows=$(echo "$tasks" | grep -E '^[[:space:]]*\|[[:space:]]*T[0-9]+')
   [ -n "$rows" ] || return 0
@@ -2472,10 +2598,13 @@ validate_dispatch_ledger() {
     case "$status" in
       pending|active|done|dropped) : ;;
       *)
-        echo "BLOCKED: canonical-sdlc dispatched task ${id} has invalid status '${status:-empty}' (want pending|active|done|dropped)." >&2
-        echo "Plan: $PLAN" >&2
-        echo "Fix: set the '${id}' row's status cell to one of pending|active|done|dropped before committing." >&2
-        exit 2
+        _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc dispatched task ${id} has invalid status '${status:-empty}' (want pending|active|done|dropped).
+Plan: $PLAN
+Fix: set the '${id}' row's status cell to one of pending|active|done|dropped before committing.
+EG_REFUSE_DETAIL
+        )"
+        refuse exit2 commit "that dispatched task's status is invalid" "use one of the four statuses" "$_eg_detail"
         ;;
     esac
     # Evidence line in ## SDLC State (anchored, same lookup as task scale).
@@ -2483,16 +2612,22 @@ validate_dispatch_ledger() {
     ev=$(echo "$SECTION" | grep -E "^[[:space:]]*-?[[:space:]]*${id}[[:space:]]*:" | head -1 \
          | sed -E "s/^[[:space:]]*-?[[:space:]]*${id}[[:space:]]*:[[:space:]]*//" | sed -E 's/[[:space:]]+$//')
     if [ -z "$ev" ]; then
-      echo "BLOCKED: canonical-sdlc dispatched task ${id} has no '- ${id}:' evidence line in '## SDLC State'." >&2
-      echo "Plan: $PLAN" >&2
-      echo "Fix: record the dispatched unit's evidence artifact on a '- ${id}:' line before committing." >&2
-      exit 2
+      _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc dispatched task ${id} has no '- ${id}:' evidence line in '## SDLC State'.
+Plan: $PLAN
+Fix: record the dispatched unit's evidence artifact on a '- ${id}:' line before committing.
+EG_REFUSE_DETAIL
+      )"
+      refuse exit2 commit "that dispatched task has no evidence line" "add a '- <id>:' evidence line" "$_eg_detail"
     fi
     if is_placeholder_value "$ev"; then
-      echo "BLOCKED: canonical-sdlc dispatched task ${id} evidence line is a placeholder ('${ev}')." >&2
-      echo "Plan: $PLAN" >&2
-      echo "Fix: replace the '- ${id}:' placeholder with the actual evidence artifact before committing." >&2
-      exit 2
+      _eg_detail="$(cat <<EG_REFUSE_DETAIL
+canonical-sdlc dispatched task ${id} evidence line is a placeholder ('${ev}').
+Plan: $PLAN
+Fix: replace the '- ${id}:' placeholder with the actual evidence artifact before committing.
+EG_REFUSE_DETAIL
+      )"
+      refuse exit2 commit "the dispatched task's evidence is a placeholder" "replace it with evidence" "$_eg_detail"
     fi
   done <<< "$rows"
   return 0
