@@ -415,11 +415,30 @@ loader_fail_closed() {
     "bash $_bl_root/scripts/doctor.sh"|\
     "bash $_bl_root/scripts/setup.sh") exit 0 ;;
   esac
-  cat >&2 <<BIONIC_LOADER_REFUSE
-BLOCKED: $1 cannot load its library (${BIONIC_LIB_MISSING:-the bionic library}), so it
-cannot read this command. A wall that cannot read a command refuses it rather than
-waving it through.
+  # THE ONE LINE, AND THE ONE PLACE IN THE TREE THAT SPELLS IT WITHOUT
+  # scripts/lib/refuse.sh. Every other wall calls `refuse`; this one cannot, because
+  # refuse.sh is IN the library this function exists to report missing. So the row-1
+  # wording (record/wave-01-plugin-only/s12-refusal-wording-draft.md §1) is written
+  # out here by hand, in the renderer's exact format, and tests/loader.test.sh §F
+  # drives it against AC-E1.3's own regex so the two spellings cannot drift.
+  #
+  # THE NAME IS BOUNDED IN PURE BASH for the same reason: `bionic_trunc` is in the
+  # missing library. 23 columns of prefix, 31 of fact after the name, 3 of brackets
+  # and 18 of fix leaves 25 for the hook's name, and the longest caller
+  # (`canonical-sdlc-evidence-gate`, 28) is over it — F-8's runtime-width hazard,
+  # arriving at the one site that cannot ask the truncator. The ellipsis is spent
+  # from inside the budget, exactly as bionic_trunc spends it.
+  _bl_who="${1:-a bionic hook}"
+  if [ "${#_bl_who}" -gt 25 ]; then _bl_who="${_bl_who:0:24}…"; fi
+  printf 'bionic: load refused — %s cannot load the bionic library (run /bionic:doctor)\n' "$_bl_who" >&2
+  # THE DETAIL, on the knob only. Ruling D-1: the reader who is interrupted gets one
+  # sentence; the rest is for whoever asks. There is no hook log to write here — the
+  # library that owns logging is the one that did not load.
+  if [ "${BIONIC_WALL_VERBOSE:-}" = "1" ]; then
+    cat >&2 <<BIONIC_LOADER_REFUSE
+A wall that cannot read a command refuses it rather than waving it through.
 
+Wanted: ${BIONIC_LIB_MISSING:-the bionic library}
 Looked in: ${BIONIC_LIB_CANDS:-(no candidate)}
 
 Until the plugin is whole again this wall permits exactly four commands, each matched
@@ -433,6 +452,7 @@ as a whole string:
 Anything else is refused, including one of those four with another command chained
 after it. Run one of them, or act from your own terminal.
 BIONIC_LOADER_REFUSE
+  fi
   exit 2
 }
 # --- bionic-loader/v2 END
