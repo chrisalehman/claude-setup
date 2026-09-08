@@ -153,3 +153,5 @@ section "Section 5: render.sh --check agrees this file is not stale"
 
 expect_true "11: agents-src/render.sh --check reports every rendered final clean" \
   bash "${REPO}/agents-src/render.sh" --check
+
+finish
