@@ -104,12 +104,16 @@ if ! declare -F shell_rc_file >/dev/null 2>&1; then
   . "$(cd "$(_detect_self_dir)" && pwd -P)/shell.sh"
 fi
 
-_detect_plugin_root() {
-  if [ -n "${BIONIC_PLUGIN_ROOT:-}" ]; then echo "$BIONIC_PLUGIN_ROOT"; return; fi
-  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then echo "$CLAUDE_PLUGIN_ROOT"; return; fi
-  # lib -> scripts -> payload root
-  ( cd "$(_detect_self_dir)/../.." && pwd -P )
-}
+# roots.sh, THE SAME SOFT SOURCE, FOR `plugin_root` — the one payload-root resolver
+# (epic-22 wave-01, N1). This file carried `_detect_plugin_root` and lib/deps.sh carried
+# `_dep_plugin_root`, byte-identical, each explaining itself by naming the other. Guarded on
+# the function and not on the sibling that usually brings it, because a caller that has
+# check_dep already skips the deps.sh source above.
+if ! declare -F plugin_root >/dev/null 2>&1; then
+  # shellcheck source=/dev/null
+  . "$(cd "$(_detect_self_dir)" && pwd -P)/roots.sh"
+fi
+
 
 # A thin caller of shell.sh's one resolver — see the source guard above.
 _detect_shell_rc() {
@@ -127,7 +131,7 @@ _detect_shell_rc() {
 detect_plugin_integrity() {
   local root version="unknown" hooks_json hooks_state cmd script tok
   local -a toks
-  root="$(_detect_plugin_root)"
+  root="$(plugin_root)"
   hooks_json="${root}/hooks/hooks.json"
 
   if [ -f "${root}/.claude-plugin/plugin.json" ]; then
@@ -191,7 +195,7 @@ detect_plugin_integrity() {
 detect_hook_wiring() {  # -> "hooks: total=<n> resolving=<n>"
   local root hooks_json cmd script tok seen="" total=0 resolving=0
   local -a toks
-  root="$(_detect_plugin_root)"
+  root="$(plugin_root)"
   hooks_json="${root}/hooks/hooks.json"
   [ -f "$hooks_json" ] || { echo "hooks: total=0 resolving=0"; return 0; }
   while IFS= read -r cmd; do
@@ -218,7 +222,7 @@ detect_hook_wiring() {  # -> "hooks: total=<n> resolving=<n>"
 # are instructions a dispatched subagent obeys, so a stray edit there changes
 # behaviour everywhere and leaves no trace anywhere else — the machine keeps
 # working, differently. The payload ships a checksum manifest beside them
-# (integrity/agents.sha256, written by agents-src/render.sh), and this compares
+# (integrity/rendered.sha256, written by agents-src/render.sh), and this compares
 # it against what is on disk.
 #
 # REPORTING, NOT POLICING. A user who edited a role file may have meant to; that
@@ -246,11 +250,11 @@ _detect_sha256() {  # <file> -> hex digest on stdout; nonzero if no tool can ans
 
 detect_agent_integrity() {
   local root manifest line want rel got total=0 modified=0 names=""
-  root="$(_detect_plugin_root)"
-  manifest="${root}/integrity/agents.sha256"
+  root="$(plugin_root)"
+  manifest="${root}/integrity/rendered.sha256"
 
   if [ ! -f "$manifest" ]; then
-    echo "agents: state=unknown total=unknown modified=unknown names=- cause=this payload ships no checksum manifest at integrity/agents.sha256"
+    echo "agents: state=unknown total=unknown modified=unknown names=- cause=this payload ships no checksum manifest at integrity/rendered.sha256"
     return 0
   fi
   if ! command -v shasum >/dev/null 2>&1 && ! command -v sha256sum >/dev/null 2>&1; then
@@ -499,7 +503,7 @@ detect_legacy_skill_copy() {
 detect_legacy_hook_files() {
   local root dir f name count=0 names="" payload_total=0
 
-  root="$(_detect_plugin_root)"
+  root="$(plugin_root)"
   dir="${BIONIC_CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/hooks"
 
   for f in "${root}/hooks/"*.sh; do
@@ -580,7 +584,7 @@ detect_statusline_npx_command() {
 detect_installed_agent_copies() {
   local root dir f name total=0 drift=0 names="" payload_total=0 want got
 
-  root="$(_detect_plugin_root)"
+  root="$(plugin_root)"
   dir="${BIONIC_CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}}/agents"
 
   for f in "${root}/agents/"*.md; do
@@ -716,6 +720,72 @@ detect_marketplace_feed_kind() {
     ''|null)   printf 'unknown\n' ;;
     *)         printf 'git\n' ;;
   esac
+  return 0
+}
+
+# WHICH TREE THIS INSTALL'S CODE ACTUALLY COMES FROM, keyed the same honest way as
+# the feed-kind lookup above — `_detect_marketplace_name`, never the literal `bionic`
+# (W4 4/4, AC-18/L-DETECT-4.1's own fix applied to this second reader of the same
+# file). A directory feed records `source.path`: the checkout doctor.sh is about to
+# compare its own location against. A git feed has no filesystem path at all, only
+# `source.repo` — that string comes back unresolved, because turning either shape
+# into a "this checkout" verdict is doctor.sh's comparison to make, not this
+# function's.
+#
+# EMPTY STDOUT AND EXIT 1 is the one shape for "unregistered", covering every way
+# that can be true — the file is absent, unparseable, names no entry for the
+# resolved marketplace name, or no jq is on PATH to read it honestly. No fallback
+# parse: this feeds a path a caller is about to compare its own root against, and a
+# wrong guess there is worse than an honest refusal — the same posture
+# `detect_plugin_root` already keeps for its own path.
+detect_marketplace_source_path() {
+  local mp name val
+  mp="$(_detect_known_marketplaces_file)"
+  [ -f "$mp" ] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  name="$(_detect_marketplace_name)"
+  val="$(jq -r --arg n "$name" '.[$n].source.path // .[$n].source.repo // empty' "$mp" 2>/dev/null)"
+  case "$val" in
+    ''|null) return 1 ;;
+  esac
+  printf '%s\n' "$val"
+  return 0
+}
+
+# THE "THIS CHECKOUT / OTHER checkout / unregistered" VERDICT — ONE SITE FOR THE RULE
+# (epic-22 wave-01 slice 14, E2). `detect_marketplace_source_path`'s own header says that
+# comparison is the CALLER's to make; this function IS that caller, so that doctor.sh and
+# `/bionic:version` compare against the SAME rule instead of each keeping its own copy of
+# the realpath comparison (the exact duplication this file's ownership rule forbids —
+# see "THE PARSE" above). doctor.sh:2054-2075 carried the first copy and now calls this.
+#
+# <compare-root> is the caller's OWN checkout root, realpath'd by the caller (doctor.sh
+# resolves it from its own script location; version.sh does the same) — never derived
+# here, because "which tree is asking" is a fact only the caller has.
+#
+# THREE ANSWERS, never a guess between them:
+#   "unregistered"    no marketplace registration names a source path at all
+#   "this checkout"   the registration's path resolves to the caller's own root
+#   "OTHER checkout"   it resolves to a real, different directory — OR it is a git-feed
+#                      registration naming no filesystem path (a `source.repo` string,
+#                      which can never equal a realpath) — either way, not this tree.
+detect_checkout_verdict() {  # <realpath to compare against> -> one of the three answers
+  local compare_root="${1:-}" mp_path st mp_real
+  mp_path="$(detect_marketplace_source_path)"; st=$?
+  if [ "$st" -ne 0 ] || [ -z "$mp_path" ]; then
+    printf 'unregistered\n'
+    return 0
+  fi
+  if [ -d "$mp_path" ]; then
+    mp_real="$(cd "$mp_path" 2>/dev/null && pwd -P)"
+  else
+    mp_real=""
+  fi
+  if [ -n "$mp_real" ] && [ -n "$compare_root" ] && [ "$mp_real" = "$compare_root" ]; then
+    printf 'this checkout\n'
+  else
+    printf 'OTHER checkout\n'
+  fi
   return 0
 }
 

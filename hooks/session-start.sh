@@ -27,14 +27,19 @@
 # None of that announces itself, and every one of them reads as normal until a
 # dispatch or a stop goes to the wrong address. This hook is the announcement.
 #
-# IT IS A DETECTOR, NOT A REPAIR. It arms nothing, deletes nothing, adopts nothing
-# and writes nothing — not one byte, including under `.bionic/tmp`. The re-arm
-# line it prints is an instruction for the model reading it, and the ORDER in that
-# line is the whole point: CronList BEFORE CronCreate, because a predecessor job
-# that is still firing has to be deleted rather than raced (AC-3's ritual, S5).
-# `tests/session-start.test.sh` fingerprints the `.bionic` subtree before and after
-# every drive; a hook that stamped would satisfy the arming wall over a cron table
-# holding nothing, which is worse than the state it reports.
+# IT IS A DETECTOR THAT ALSO SWEEPS, AND NOTHING ELSE (REQ-R2, ticket-30, amended
+# 2026-09-07 — this paragraph described a stricter contract before that wave). It
+# arms nothing, adopts nothing, and never deletes a file itself: the one write it
+# can make is calling `session-poker.sh sweep`, silently, once, near the end of
+# every run — see "the silent auto-sweep" below for the whole story, including the
+# age gate and why REQ-R2 is a deliberate reversal of session-poker.sh's own D-5.
+# Every OTHER byte in this file is still pure detection: the report above is built
+# from reads alone, and the re-arm line it prints is an instruction for the model
+# reading it, whose ORDER is the whole point — CronList BEFORE CronCreate, because
+# a predecessor job that is still firing has to be deleted rather than raced
+# (AC-3's ritual, S5). `tests/session-start.test.sh`'s `.bionic`-subtree fingerprint
+# now expects the sweep's own deletions and, on a genuine failure, one marker file
+# — never a stamp, a roster row, or anything this hook wrote for itself.
 #
 # FAIL OPEN, ALWAYS EXIT 0. A SessionStart hook that refuses would block the start
 # of every conversation on this machine, and what it is protecting is a report.
@@ -160,11 +165,30 @@ loader_fail_closed() {
     "bash $_bl_root/scripts/doctor.sh"|\
     "bash $_bl_root/scripts/setup.sh") exit 0 ;;
   esac
-  cat >&2 <<BIONIC_LOADER_REFUSE
-BLOCKED: $1 cannot load its library (${BIONIC_LIB_MISSING:-the bionic library}), so it
-cannot read this command. A wall that cannot read a command refuses it rather than
-waving it through.
+  # THE ONE LINE, AND THE ONE PLACE IN THE TREE THAT SPELLS IT WITHOUT
+  # scripts/lib/refuse.sh. Every other wall calls `refuse`; this one cannot, because
+  # refuse.sh is IN the library this function exists to report missing. So the row-1
+  # wording (record/wave-01-plugin-only/s12-refusal-wording-draft.md §1) is written
+  # out here by hand, in the renderer's exact format, and tests/loader.test.sh §F
+  # drives it against AC-E1.3's own regex so the two spellings cannot drift.
+  #
+  # THE NAME IS BOUNDED IN PURE BASH for the same reason: `bionic_trunc` is in the
+  # missing library. 23 columns of prefix, 31 of fact after the name, 3 of brackets
+  # and 18 of fix leaves 25 for the hook's name, and the longest caller
+  # (`canonical-sdlc-evidence-gate`, 28) is over it — F-8's runtime-width hazard,
+  # arriving at the one site that cannot ask the truncator. The ellipsis is spent
+  # from inside the budget, exactly as bionic_trunc spends it.
+  _bl_who="${1:-a bionic hook}"
+  if [ "${#_bl_who}" -gt 25 ]; then _bl_who="${_bl_who:0:24}…"; fi
+  printf 'bionic: load refused — %s cannot load the bionic library (run /bionic:doctor)\n' "$_bl_who" >&2
+  # THE DETAIL, on the knob only. Ruling D-1: the reader who is interrupted gets one
+  # sentence; the rest is for whoever asks. There is no hook log to write here — the
+  # library that owns logging is the one that did not load.
+  if [ "${BIONIC_WALL_VERBOSE:-}" = "1" ]; then
+    cat >&2 <<BIONIC_LOADER_REFUSE
+A wall that cannot read a command refuses it rather than waving it through.
 
+Wanted: ${BIONIC_LIB_MISSING:-the bionic library}
 Looked in: ${BIONIC_LIB_CANDS:-(no candidate)}
 
 Until the plugin is whole again this wall permits exactly four commands, each matched
@@ -178,6 +202,7 @@ as a whole string:
 Anything else is refused, including one of those four with another command chained
 after it. Run one of them, or act from your own terminal.
 BIONIC_LOADER_REFUSE
+  fi
   exit 2
 }
 # --- bionic-loader/v2 END
@@ -187,7 +212,7 @@ BIONIC_LOADER_REFUSE
 [ -n "$BIONIC_LIB" ] || loader_fail_open "session-start"
 . "$BIONIC_LIB/root.sh"    || exit 0   # project_root
 . "$BIONIC_LIB/session.sh" || exit 0   # session_id, and its one divergence warning
-. "$BIONIC_LIB/patrol.sh"  || exit 0   # PATROL_STALE_MULTIPLIER, _patrol_claude_home
+. "$BIONIC_LIB/patrol.sh"  || exit 0   # PATROL_STALE_MULTIPLIER
 . "$BIONIC_LIB/run.sh"     || exit 0   # active_run, engaged_session
 
 # The tree this hook was launched from — printed absolute in the re-arm line, and
@@ -229,7 +254,7 @@ TMP="$ROOT/.bionic/tmp"
 # build, not a guarantee.
 ENV_SID="${CLAUDE_CODE_SESSION_ID:-}"
 PID_SID=""
-PIDFILE="$(_patrol_claude_home)/sessions/$PPID.json"
+PIDFILE="$(claude_home)/sessions/$PPID.json"
 if [ -f "$PIDFILE" ] && [ ! -L "$PIDFILE" ] && command -v jq >/dev/null 2>&1; then
   PID_SID="$(jq -r '.sessionId // empty' "$PIDFILE" 2>/dev/null)"
 fi
@@ -447,7 +472,7 @@ done
 # lib/patrol.sh's `patrol_interval` takes — the project's configured value, then
 # the script's built-in default, then the last resort. It is asked HERE rather than
 # through `patrol_interval` because that function resolves the poker through
-# `_detect_plugin_root`, i.e. the plugin installed on the machine, while a
+# `plugin_root` (lib/roots.sh), i.e. the plugin installed on the machine, while a
 # SessionStart hook must measure against the tree it was actually launched from.
 ss_interval() {
   local poker="$HOOK_ROOT/hooks/session-poker.sh" s=""
@@ -461,6 +486,43 @@ ss_interval() {
   fi
   if [ -z "$s" ] || [ "$s" -le 0 ]; then s="$PATROL_INTERVAL_LAST_RESORT"; fi
   printf '%s' "$s"
+}
+
+# BOUNDED, THE SAME MECHANISM detect_bounded USES (payload/scripts/lib/detect.sh):
+# a background job of its own process group, a poll that signals the GROUP (never
+# just the child — a grandchild inherits the caller's own stdout pipe otherwise)
+# when the bound is up, and stdout captured to a file this shell alone reads
+# afterwards so a run that outlives its bound can never hold this hook's own
+# stdout open. Kept LOCAL rather than sourced from detect.sh: this hook's loader
+# wants root/session/patrol/run only (BIONIC_LIB_WANT above), and a fifth required
+# library would fail the whole DETECTOR closed on a machine that lacks it, to buy
+# a bound only the one `sweep` call below needs.
+ss_bounded_sweep() {  # <poker path> <bound seconds> -> stdout; rc mirrors sweep, 124 on timeout
+  local poker="$1" limit="$2" pid waited=0 rc out had_monitor
+  out="${TMPDIR:-/tmp}/bionic-sweep.$$.out"
+  : > "$out" 2>/dev/null || out="/dev/null"
+  case "$-" in *m*) had_monitor=yes ;; *) had_monitor=no ;; esac
+  set -m
+  ( cd "$ROOT" 2>/dev/null && bash "$poker" sweep ) </dev/null >"$out" 2>/dev/null &
+  pid=$!
+  [ "$had_monitor" = "yes" ] || set +m
+  if command -v sleep >/dev/null 2>&1; then
+    while kill -0 "$pid" 2>/dev/null; do
+      if [ "$waited" -ge "$limit" ]; then
+        kill -TERM "-${pid}" 2>/dev/null || kill -TERM "$pid" 2>/dev/null
+        wait "$pid" 2>/dev/null
+        [ -s "$out" ] && cat "$out"
+        rm -f "$out" 2>/dev/null
+        return 124
+      fi
+      sleep 1
+      waited=$((waited + 1))
+    done
+  fi
+  wait "$pid"; rc=$?
+  [ -s "$out" ] && cat "$out"
+  rm -f "$out" 2>/dev/null
+  return "$rc"
 }
 
 STAMPS=""
@@ -488,12 +550,152 @@ for LN in "$ROOT"/.worktrees/*/.bionic; do
 "
 done
 
+# ---------------------------------------------------------------- the silent auto-sweep
+#
+# THE ONE WRITE THIS HOOK NOW MAKES (REQ-R2, ticket-30, ratified 2026-09-07). Every
+# comment above this point still describes the DETECTOR half faithfully — the
+# roster/stamp/symlink report above reads nothing differently for this — but
+# "arms nothing, deletes nothing, adopts nothing and writes nothing" (this file's
+# own header, above) is no longer the whole of what runs here. session-poker.sh's
+# sweep verb carries a 1.5.1 decision that auto-sweeping was REJECTED (D-5): "a
+# hook that cleared [residue] at engagement would delete the evidence of the
+# thing it was helping with." REQ-R2 reverses that ruling for THIS ONE HOOK, on
+# THIS ONE TRIGGER — SessionStart, never engagement — because the field defect
+# (ticket-30) is the opposite failure: nothing ever swept the residue at all,
+# doctor could prove a project's predecessor sessions dead and name no way to
+# clear them, and setup offered nothing for it. `sweep`'s own deletion logic is
+# untouched (A-5) — this hook only ever decides WHETHER to invoke it; it never
+# deletes a file itself.
+#
+# THE AGE GATE (AC-R2.3) IS THIS HOOK'S OWN, not the verb's. `sweep` judges
+# liveness alone — a session dead one second after `/clear` re-keys its pid file
+# is exactly as dead as one a week stale — which is right for a verb a human runs
+# on purpose. A hook that fires on every conversation start is not that: the
+# predecessor roster this same run just reported above would be deleted before
+# anyone could act on it if sweep touched it immediately. So a dead session's
+# files get one Patrol interval of grace before this hook will let `sweep` near
+# them. `patrol_dead_sessions` and `patrol_session_state_files` are the SAME
+# library functions the verb and doctor's own detector call, read here directly
+# (no subprocess) so "who is dead" can never come apart between the three readers.
+#
+# THE GATE IS PER SESSION START, NOT PER FILE. `sweep` takes no operand (by
+# design — see its own docblock), so there is no way to ask it for "everyone
+# dead EXCEPT this one young file": if ANY dead session anywhere under
+# .bionic/tmp has ANY file younger than the interval, this hook skips calling
+# `sweep` AT ALL this run, and every dead session's files wait for the NEXT
+# session start together. A young file next to an ancient one is rare — a
+# session dies once, its files age together — and the alternative (calling
+# `sweep` anyway and accepting that a too-young file gets deleted early) is the
+# one failure mode this gate exists to prevent. tests/session-start.test.sh §6
+# is where a mixed batch is deliberately constructed and this tradeoff is felt.
+#
+# SILENT ON SUCCESS, ONE LINE ON FAILURE (AC-R2.4, scope constraint). `sweep`'s
+# own exit codes: 0 is swept-or-nothing-to-sweep, 1 is "every session here is
+# LIVE" — an ordinary, frequent, entirely healthy answer and not a fault — and 2
+# is a refusal (a `.bionic/tmp` sweep will not delete inside, or a usage error
+# this hook cannot cause). Only 2, or this wrapper's own 124 on a bounded
+# timeout, counts as failure: a marker is left and this one line prints. 0 and 1
+# are silent and clear any marker a PAST failure left, so a transient problem
+# stops being reported the moment sweeping actually works again.
+SWEEP_FAIL_LINE=""
+if [ -d "$TMP" ] && [ ! -L "$TMP" ]; then
+  SS_DEAD_IDS="$(patrol_dead_sessions "$ROOT" "$CUR" 2>/dev/null)"
+  SS_YOUNG=no
+  if [ -n "$SS_DEAD_IDS" ]; then
+    SS_LIMIT="$(ss_interval)"
+    SS_NOW="$(date -u +%s 2>/dev/null || echo 0)"
+    # ONE `stat` CALL FOR THE WHOLE GATE, not one per file (Step-6 review F-4).
+    # The shape this replaces ran a `stat` process per state file per dead session,
+    # ahead of the bounded sweep rather than inside it, so its cost was neither
+    # small nor bounded: 400 dead sessions measured 13.8 s against the 10-second
+    # timeout hooks/hooks.json registers for this hook, and BIONIC_SWEEP_BOUND_SECONDS
+    # defaults to that same 10 so the guard below could never fire first. The sweep
+    # runs AFTER the report is built, so a CLI timeout here discards the report — on
+    # exactly the residue-heavy project the report is most useful on.
+    #
+    # THE FILE LIST IS STILL THE LIBRARY'S ANSWER. `patrol_session_state_files` is
+    # asked the same question about the same sessions; only the mtime read is
+    # batched, so "who is dead and what did they leave" cannot come apart between
+    # this hook, the verb and doctor. The collection loop is ONE subshell for the
+    # whole set rather than one per session.
+    SS_FILES="$(while IFS= read -r SS_SID; do
+        [ -n "$SS_SID" ] || continue
+        patrol_session_state_files "$ROOT" "$SS_SID"
+      done <<EOF
+$SS_DEAD_IDS
+EOF
+)"
+    if [ -n "$SS_FILES" ]; then
+      # THE FLAVOUR PROBE RUNS ONCE, not per file, and it DISCRIMINATES rather than
+      # falling through on emptiness (Step-6 critic, issue 1). `stat -c %Y /dev/null`
+      # is a number on GNU coreutils and on busybox, and nothing at all on BSD, which
+      # rejects `-c` outright — so the probe's OUTPUT chooses the form. What it must
+      # never do is try the BSD form first and treat a non-empty capture as proof
+      # that it worked: GNU's `-f` is `--file-system`, so `%m` is read as a FILE
+      # operand, and GNU complains about `%m` on stderr while still printing a full
+      # file-system report for the real files on STDOUT and exiting 1. That capture
+      # is non-empty and entirely non-numeric, so an emptiness test never reaches the
+      # GNU form, every line fails the numeric case below, and the gate concludes
+      # nothing is young — deleting seconds-old state on every Linux and WSL install.
+      # tests/session-sweep.test.sh §7i plants a GNU-shaped `stat` on PATH and holds
+      # this.
+      #
+      # `tr` + `xargs -0` rather than `stat $SS_FILES` so a residue far larger than
+      # this one cannot overflow the argument list, and so a path carrying a space is
+      # one operand rather than two.
+      case "$(stat -c %Y /dev/null 2>/dev/null)" in
+        ''|*[!0-9]*)
+          SS_MTS="$(printf '%s\n' "$SS_FILES" | tr '\n' '\0' | xargs -0 stat -f %m 2>/dev/null)"
+          ;;
+        *)
+          SS_MTS="$(printf '%s\n' "$SS_FILES" | tr '\n' '\0' | xargs -0 stat -c %Y 2>/dev/null)"
+          ;;
+      esac
+      # A mtime NEWER than the cutoff is a file inside the interval. Spelled as a
+      # comparison against the cutoff rather than as an age subtraction because the
+      # two are the same statement and this one needs no clamp: a mtime in the
+      # future is newer than the cutoff, which is the deferring answer the age
+      # form reached by clamping a negative age to zero.
+      SS_CUTOFF=$(( SS_NOW - SS_LIMIT ))
+      while IFS= read -r SS_MT; do
+        case "$SS_MT" in ''|*[!0-9]*) continue ;; esac
+        if [ "$SS_MT" -gt "$SS_CUTOFF" ]; then SS_YOUNG=yes; break; fi
+      done <<EOF
+$SS_MTS
+EOF
+    fi
+  fi
+
+  if [ "$SS_YOUNG" = no ]; then
+    SS_POKER="$HOOK_ROOT/hooks/session-poker.sh"
+    if [ -f "$SS_POKER" ]; then
+      SS_BOUND="${BIONIC_SWEEP_BOUND_SECONDS:-10}"
+      ss_bounded_sweep "$SS_POKER" "$SS_BOUND" >/dev/null
+      SS_RC=$?
+      SWEEP_MARKER="$TMP/sweep-failed.state"
+      case "$SS_RC" in
+        0|1)
+          rm -f "$SWEEP_MARKER" 2>/dev/null
+          ;;
+        *)
+          printf 'sweep-failed/v1|at=%s|rc=%s\n' \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" "$SS_RC" > "$SWEEP_MARKER" 2>/dev/null
+          SWEEP_FAIL_LINE="bionic: the automatic dead-session sweep failed (rc=${SS_RC}) — run /bionic:doctor for the fix"
+          ;;
+      esac
+    fi
+  fi
+fi
+
 # ---------------------------------------------------------------- the block
 #
 # SILENCE IS THE DEFAULT. Four findings and one verdict; if every finding is empty
 # and the three channels agree, there is nothing a reader could act on and the hook
-# says nothing at all.
+# says nothing at all — EXCEPT a sweep failure, which is worth one line even on an
+# otherwise quiet session start (AC-R2.4): it is the one write this hook can make,
+# and a write that fails silently is worse than the noise of saying so.
 if [ -z "$ROSTERS" ] && [ -z "$STAMPS" ] && [ -z "$LINKS" ] && [ "$AGREE" = "agree" ]; then
+  [ -n "$SWEEP_FAIL_LINE" ] && printf '%s\n' "$SWEEP_FAIL_LINE"
   exit 0
 fi
 
@@ -518,5 +720,6 @@ fi
 # leaves two clocks on one project, which is the 1.3.2 B-8 bug by another route.
 printf 're-arm: CronList → delete bionic-patrol session=<other> jobs → CronCreate → bash %s/hooks/session-poker.sh arm → adopt\n' \
   "$HOOK_ROOT"
+[ -n "$SWEEP_FAIL_LINE" ] && printf '%s\n' "$SWEEP_FAIL_LINE"
 
 exit 0

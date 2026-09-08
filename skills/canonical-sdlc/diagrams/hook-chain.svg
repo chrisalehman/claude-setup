@@ -4,7 +4,7 @@
     canonical-sdlc — hook chain.
 
     THIS FILE IS THE SOURCE. There is no .excalidraw beside it and no export step:
-    the picture is composed text, which is what lets tests/diagrams.test.sh read it.
+    the picture is composed text, which is what lets tests/cross-gate-agreement.test.sh §V read it.
     Pinned there against the code it draws:
       * the three class="version-pin" renderings == hooks' SUPPORTED_SDLC_VERSION
       * the seven class="hook-entry" chips        == hooks/hooks.json, entry for entry
@@ -266,5 +266,5 @@
   <text x="952" y="1496" font-size="10.5" fill="#3a424c">are never checked, only presence. The evidence gate reads the plan's text,</text>
   <text x="952" y="1511" font-size="10.5" fill="#3a424c">so an Edit writing evidence for tests never run passes unseen.</text>
 
-  <text x="1360" y="1546" font-size="10" text-anchor="end" fill="#626b76">composed SVG — this file is the source · pinned by tests/diagrams.test.sh</text>
+  <text x="1360" y="1546" font-size="10" text-anchor="end" fill="#626b76">composed SVG — this file is the source · pinned by tests/cross-gate-agreement.test.sh §V</text>
 </svg>

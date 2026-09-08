@@ -23,7 +23,7 @@ COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command')
 # command must not wave it through. `loader_fail_closed` permits exactly four repair
 # commands by whole-string match first, so a broken publish can still be repaired —
 # the lockout R-1 §(5) measured and this wave is named for.
-BIONIC_LIB_WANT="git-argv.sh root.sh run.sh session.sh"
+BIONIC_LIB_WANT="git-argv.sh refuse.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -130,11 +130,30 @@ loader_fail_closed() {
     "bash $_bl_root/scripts/doctor.sh"|\
     "bash $_bl_root/scripts/setup.sh") exit 0 ;;
   esac
-  cat >&2 <<BIONIC_LOADER_REFUSE
-BLOCKED: $1 cannot load its library (${BIONIC_LIB_MISSING:-the bionic library}), so it
-cannot read this command. A wall that cannot read a command refuses it rather than
-waving it through.
+  # THE ONE LINE, AND THE ONE PLACE IN THE TREE THAT SPELLS IT WITHOUT
+  # scripts/lib/refuse.sh. Every other wall calls `refuse`; this one cannot, because
+  # refuse.sh is IN the library this function exists to report missing. So the row-1
+  # wording (record/wave-01-plugin-only/s12-refusal-wording-draft.md §1) is written
+  # out here by hand, in the renderer's exact format, and tests/loader.test.sh §F
+  # drives it against AC-E1.3's own regex so the two spellings cannot drift.
+  #
+  # THE NAME IS BOUNDED IN PURE BASH for the same reason: `bionic_trunc` is in the
+  # missing library. 23 columns of prefix, 31 of fact after the name, 3 of brackets
+  # and 18 of fix leaves 25 for the hook's name, and the longest caller
+  # (`canonical-sdlc-evidence-gate`, 28) is over it — F-8's runtime-width hazard,
+  # arriving at the one site that cannot ask the truncator. The ellipsis is spent
+  # from inside the budget, exactly as bionic_trunc spends it.
+  _bl_who="${1:-a bionic hook}"
+  if [ "${#_bl_who}" -gt 25 ]; then _bl_who="${_bl_who:0:24}…"; fi
+  printf 'bionic: load refused — %s cannot load the bionic library (run /bionic:doctor)\n' "$_bl_who" >&2
+  # THE DETAIL, on the knob only. Ruling D-1: the reader who is interrupted gets one
+  # sentence; the rest is for whoever asks. There is no hook log to write here — the
+  # library that owns logging is the one that did not load.
+  if [ "${BIONIC_WALL_VERBOSE:-}" = "1" ]; then
+    cat >&2 <<BIONIC_LOADER_REFUSE
+A wall that cannot read a command refuses it rather than waving it through.
 
+Wanted: ${BIONIC_LIB_MISSING:-the bionic library}
 Looked in: ${BIONIC_LIB_CANDS:-(no candidate)}
 
 Until the plugin is whole again this wall permits exactly four commands, each matched
@@ -148,12 +167,15 @@ as a whole string:
 Anything else is refused, including one of those four with another command chained
 after it. Run one of them, or act from your own terminal.
 BIONIC_LOADER_REFUSE
+  fi
   exit 2
 }
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_closed "protect-main" "$COMMAND"; fi
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/git-argv.sh"
+# shellcheck source=/dev/null
+. "$BIONIC_LIB/refuse.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
@@ -220,16 +242,15 @@ while IFS= read -r segment; do
     if [ "$dest" = "$rest" ]; then rest=""; else rest="${rest#*"$GIT_ARGV_US"}"; fi
     [ -n "$dest" ] || continue
     if git_branch_protected "$dest"; then
-      echo "BLOCKED: Pushing to main/master is not allowed from Claude Code." >&2
-      echo "Push to main must be done manually by the user." >&2
-      exit 2
+      refuse exit2 push "main is a protected branch here" "push from your own terminal" \
+        "A push to main is the user's own act, never Claude's. The destination this segment resolved to is \"$dest\"."
     fi
   done
 
   # Block 2: force pushes (always dangerous) [WALL: tests/protect-main.test.sh]
   if [ "$GIT_FORCE" -eq 1 ]; then
-    echo "BLOCKED: Force pushing is not allowed from Claude Code." >&2
-    exit 2
+    refuse exit2 push "this is a force push" "push from your own terminal" \
+      "A force push rewrites published history and has no undo from here. Run it from your own terminal if you mean it."
   fi
 done <<< "$(git_argv_expand "$COMMAND")"
 
@@ -243,9 +264,8 @@ fi
 # [WALL: tests/protect-main.test.sh]
 CURRENT_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
 if [ -n "$CURRENT_BRANCH" ] && git_branch_protected "$CURRENT_BRANCH"; then
-  echo "BLOCKED: Cannot push while on '$CURRENT_BRANCH' branch from Claude Code." >&2
-  echo "Switch to a feature branch or push manually from your terminal." >&2
-  exit 2
+  refuse exit2 push "the current branch is protected" "switch to a feature branch" \
+    "The current branch is \"$CURRENT_BRANCH\". Switch to a feature branch, or push by hand from your own terminal."
 fi
 
 exit 0

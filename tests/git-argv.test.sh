@@ -290,7 +290,7 @@ GA_REPO="$GA_SANDBOX/repo"
 mkdir -p "$GA_REPO/.bionic/tmp"
 : > "$GA_REPO/.bionic/tmp/engaged-$GA_SID.state"
 
-run_hook_at() {  # <hook path> <command> -> sets RC and ERRTXT
+run_hook_at() {  # <hook path> <command> -> sets RC, ERRTXT and (on a refusal) VERRTXT
   local hook="$1" cmd="$2" input tmp_err
   input=$(jq -n --arg c "$cmd" --arg d "$GA_REPO" --arg s "$GA_SID" \
             '{session_id: $s, cwd: $d, tool_input: {command: $c}}')
@@ -300,7 +300,35 @@ run_hook_at() {  # <hook path> <command> -> sets RC and ERRTXT
        CLAUDE_CODE_SESSION_ID="$GA_SID" CLAUDE_PROJECT_DIR= \
        bash "$hook" >/dev/null 2>"$tmp_err"; then RC=0; else RC=$?; fi
   ERRTXT=$(cat "$tmp_err"); rm -f "$tmp_err"
+  # THE DETAIL, ON A SECOND DRIVE, AND ONLY AFTER A REFUSAL (slice 13, ruling D-1). A
+  # refusal now puts ONE line on the user stream — `bionic: load refused — <hook> cannot
+  # load the bionic library (run /bionic:doctor)` — and the library it wanted, the
+  # candidates it tried and the repair commands it still permits are `detail`, emitted
+  # only under BIONIC_WALL_VERBOSE=1. A row that wants the PATH out of a refusal reads
+  # $VERRTXT; reading it off $ERRTXT would now be asserting that the wall leaks it.
+  # The loader wall exits before it sources anything, so a second drive doubles nothing.
+  VERRTXT=""
+  if [ "$RC" -ne 0 ]; then
+    tmp_err=$(mktemp)
+    printf '%s' "$input" | env HOME="$GA_SANDBOX/home" \
+       BIONIC_PLUGINS_DIR="$GA_SANDBOX/plugins" \
+       CLAUDE_CODE_SESSION_ID="$GA_SID" CLAUDE_PROJECT_DIR= BIONIC_WALL_VERBOSE=1 \
+       bash "$hook" >/dev/null 2>"$tmp_err"
+    VERRTXT=$(cat "$tmp_err"); rm -f "$tmp_err"
+  fi
 }
+
+# THE FIXTURE LIBRARY IS THE ONE THE HOOKS ASK FOR, read out of the hooks themselves. The
+# loader qualifies a candidate directory only when it holds EVERY basename in that hook's
+# BIONIC_LIB_WANT, so a hand-kept list here goes stale the moment a hook wants one more
+# file — and it did: wave-01 slice 13 added refuse.sh to the BIONIC_LIB_WANT of eleven of
+# the twenty-one hooks, these two among them, and this section's
+# POSITIVE controls then failed with "cannot load the bionic library", which reads as a
+# broken hook and was really a fixture that never built a whole library.
+GA_WANT=$(/usr/bin/grep -h '^BIONIC_LIB_WANT=' "$PROTECT_MAIN" "$EVIDENCE_GATE" \
+          | sed -e 's/^BIONIC_LIB_WANT="//' -e 's/"[[:space:]]*$//' \
+          | tr ' ' '\n' | sort -u)
+expect_contains "the fixture reads the two hooks' own BIONIC_LIB_WANT" "git-argv.sh" "$GA_WANT"
 
 make_layout() {  # <style: installed|payload> -> echoes the tree root
   local style="$1" root libdir
@@ -317,11 +345,10 @@ make_layout() {  # <style: installed|payload> -> echoes the tree root
   fi
   mkdir -p "$libdir"
   cp "$LIB" "$libdir/git-argv.sh"
-  # The evidence gate wants root.sh, run.sh and session.sh too, and the loader qualifies
-  # a directory only when it holds EVERY wanted basename (BIONIC_LIB_WANT). session.sh
-  # joined the list at task-engaged-session: the gate reads the session key to ask whether
-  # this session engaged bionic at all, before it asks anything about the plan.
-  for _ga_extra in root.sh run.sh session.sh; do
+  # Every other basename the two hooks want, from beside the library under test. The
+  # per-style completeness check in the loop below is what makes a copy that did not land
+  # a named failure instead of a mysterious refusal.
+  for _ga_extra in $GA_WANT; do
     cp "$(dirname "$LIB")/$_ga_extra" "$libdir/$_ga_extra" 2>/dev/null || true
   done
   echo "$root"
@@ -330,6 +357,16 @@ make_layout() {  # <style: installed|payload> -> echoes the tree root
 for style in installed payload; do
   root=$(make_layout "$style")
   if [ "$style" = "installed" ]; then hookdir="$root/hooks"; else hookdir="$root/payload/hooks"; fi
+  if [ "$style" = "installed" ]; then galib="$root/scripts/lib"; else galib="$root/payload/scripts/lib"; fi
+
+  # THE FIXTURE'S OWN PRECONDITION, asserted before the hooks are driven: the copied
+  # library holds every basename they ask for. Without this row a missing file shows up
+  # only as the positive control refusing, which reads as a defect in the hook.
+  ga_missing=""
+  for ga_f in $GA_WANT; do
+    [ -r "$galib/$ga_f" ] || ga_missing="$ga_missing $ga_f"
+  done
+  expect_eq "$style layout: the fixture built the whole library the hooks want" "" "$ga_missing"
 
   # Positive control first — the copied tree WORKS, so a later refusal is the
   # missing library and not a broken fixture.
@@ -347,22 +384,33 @@ for style in installed payload; do
   else no "$style layout: protect-main still blocks an explicit main push" "rc=0"; fi
 
   # Now rename the library away.
-  if [ "$style" = "installed" ]; then libfile="$root/scripts/lib/git-argv.sh"
-  else libfile="$root/payload/scripts/lib/git-argv.sh"; fi
+  libfile="$galib/git-argv.sh"
   mv "$libfile" "$libfile.renamed"
 
+  # THE REFUSAL IS READ IN TWO PLACES, because ruling D-1 put it in two: the one line the
+  # reader is interrupted by, and the path in the detail behind BIONIC_WALL_VERBOSE=1.
   run_hook_at "$hookdir/protect-main.sh" "ls -la"
-  if [ "$RC" -ne 0 ] && printf '%s' "$ERRTXT" | grep -q 'git-argv.sh'; then
+  if [ "$RC" -ne 0 ] && printf '%s' "$ERRTXT" | grep -q 'cannot load the bionic library'; then
+    ok "$style layout: protect-main REFUSES with the library renamed away, in the ruled one line"
+  else
+    no "$style layout: protect-main REFUSES with the library renamed away, in the ruled one line" "rc=$RC err='$ERRTXT'"
+  fi
+  if printf '%s' "$VERRTXT" | grep -q 'git-argv.sh'; then
     ok "$style layout: protect-main REFUSES with the library renamed away, naming the path"
   else
-    no "$style layout: protect-main REFUSES with the library renamed away, naming the path" "rc=$RC err='$ERRTXT'"
+    no "$style layout: protect-main REFUSES with the library renamed away, naming the path" "detail='$VERRTXT'"
   fi
 
   run_hook_at "$hookdir/canonical-sdlc-evidence-gate.sh" "ls -la"
-  if [ "$RC" -ne 0 ] && printf '%s' "$ERRTXT" | grep -q 'git-argv.sh'; then
+  if [ "$RC" -ne 0 ] && printf '%s' "$ERRTXT" | grep -q 'cannot load the bionic library'; then
+    ok "$style layout: evidence gate REFUSES with the library renamed away, in the ruled one line"
+  else
+    no "$style layout: evidence gate REFUSES with the library renamed away, in the ruled one line" "rc=$RC err='$ERRTXT'"
+  fi
+  if printf '%s' "$VERRTXT" | grep -q 'git-argv.sh'; then
     ok "$style layout: evidence gate REFUSES with the library renamed away, naming the path"
   else
-    no "$style layout: evidence gate REFUSES with the library renamed away, naming the path" "rc=$RC err='$ERRTXT'"
+    no "$style layout: evidence gate REFUSES with the library renamed away, naming the path" "detail='$VERRTXT'"
   fi
 done
 

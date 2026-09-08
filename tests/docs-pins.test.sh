@@ -262,15 +262,22 @@ jq --arg v "0.0.0-mismatch" '.version = $v' "$PLUGIN_JSON" > "$DOCTORED_ROOT/.cl
 expect_eq "18: …and reports the DOCTORED version for a doctored root (the header would show it)" \
   "0.0.0-mismatch" "$(detect_version_of "$DOCTORED_ROOT")"
 
-# --- the census: no THIRD surface appears unnoticed ---------------------------
+# --- the census: no FOURTH surface appears unnoticed ---------------------------
 #
 # The four pins above are a fixed list, and a fixed list goes stale the moment somebody adds
-# a fifth surface. The sweep is the pin that notices: exactly two files in this tree DECLARE
-# a bionic version, and both of them agree with the owner.
+# a fifth surface. The sweep is the pin that notices: exactly three files in this tree
+# DECLARE a bionic version, and all three agree with the owner.
+#
+# THE THIRD SURFACE, ADDED AT SLICE 14 (E2). `payload/commands/version.md` carries the same
+# baked `bionic <version> (installed)` line help.md does — see its template's "The printed
+# line begins with:" block — so `/bionic:version`'s own doc text is a version declaration by
+# the identical extractor, never a second regex. AC-E2.3's fails-when ("census still 2") is
+# what assertion 19 below now refuses.
 SITES="$(declaring_sites "$REPO")"
-expect_eq "19: exactly two surfaces in the tree DECLARE a version, and they are the known two" \
+expect_eq "19: exactly three surfaces in the tree DECLARE a version, and they are the known three" \
   "payload/.claude-plugin/plugin.json|${PLUGIN_VERSION}
-payload/commands/help.md|${PLUGIN_VERSION}" "$SITES"
+payload/commands/help.md|${PLUGIN_VERSION}
+payload/commands/version.md|${PLUGIN_VERSION}" "$SITES"
 
 SITE_DISAGREEMENTS="$(printf '%s\n' "$SITES" | awk -F'|' -v v="$PLUGIN_VERSION" '$2 != v')"
 expect_empty "20: …and every one of them agrees with plugin.json" "$SITE_DISAGREEMENTS"
@@ -291,6 +298,30 @@ expect_contains "21: the sweep FINDS a third declaring surface planted in a scra
 expect_nonempty "22: …and the disagreement filter reports it as a disagreement" \
   "$(printf '%s\n' "$SWEEP_SITES" | awk -F'|' -v v="$PLUGIN_VERSION" '$2 != v')"
 
+# --- E2.2: help's roster carries the /bionic:version row --------------------
+expect_contains "22b: payload/commands/help.md's roster carries a /bionic:version row" \
+  "/bionic:version" "$(cat "$HELP_MD")"
+
+# --- E2.3: doctoring version.md's OWN line to a different version reads as a
+# disagreement, in a scratch tree that otherwise agrees (AC-E2.3's fails-when: "census
+# still 2" — this proves version.md is the THIRD surface the census can catch on its own,
+# not merely counted alongside an unrelated mismatch). "0.0.0-mismatch" rather than a
+# literal like "1.5.1": the doctored value only has to differ from whatever PLUGIN_VERSION
+# actually is on the machine running this suite, and a release bump could make a fixed
+# literal collide with the real version and doctor nothing at all.
+VERSION_MD="${REPO}/payload/commands/version.md"
+E23_TREE="$TMP/e23-tree"
+mkdir -p "$E23_TREE/payload/.claude-plugin" "$E23_TREE/payload/commands"
+cp "$PLUGIN_JSON" "$E23_TREE/payload/.claude-plugin/plugin.json"
+cp "$HELP_MD" "$E23_TREE/payload/commands/help.md"
+sed "s/^bionic ${PLUGIN_VERSION//./\\.} (installed)\$/bionic 0.0.0-mismatch (installed)/" \
+  "$VERSION_MD" > "$E23_TREE/payload/commands/version.md"
+E23_SITES="$(declaring_sites "$E23_TREE")"
+expect_contains "23: the census counts version.md as its own declaring surface" \
+  "payload/commands/version.md|" "$E23_SITES"
+expect_nonempty "24: …and a version.md doctored to 1.5.1 reads as a disagreement" \
+  "$(printf '%s\n' "$E23_SITES" | awk -F'|' -v v="$PLUGIN_VERSION" '$2 != v')"
+
 # ── SECTION 2 — WALLS (spec AC-14/AC-26, `.bionic/docs/plans/wave-bionic-1.4.0-update/`).
 #
 # WHAT THIS SECTION OWNS. Four instruction-surface sentences that no hook can check,
@@ -305,10 +336,12 @@ expect_nonempty "22: …and the disagreement filter reports it as a disagreement
 #   (c) the `BIONIC_TEST_JOBS=<test_jobs>` sentence in `agents-src/blocks/survival.md`,
 #       which must reach every dispatched writer — so it is asserted in the BLOCK and
 #       again in all six rendered `agents/*.md`, which is what proves the render ran.
-#   (d) the `/clear` paragraph, which lives in TWO channels by design (a rules file
-#       lands on the next read, a role file on the next session — CLAUDE.md §Path-scoped
-#       rules). Two copies of a paragraph is exactly the drift a pin exists for, so the
-#       two are compared BYTE FOR BYTE rather than each being spot-checked.
+#   (d) the `/clear` paragraph, which lives in ONE canonical copy — `agents-src/blocks/
+#       survival.md`, rendered into all six `agents/*.md` — since S7 (AC-13) retired the
+#       second copy that used to live in `.claude/rules/agent-discipline.md`. Two copies
+#       of a paragraph is exactly the drift a pin used to exist for; now the pin is over
+#       the SINGLE home instead: the block carries it, the six role files match it
+#       byte-for-byte, and the rules file is asserted to carry it no longer.
 #
 # ANTI-VACUITY, same discriminate-a-doctored-copy pattern §1 uses: every extractor here
 # is re-run against a mutated copy and must report the mutation.
@@ -402,13 +435,19 @@ else
   no "13: agents-src/blocks/survival.md carries the '/clear does not kill agents' paragraph" \
      "file: $SURVIVAL_BLOCK"
 fi
-if [ -n "$CLEAR_RULES" ]; then
-  ok "14: .claude/rules/agent-discipline.md carries the same paragraph"
+
+# 14: ONE COPY (S7, AC-13) — the second copy that used to live in the rules file is
+# retired, not re-homed a third time (r1 §Table 3, AD18: "delete the rules copy. Do not
+# port it to the orchestrator role — that would make a fourth"). A bare absence check is
+# a vacuous-negative risk (tests/lib/assert.sh's own docblock on `expect_empty`); it is
+# paired here with assertion 13's POSITIVE result from the very same `clear_paragraph`
+# extractor, on the sibling file, moments above — proof the extractor itself works.
+if [ -z "$CLEAR_RULES" ]; then
+  ok "14: .claude/rules/agent-discipline.md no longer carries a '/clear' paragraph copy (one copy only)"
 else
-  no "14: .claude/rules/agent-discipline.md carries the same paragraph" "file: $AGENT_RULES"
+  no "14: .claude/rules/agent-discipline.md no longer carries a '/clear' paragraph copy (one copy only)" \
+     "file: $AGENT_RULES still matches the extractor — a second copy survived the move"
 fi
-expect_eq "15: the two copies of the '/clear' paragraph are byte-identical" \
-  "$CLEAR_BLOCK" "$CLEAR_RULES"
 
 PINS_CLEAR_MISSING=""
 for role in auditor critic implementor researcher senior-implementor test-runner; do
@@ -416,11 +455,22 @@ for role in auditor critic implementor researcher senior-implementor test-runner
     || PINS_CLEAR_MISSING="${PINS_CLEAR_MISSING} ${role}"
 done
 if [ -z "$PINS_CLEAR_MISSING" ]; then
-  ok "16: all six rendered agents/*.md carry that paragraph byte-identically"
+  ok "15: all six rendered agents/*.md carry that paragraph byte-identically"
 else
-  no "16: all six rendered agents/*.md carry that paragraph byte-identically" \
+  no "15: all six rendered agents/*.md carry that paragraph byte-identically" \
      "differs or missing in:${PINS_CLEAR_MISSING} — run 'bash agents-src/render.sh'"
 fi
+
+# 16: CENSUS — no THIRD home exists anywhere in the tree. Assertion 14 proves the one
+# named former home is clean; this proves nothing else picked the paragraph up either,
+# the same construction-guarded-vs-enforcement-guarded distinction r3 §Part 2 item 18
+# draws for AD18's other two copies.
+CLEAR_MARKER='`/clear` does not kill agents.'
+CLEAR_HOMES_EXPECTED="agents-src/blocks/survival.md agents/auditor.md agents/critic.md agents/implementor.md agents/researcher.md agents/senior-implementor.md agents/test-runner.md"
+CLEAR_HOMES_ACTUAL="$(cd "$REPO" && /usr/bin/grep -rl -F -- "$CLEAR_MARKER" \
+  agents-src agents .claude payload skills 2>/dev/null | sort | tr '\n' ' ' | sed 's/ $//')"
+expect_eq "16: the '/clear' marker exists ONLY at its seven expected homes (no third copy anywhere)" \
+  "$(printf '%s\n' $CLEAR_HOMES_EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')" "$CLEAR_HOMES_ACTUAL"
 
 # --- Anti-vacuity: the same extractors must report a mutation ---
 
@@ -445,11 +495,14 @@ else
   ok "18: a doctored survival.md fails the BIONIC_TEST_JOBS pin (pin discriminates)"
 fi
 
-anchor "$AGENT_RULES" 'the address that survives' 1
-DOCTORED_RULES="$TMP/rules-mutated.md"
-sed 's/the address that survives/the address that dies/' "$AGENT_RULES" > "$DOCTORED_RULES"
-expect_ne "19: a doctored agent-discipline.md reads as a different paragraph (pin discriminates)" \
-  "$CLEAR_BLOCK" "$(clear_paragraph "$DOCTORED_RULES")"
+# 19: mutation target moved to the canonical copy (S7, AC-13) — the rules file no
+# longer carries this paragraph at all, so mutating it would anchor on nothing (the
+# "anchor MOVED" failure `anchor()`'s own docblock warns against) and prove nothing.
+anchor "$SURVIVAL_BLOCK" 'the address that survives' 1
+DOCTORED_BLOCK2="$TMP/survival-clear-mutated.md"
+sed 's/the address that survives/the address that dies/' "$SURVIVAL_BLOCK" > "$DOCTORED_BLOCK2"
+expect_ne "19: a doctored survival.md reads as a different '/clear' paragraph (pin discriminates)" \
+  "$CLEAR_BLOCK" "$(clear_paragraph "$DOCTORED_BLOCK2")"
 
 # ── SECTION 3 — SCHED (spec AC-29/AC-30/AC-31/AC-38, `.bionic/docs/plans/wave-bionic-1.4.0-update/`).
 #
@@ -1074,5 +1127,766 @@ for _r in "${REPO}"/agents/*.md; do
   has_pin "$_r" "$PIN_S13_SPELLING" || S13_SPELL_MISSING=$((S13_SPELL_MISSING + 1))
 done
 expect_eq "63b: …and every generated role file carries it" "0" "$S13_SPELL_MISSING"
+
+section "Section 11: the plugin renders whole — the skill file is a build output (wave-02 AC-1, AC-6, AC-8)"
+
+# WHAT THIS SECTION OWNS. Until wave-02 S2a, `skills/canonical-sdlc/SKILL.md` was
+# hand-written and four of its passages were hand-COPIED into role files under markers
+# that said "canonical copy of skills/canonical-sdlc/SKILL.md §…" — a promise, with no
+# test between the copies. r3's census found all four, and the irony that one of them IS
+# the agreement-test obligation. The repair is not another pairwise diff arm: the skill
+# file became the renderer's third unit and the four passages became blocks, so the
+# copies are injections and cannot disagree. This section pins BOTH halves of that —
+# that `--check` now sees the skill file at all (assertions 64-66, the defect control),
+# and that each passage really is one text reaching every surface (67-71).
+#
+# ANTI-VACUITY. 64 is the positive control 65 and 66 mean nothing without: a clone that
+# ALREADY failed --check would make any "the edit turned it red" arm true for free. The
+# byte-identity arms (67-71) each assert against a NON-EMPTY extraction, because two
+# empty strings are equal and an extractor that found nothing would otherwise pass every
+# one of them.
+#
+# HERMETIC. The clone is a copy of the working tree's render inputs and outputs under
+# the same mktemp dir the rest of this file uses; render.sh derives every directory from
+# its own location, so the clone renders against its own outputs and the repo is never
+# written.
+
+RENDERED_MANIFEST="${REPO}/payload/integrity/rendered.sha256"
+BLOCK_DIR="${REPO}/agents-src/blocks"
+SKILL_TMPL="${REPO}/agents-src/templates/skills/canonical-sdlc/SKILL.md.tmpl"
+OPRULES="${REPO}/skills/canonical-sdlc/operational-rules.md"
+
+expect_true "64a: the skill file has a template (it is a render target, not a hand-written file)" \
+  test -f "$SKILL_TMPL"
+expect_true "64b: the renderer's unit table names the skill unit" \
+  grep -qF 'agents-src/templates/skills/canonical-sdlc|skills/canonical-sdlc' "$RENDER_SH"
+
+# clone_render_tree <dest> — the render inputs and outputs, and nothing else.
+clone_render_tree() {
+  local dest="$1"
+  mkdir -p "$dest/payload/commands" "$dest/payload/.claude-plugin" "$dest/payload/integrity" \
+           "$dest/skills/canonical-sdlc" "$dest/agents" || return 1
+  cp -R "${REPO}/agents-src" "$dest/agents-src" || return 1
+  cp "${REPO}"/agents/*.md "$dest/agents/" || return 1
+  cp "${REPO}"/payload/commands/*.md "$dest/payload/commands/" || return 1
+  cp "${REPO}/payload/.claude-plugin/plugin.json" "$dest/payload/.claude-plugin/" || return 1
+  cp "${REPO}/skills/canonical-sdlc/SKILL.md" "$dest/skills/canonical-sdlc/" || return 1
+  [ -f "$RENDERED_MANIFEST" ] && cp "$RENDERED_MANIFEST" "$dest/payload/integrity/"
+  return 0
+}
+
+CLONE="$TMP/render-clone"
+if clone_render_tree "$CLONE"; then
+  ok "64: a clone of the render tree is built (the fixture 65 and 66 mutate)"
+else
+  no "64: a clone of the render tree is built (the fixture 65 and 66 mutate)" "dest: $CLONE"
+fi
+
+# THE POSITIVE CONTROL. An unedited clone must be clean, or every "the edit turned it
+# red" arm below is true for a reason that has nothing to do with the edit.
+if bash "$CLONE/agents-src/render.sh" --check >/dev/null 2>&1; then
+  ok "65: the unedited clone passes --check (the control the next two arms need)"
+else
+  no "65: the unedited clone passes --check (the control the next two arms need)" \
+     "run 'bash $CLONE/agents-src/render.sh --check' for the diff"
+fi
+
+# THE DEFECT CONTROL FOR AC-1: one hand edit to the rendered skill file.
+sed -i.bak 's/^# Canonical SDLC$/# Canonical SDLC (hand-edited)/' \
+  "$CLONE/skills/canonical-sdlc/SKILL.md" 2>/dev/null
+rm -f "$CLONE/skills/canonical-sdlc/SKILL.md.bak"
+CHECK_OUT="$(bash "$CLONE/agents-src/render.sh" --check 2>&1)"
+CHECK_RC=$?
+expect_ne "66a: one hand edit to skills/canonical-sdlc/SKILL.md turns --check red" "0" "$CHECK_RC"
+expect_match "66b: …and the diff names the file it rejected" \
+  "*skills/canonical-sdlc/SKILL.md*" "$CHECK_OUT"
+
+# THE SAME FOR THE WIDENED MANIFEST'S OTHER HALF: a command page is a rendered file too,
+# and before this slice the manifest answered only for the six role files.
+CLONE2="$TMP/render-clone-2"
+clone_render_tree "$CLONE2" || true
+printf '\nhand-edited\n' >> "$CLONE2/payload/commands/help.md"
+CHECK_OUT2="$(bash "$CLONE2/agents-src/render.sh" --check 2>&1)"
+expect_ne "67a: one hand edit to a rendered command page turns --check red" "0" "$?"
+expect_match "67b: …and the diff names that page" "*commands/help.md*" "$CHECK_OUT2"
+
+# A STRAY TEMPLATE IN THE ROLE UNIT'S OWN DIRECTORY (W4 4/4, AC-15). A `.md.tmpl` that
+# names anything other than a current role and lands directly in `agents-src/templates/`
+# must never render — no `agents/<name>.md`, no row in either manifest — or a future
+# addition there would ship an un-rostered seventh role file invisible to --check.
+CLONE3="$TMP/render-clone-3"
+clone_render_tree "$CLONE3" || true
+{
+  echo '---'
+  echo 'name: not-a-role'
+  echo '---'
+  echo '<!-- GENERATED-HEADER -->'
+  echo 'stray, never rendered'
+} > "$CLONE3/agents-src/templates/not-a-role.md.tmpl"
+WRITE_OUT3="$(bash "$CLONE3/agents-src/render.sh" 2>&1)"
+WRITE_RC3=$?
+expect_eq "68a: a stray template beside the six roles does not fail the render" "0" "$WRITE_RC3"
+expect_true "68b: …and it renders no agents/not-a-role.md at all" \
+  bash -c '[ ! -e "$1" ]' _ "$CLONE3/agents/not-a-role.md"
+CHECK_OUT3="$(bash "$CLONE3/agents-src/render.sh" --check 2>&1)"
+expect_eq "68c: …so --check still passes with the stray template still sitting there" \
+  "0" "$?"
+
+# ── The four passages: one text, every surface ──────────────────────────────
+#
+# marker_span reads the injection markers render.sh writes, so the extraction follows the
+# renderer's own contract rather than a second guess at where a passage starts.
+marker_span() {  # <file> <MARKER-NAME>
+  awk -v m="$2" '
+    $0 == "<!-- " m "-BEGIN -->" { inp = 1; next }
+    $0 == "<!-- " m "-END -->"   { inp = 0 }
+    inp { print }
+  ' "$1" 2>/dev/null
+}
+
+# same_everywhere <n> <label> <block-file> <marker> <surface...>
+same_everywhere() {
+  local n="$1" label="$2" blockfile="$3" marker="$4"; shift 4
+  local body surface span bad=""
+  body="$(cat "$blockfile" 2>/dev/null)"
+  if [ -z "$body" ]; then
+    no "${n}: ${label}" "the block ${blockfile##*/} is missing or empty — an empty pin proves nothing"
+    return
+  fi
+  for surface in "$@"; do
+    span="$(marker_span "$surface" "$marker")"
+    [ "$span" = "$body" ] || bad="${bad} ${surface#${REPO}/}"
+  done
+  if [ -z "$bad" ]; then
+    ok "${n}: ${label}"
+  else
+    no "${n}: ${label}" "differs from ${blockfile##*/} in:${bad} — run 'bash agents-src/render.sh'"
+  fi
+}
+
+same_everywhere 68 "the auditor mandate is one text in the block, the skill file and agents/auditor.md" \
+  "${BLOCK_DIR}/auditor-mandate.md" "AUDITOR-MANDATE" "$SKILL_MD" "${REPO}/agents/auditor.md"
+
+same_everywhere 69 "the critic prompt template is one text in the block, the skill file and agents/critic.md" \
+  "${BLOCK_DIR}/critic-template.md" "CRITIC-TEMPLATE" "$SKILL_MD" "${REPO}/agents/critic.md"
+
+same_everywhere 70 "the duplication axis is one text in the block, the skill file and agents/critic.md" \
+  "${BLOCK_DIR}/duplication-axis.md" "DUPLICATION-AXIS" "$SKILL_MD" "${REPO}/agents/critic.md"
+
+same_everywhere 71 "the terminal-disposition rule is one text in the block and the skill file" \
+  "${BLOCK_DIR}/terminal-disposition.md" "TERMINAL-DISPOSITION" "$SKILL_MD"
+
+same_everywhere 72 "the orchestrator's dispatch body is one text in the block and the skill file" \
+  "${BLOCK_DIR}/orchestrator-dispatch.md" "ORCHESTRATOR-DISPATCH" "$SKILL_MD"
+
+# The duplicate that had no renderer at all: two hand-written files carrying one span.
+expect_true "73a: operational-rules.md no longer carries its own copy of the rule" \
+  test -f "$OPRULES"
+expect_absent "73b: …the TERMDISP span is gone from it" "TERMDISP" "$(cat "$OPRULES")"
+expect_contains "73c: …and it points at the block instead" \
+  "agents-src/blocks/terminal-disposition.md" "$(cat "$OPRULES")"
+
+# ── The manifest covers every rendering (AC-8) ──────────────────────────────
+expect_true "74a: payload/integrity/rendered.sha256 exists" test -f "$RENDERED_MANIFEST"
+expect_false "74b: payload/integrity/agents.sha256 is gone" \
+  test -f "${REPO}/payload/integrity/agents.sha256"
+MANIFEST_BODY="$(grep -v '^#' "$RENDERED_MANIFEST" 2>/dev/null | grep -v '^[[:space:]]*$')"
+expect_eq "74c: it carries one row per rendered file (six roles, five commands, the skill)" \
+  "12" "$(printf '%s\n' "$MANIFEST_BODY" | wc -l | tr -d ' ')"
+expect_contains "74d: …including the skill file, plugin-root-relative" \
+  "  skills/canonical-sdlc/SKILL.md" "$MANIFEST_BODY"
+expect_contains "74e: …and the command pages, plugin-root-relative" \
+  "  commands/help.md" "$MANIFEST_BODY"
+expect_contains "74f: …and the role files, plugin-root-relative" \
+  "  agents/auditor.md" "$MANIFEST_BODY"
+
+# The one runtime consumer reads the file the renderer now writes. Named here because a
+# rename that missed it would leave doctor answering `unknown` on every machine.
+expect_contains "75: payload/scripts/lib/detect.sh reads integrity/rendered.sha256" \
+  'integrity/rendered.sha256' "$(cat "$DETECT_SH")"
+expect_absent "75b: …and names the deleted manifest nowhere" \
+  'integrity/agents.sha256' "$(cat "$DETECT_SH")"
+
+# ── Section 6: K3 — premise text (AC-K3.1, AC-K3.2) ─────────────────────────
+#
+# ideas/bug-premise-decisions-surface-at-the-pr.md F1/F2 (D3 keeps F1/F2, cuts F3;
+# adrs: is F4, covered by tests/canonical-sdlc-governing-skill.test.sh instead — a
+# hook wall, not a doc-text pin). Both ACs are STATIC: docs-pins reads the rendered
+# Step-2 Design Interview frame span (SKILL.md, "Open with the frame" paragraph)
+# byte-for-byte, the same `has_pin` idiom §1-§5 use.
+section "Section 6: K3 — premise text (Context/Problem first, Mechanisms inherited)"
+
+# AC-K3.1: Context and Problem, for a stranger, is the FIRST thing the frame
+# ratifies — ahead of the orchestrator's own design intuition and every decision
+# below it. Pinned as one substring spanning the frame's opening clause straight
+# into the Context-and-Problem sentence, so the pin itself IS an adjacency (hence
+# order) check: it can only match a copy where nothing has been inserted, or
+# swapped in, between "before any question." and "Its first ratification is
+# **Context and Problem".
+PIN_K3_FIRST='**Open with the frame**, before any question. Its first ratification is **Context and Problem, for a stranger**'
+
+# AC-K3.2, half 1: the frame carries a "Mechanisms inherited" item, each line
+# marked kept or questioned.
+PIN_K3_MECH='**Mechanisms inherited**, one line per substrate or mechanism the design builds on, each marked `kept` or `questioned`'
+
+# AC-K3.2, half 2: placement decisions (tier / runtime surface / hardware) are
+# named strategic BY RULE, not left to a default.
+PIN_K3_STRATEGIC='placing a test cohort in a tier, a job on a runtime surface, or a workload on hardware is **strategic by rule**'
+
+if has_pin "$SKILL_MD" "$PIN_K3_FIRST"; then
+  ok "76: SKILL.md's Step-2 frame ratifies Context and Problem, for a stranger, first"
+else
+  no "76: SKILL.md's Step-2 frame ratifies Context and Problem, for a stranger, first" "file: $SKILL_MD"
+fi
+
+if has_pin "$SKILL_MD" "$PIN_K3_MECH"; then
+  ok "77: …and carries a Mechanisms inherited item, each kept or questioned"
+else
+  no "77: …and carries a Mechanisms inherited item, each kept or questioned" "file: $SKILL_MD"
+fi
+
+if has_pin "$SKILL_MD" "$PIN_K3_STRATEGIC"; then
+  ok "78: …and names tier/runtime-surface/hardware placement strategic by rule"
+else
+  no "78: …and names tier/runtime-surface/hardware placement strategic by rule" "file: $SKILL_MD"
+fi
+
+# --- Anti-vacuity: the same pins must discriminate a mutated copy ---
+
+# 79: ORDER REVERSED (AC-K3.1's own fails-when). The doctored copy swaps the
+# Context-and-Problem sentence and the Design-intuition sentence in place — the
+# literal shape of "the order is reversed" — rather than deleting anything, so a
+# pin that merely checked PRESENCE of both phrases would stay green through it.
+anchor -E "$SKILL_MD" 'Its first ratification is \*\*Context and Problem, for a stranger\*\*' 1
+DOCTORED_K3_ORDER="$TMP/skill-k3-order-reversed.md"
+sed -E '
+s/(\*\*Open with the frame\*\*, before any question\. )(Its first ratification is \*\*Context and Problem, for a stranger\*\*: the problem and the goal, written as if for a reader who has never opened this repo; this comes before your own design intuition and before every decision in the frame below it — a change not yet explainable to someone who was not there is not yet understood\. )(Then your own \*\*Design intuition\*\*, the shape you expect to be right, stated so the user can push on it; )/\1\3\2/
+' "$SKILL_MD" > "$DOCTORED_K3_ORDER"
+if has_pin "$DOCTORED_K3_ORDER" "$PIN_K3_FIRST"; then
+  no "79: order-reversed SKILL.md fails the first-ratification pin (pin discriminates)" \
+     "the mutated copy still matched — the pin does not see the reorder"
+else
+  ok "79: order-reversed SKILL.md fails the first-ratification pin (pin discriminates)"
+fi
+# Control: prove the doctored copy really moved Design intuition ahead of
+# Context and Problem, rather than merely mangling the text into something that
+# happens to fail the pin for an unrelated reason.
+expect_contains "79b: …and the doctored copy really does read Design intuition, then Context and Problem" \
+  'Then your own **Design intuition**, the shape you expect to be right, stated so the user can push on it; Its first ratification is **Context and Problem' \
+  "$(cat "$DOCTORED_K3_ORDER")"
+
+# 80: Mechanisms inherited ABSENT (AC-K3.2's fails-when). The strategic-by-rule
+# clause stays untouched in this copy — proof the mutation removed only the
+# Mechanisms-inherited item, not the whole paragraph.
+anchor "$SKILL_MD" 'Mechanisms inherited' 1
+DOCTORED_K3_MECH="$TMP/skill-k3-mechanisms-absent.md"
+sed 's/\*\*Mechanisms inherited\*\*, one line per substrate or mechanism the design builds on, each marked `kept` or `questioned` — a `questioned` line becomes a strategic fork; //' \
+  "$SKILL_MD" > "$DOCTORED_K3_MECH"
+if has_pin "$DOCTORED_K3_MECH" "$PIN_K3_MECH"; then
+  no "80: SKILL.md with Mechanisms inherited stripped still passes the mech pin (pin discriminates)" \
+     "the mutated copy still matched — the pin does not see the removal"
+else
+  ok "80: SKILL.md with Mechanisms inherited stripped still passes the mech pin (pin discriminates)"
+fi
+if has_pin "$DOCTORED_K3_MECH" "$PIN_K3_STRATEGIC"; then
+  ok "80b: …and the strategic-by-rule clause survives untouched in the same copy (isolated mutation)"
+else
+  no "80b: …and the strategic-by-rule clause survives untouched in the same copy (isolated mutation)" \
+     "the mutation removed more than the Mechanisms-inherited clause"
+fi
+
+# 81: "strategic by rule" ABSENT (AC-K3.2's other half). Mechanisms inherited
+# stays untouched here, the mirror-image isolation check of 80b.
+anchor "$SKILL_MD" 'strategic by rule' 1
+DOCTORED_K3_STRAT="$TMP/skill-k3-strategic-absent.md"
+sed "s/is \\*\\*strategic by rule\\*\\* and is never defaulted/is left to the writer's judgment/" \
+  "$SKILL_MD" > "$DOCTORED_K3_STRAT"
+if has_pin "$DOCTORED_K3_STRAT" "$PIN_K3_STRATEGIC"; then
+  no "81: SKILL.md with strategic-by-rule stripped still passes the strategic pin (pin discriminates)" \
+     "the mutated copy still matched — the pin does not see the removal"
+else
+  ok "81: SKILL.md with strategic-by-rule stripped still passes the strategic pin (pin discriminates)"
+fi
+if has_pin "$DOCTORED_K3_STRAT" "$PIN_K3_MECH"; then
+  ok "81b: …and Mechanisms inherited survives untouched in the same copy (isolated mutation)"
+else
+  no "81b: …and Mechanisms inherited survives untouched in the same copy (isolated mutation)" \
+     "the mutation removed more than the strategic-by-rule clause"
+fi
+
+section "Section 12: K1 — the Step-0 confirmation display is a settings-only card (spec §Eval design K1, plan slice 15)"
+#
+# WHAT THIS SECTION OWNS. D1 (design ledger record/wave-01-plugin-only/design-ledger.md §D1)
+# moves the Verification Matrix to Step 3 and cuts per-line inference rationale from Step 0:
+# the confirmation display becomes a ten-section settings card — Purpose, Seed, Run, Branches,
+# Paths, Machine, Shape, Gates, Models, Warnings — ending in a direct approval question. AC-K1.1
+# pins the section names and their order; AC-K1.2 pins the matrix's absence; AC-K1.3 pins that
+# Branches always carries both the working and the integration line (Chris: "You must always
+# include the working branch and integration branch.").
+#
+# ANTI-VACUITY, same discriminate-a-doctored-copy pattern as the sections above: each extractor
+# is re-run against a copy mutated to reproduce the AC's own "fails-when", and must go red.
+
+# step0_card <file> -> the fenced Step-0 card, header line through the closing fence.
+step0_card() {
+  awk '/^Step 0 · Plan Configuration$/{f=1} f{print} f&&/^```$/{exit}' "$1" 2>/dev/null
+}
+
+STEP0_CARD="$(step0_card "$SKILL_MD")"
+
+expect_true "76: the Step-0 card block is found in SKILL.md" \
+  test -n "$STEP0_CARD"
+
+K1_EXPECTED_SECTIONS="Purpose
+Seed
+Run
+Branches
+Paths
+Machine
+Shape
+Gates
+Models
+Warnings"
+K1_SECTION_RE='^  (Purpose|Seed|Run|Branches|Paths|Machine|Shape|Gates|Models|Warnings)([[:space:]]|$)'
+K1_ACTUAL_SECTIONS="$(printf '%s\n' "$STEP0_CARD" | grep -E "$K1_SECTION_RE" | sed -E 's/^  ([A-Za-z]+).*/\1/')"
+
+expect_eq "77: AC-K1.1 — the Step-0 card carries the ten sections, in order (fails-when: card partially rendered)" \
+  "$K1_EXPECTED_SECTIONS" "$K1_ACTUAL_SECTIONS"
+
+expect_absent "78: AC-K1.2 — no Verification Matrix table renders in the Step-0 card (fails-when: the matrix is left in)" \
+  "Verification Matrix" "$STEP0_CARD"
+
+expect_contains "79a: AC-K1.3 — Branches carries the working branch line (fails-when: one branch line dropped)" \
+  "    working" "$STEP0_CARD"
+expect_contains "79b: AC-K1.3 — …and the integration branch line" \
+  "    integration" "$STEP0_CARD"
+
+# --- Anti-vacuity: each extractor must go red on the fails-when it names ---
+
+# 80: a card with a whole section dropped (Gates) fails K1.1's order check.
+anchor -E "$SKILL_MD" '^  Gates$' 1
+DOCTORED_NO_GATES="$TMP/skill-k1-no-gates.md"
+sed '/^  Gates$/,/^$/d' "$SKILL_MD" > "$DOCTORED_NO_GATES"
+DOCTORED_SECTIONS_80="$(printf '%s\n' "$(step0_card "$DOCTORED_NO_GATES")" | grep -E "$K1_SECTION_RE" | sed 's/^  //')"
+if [ "$DOCTORED_SECTIONS_80" = "$K1_EXPECTED_SECTIONS" ]; then
+  no "80: a Step-0 card partially rendered (a section dropped) fails the order check (pin discriminates)" \
+     "the mutated copy still matched the expected order — the pin is vacuous"
+else
+  ok "80: a Step-0 card partially rendered (a section dropped) fails the order check (pin discriminates)"
+fi
+
+# 81: a card with the matrix left in fails K1.2.
+anchor -E "$SKILL_MD" '^Step 0 · Plan Configuration$' 1
+DOCTORED_MATRIX_BACK="$TMP/skill-k1-matrix-back.md"
+awk '{print} /^Step 0 · Plan Configuration$/{print "  Verification Matrix:"}' "$SKILL_MD" > "$DOCTORED_MATRIX_BACK"
+DOCTORED_CARD_81="$(step0_card "$DOCTORED_MATRIX_BACK")"
+case "$DOCTORED_CARD_81" in
+  *"Verification Matrix"*) ok "81: a Step-0 card with the matrix left in fails the no-matrix check (pin discriminates)" ;;
+  *) no "81: a Step-0 card with the matrix left in fails the no-matrix check (pin discriminates)" \
+        "the mutated copy did not carry the matrix string — the mutation is a no-op" ;;
+esac
+
+# 82: a card missing the integration branch line fails K1.3.
+# FOUR, not one, since slice 16 landed (epic-22 K2): the Step-1, Step-2 and Step-3 cards each
+# carry the same branch pair, so this mutation now strips four lines. That is fine for THIS
+# row — `step0_card` reads only the Step-0 span, so the discrimination below is unchanged —
+# but the count has to say what the pattern really matches, or the anchor is a promise the
+# mutation does not keep.
+anchor "$SKILL_MD" '    integration   ' 4
+DOCTORED_NO_INTEGRATION="$TMP/skill-k1-no-integration.md"
+sed '/^    integration   /d' "$SKILL_MD" > "$DOCTORED_NO_INTEGRATION"
+DOCTORED_CARD_82="$(step0_card "$DOCTORED_NO_INTEGRATION")"
+case "$DOCTORED_CARD_82" in
+  *"    integration"*) no "82: a Step-0 card missing the integration branch line still 'has' it (pin is vacuous)" ;;
+  *) ok "82: a Step-0 card missing the integration branch line fails the branch-pair check (pin discriminates)" ;;
+esac
+
+# ---------------------------------------------------------------------------
+section "Section 13: the Step-1/2/3 cards and the spec's Eval design table (epic-22 K2, AC-K2.1/AC-K2.2)"
+# ---------------------------------------------------------------------------
+#
+# WHAT THIS SECTION OWNS. Steps 0-3 each end at a gate, and since the wave-01-plugin-only
+# design interview each of those gates ends with a CARD: one line per item, never a
+# paragraph, the artifact path for the depth. Step 0's card is slice 15's; this section
+# owns the other three, plus the `## Eval design` table the Step-2 spec authors and the
+# Step-3 card renders.
+#
+# WHY A DOC PIN AND NOT A HOOK ARM. No hook can see a conversation — the cards are
+# printed to a terminal and never written to a file — so the skill's literal template is
+# the whole enforcement, exactly as `SKILL.md`'s own "This layout is literal" defence
+# says of the Step-0 block. What a test CAN hold is that the template is still there and
+# still carries the rows the user ratified; a card silently shortened back into prose is
+# the failure this section is pointed at.
+#
+# ANTI-VACUITY. Every arm below reads the RENDERED, shipped file
+# (`payload/skills/canonical-sdlc/SKILL.md`), never the template, so a template edit that
+# was never rendered cannot make it green; Section 11's `--check` arms are what tie the
+# two together. The two grep helpers are re-run against a DOCTORED copy at the end of the
+# section, and must report the loss — a pin that only ever reads an agreeing file could
+# be vacuously true by extractor bug.
+#
+# HERMETIC. Reads the committed file by path; the doctored copy lives under this file's
+# own mktemp dir.
+
+# card_span <file> <card heading line> -> the fenced block that follows the heading,
+# empty when the heading or its fence is absent. The cards are fenced literals, the same
+# shape Step 0's confirmation display uses, so the extractor follows the fence.
+card_span() {
+  awk -v h="$2" '
+    index($0, h) == 1 { inb = 1 }
+    inb && /^```/ { exit }
+    inb { print }
+  ' "$1" 2>/dev/null
+}
+
+# has_all <text> <needle>... -> 0 when every needle is present
+has_all() {
+  local hay="$1"; shift
+  local n
+  for n in "$@"; do
+    case "$hay" in *"$n"*) : ;; *) return 1 ;; esac
+  done
+  return 0
+}
+
+CARD1="$(card_span "$SKILL_MD" 'Step 1 · Requirements')"
+CARD2="$(card_span "$SKILL_MD" 'Step 2 · Design')"
+CARD3="$(card_span "$SKILL_MD" 'Step 3 · Plan')"
+
+expect_true "90a: the Step-1 card is a fenced literal in the skill file" test -n "$CARD1"
+expect_true "90b: the Step-2 card is a fenced literal in the skill file" test -n "$CARD2"
+expect_true "90c: the Step-3 card is a fenced literal in the skill file" test -n "$CARD3"
+
+# --- the ratified rows, per card -------------------------------------------
+#
+# The row NAMES are the ratification (design ledger §"Cards ratified" and §"Step-3 card
+# ratified"): Step 1 is purpose/requirements/not-doing/artifact, Step 2 is
+# decisions/ownership/eval-design/open/artifacts, Step 3 is
+# problem/branches/slices/width/eval-design/verification/open/artifacts.
+if has_all "$CARD1" "Purpose" "Requirements" "Not Doing" "Artifacts"; then
+  ok "91a: the Step-1 card carries Purpose, Requirements, Not Doing and Artifacts"
+else
+  no "91a: the Step-1 card carries Purpose, Requirements, Not Doing and Artifacts" \
+     "card body: $CARD1"
+fi
+if has_all "$CARD1" "provenance" "ACs"; then
+  ok "91b: …and a requirement row names its provenance and its criteria count"
+else
+  no "91b: …and a requirement row names its provenance and its criteria count" "card body: $CARD1"
+fi
+
+if has_all "$CARD2" "Decisions" "serves" "ADR" "Ownership" "Eval design" "Open at approval" "Artifacts"; then
+  ok "92a: the Step-2 card carries Decisions (serves/ADR), Ownership, Eval design, Open at approval, Artifacts"
+else
+  no "92a: the Step-2 card carries Decisions (serves/ADR), Ownership, Eval design, Open at approval, Artifacts" \
+     "card body: $CARD2"
+fi
+if has_all "$CARD2" "static" "unit" "hermetic" "live" "human" "total"; then
+  ok "92b: …and its Eval design is one row per requirement with the five type counts and a total"
+else
+  no "92b: …and its Eval design is one row per requirement with the five type counts and a total" \
+     "card body: $CARD2"
+fi
+
+if has_all "$CARD3" "Problem" "Branches" "Slices" "kind" "depends" "agent" \
+                    "Eval design" "Verification" "Open at approval" "Artifacts"; then
+  ok "93a: the Step-3 card carries Problem, Branches, Slices (kind/depends/agent), Eval design, Verification, Open at approval, Artifacts"
+else
+  no "93a: the Step-3 card carries Problem, Branches, Slices (kind/depends/agent), Eval design, Verification, Open at approval, Artifacts" \
+     "card body: $CARD3"
+fi
+if has_all "$CARD3" "first batch"; then
+  ok "93b: …and the parallel width names its first batch"
+else
+  no "93b: …and the parallel width names its first batch" "card body: $CARD3"
+fi
+
+# --- both branch lines, on every card --------------------------------------
+#
+# The working branch alone is half an answer: a reader cannot tell where the wave LANDS.
+# Chris corrected exactly this on the Step-0 display (2026-09-07), and the correction is
+# a property of every card, not of one.
+for _pair in "94a:$CARD1:Step-1" "94b:$CARD2:Step-2" "94c:$CARD3:Step-3"; do
+  _n="${_pair%%:*}"; _rest="${_pair#*:}"; _body="${_rest%:*}"; _which="${_rest##*:}"
+  if has_all "$_body" "working" "integration"; then
+    ok "${_n}: the ${_which} card carries BOTH branch lines (working + integration)"
+  else
+    no "${_n}: the ${_which} card carries BOTH branch lines (working + integration)" "card body: $_body"
+  fi
+done
+
+# --- the gate wording, verbatim on all three --------------------------------
+#
+# One word is the gate. The ratified sentence is a QUESTION plus the literal reply, and
+# a look-closer line beneath it; the bare footer menu it replaced was rejected by name.
+expect_contains "95a: the Step-1 card asks the ratified question" \
+  'Do you approve these requirements? Reply "approved" to ratify it.' "$CARD1"
+expect_contains "95b: the Step-2 card asks the ratified question" \
+  'Do you approve this design? Reply "approved" to ratify it.' "$CARD2"
+expect_contains "95c: the Step-3 card asks the ratified question" \
+  'Do you approve this plan? Reply "approved" to ratify it.' "$CARD3"
+expect_contains "95d: the Step-2 card's look-closer line opens one requirement's evals" \
+  'show evals <req>' "$CARD2"
+expect_contains "95e: the Step-3 card's look-closer line opens one slice" \
+  'show slice <n>' "$CARD3"
+
+# --- AC-K2.2: the spec template's Eval design table -------------------------
+SKILL_BODY="$(cat "$SKILL_MD" 2>/dev/null)"
+expect_contains "96a: the skill names the spec's section '## Eval design'" \
+  '## Eval design' "$SKILL_BODY"
+EVAL_HEADER="$(grep -m1 -F '| Requirement | Approach |' "$SKILL_MD" 2>/dev/null)"
+expect_true "96b: …and gives it a column header row" test -n "$EVAL_HEADER"
+for _col in Requirement Approach Criterion "Eval type" Eval "Fails when"; do
+  expect_contains "96c: …carrying the ratified column '$_col'" "$_col" "$EVAL_HEADER"
+done
+expect_contains "96d: …and states the invariant that gives the sixth column its force" \
+  'is not an eval' "$SKILL_BODY"
+
+# --- Anti-vacuity: the spans are BOUNDED, not the whole file -----------------
+#
+# THE FAILURE THIS GUARDS. `card_span` prints from a heading to the next fence. An
+# extractor that lost its terminator — or a card whose closing fence was deleted — would
+# return the REST OF THE FILE, and every `has_all` above would then pass on words found
+# hundreds of lines away in prose that has nothing to do with a card. So each span is
+# asserted to stop where its card stops, by naming text that lives OUTSIDE it: the next
+# card's question, and a Step-3 sentence no card contains. Doctored copies would say the
+# same thing at the cost of two more mutation sites in a file whose census is pinned
+# elsewhere; these rows are the same discrimination, in memory.
+expect_absent "97a: the Step-1 card's span stops before the Step-2 card's question" \
+  'Do you approve this design?' "$CARD1"
+expect_absent "97b: the Step-2 card's span stops before the Step-3 card's question" \
+  'Do you approve this plan?' "$CARD2"
+expect_absent "97c: the Step-3 card's span stops before the Step-5 prose below it" \
+  'Wave shape locks at approval' "$CARD3"
+# …and the positive those three need: the text they say is outside a span really is in the
+# file, so an absence above cannot be an absence from the whole document.
+expect_contains "97d: …and all three of those sentences do exist in the skill file" \
+  'Wave shape locks at approval' "$SKILL_BODY"
+
+# --- the authoring half, in operational-rules.md ----------------------------
+#
+# SKILL.md carries the CONTRACT (the six columns, the ladder, the refusal). The authoring
+# guidance lives beside the other Step-2 back-half sections, which is where a writer filling
+# a table in actually looks. That file is hand-written, not a render target, so nothing but
+# this pin holds the two halves together.
+OPRULES_BODY="$(cat "$OPRULES" 2>/dev/null)"
+expect_contains "97f: operational-rules.md carries the Eval design authoring section" \
+  '### The Eval design table' "$OPRULES_BODY"
+expect_contains "97g: …and it states the rule the sixth column exists for" \
+  'PLANTED DEFECT' "$OPRULES_BODY"
+expect_contains "97h: …and sends an unfalsifiable criterion back to Step 1" \
+  'goes back to Step 1' "$OPRULES_BODY"
+
+# The Eval design header is one row, not a swallowed table: the extractor takes the first
+# match only, so a second header row elsewhere cannot be what the column checks read.
+expect_eq "97e: the Eval design column header is a single line" "1" \
+  "$(printf '%s\n' "$EVAL_HEADER" | wc -l | tr -d ' ')"
+
+section "Section 14: K5 — the layout block names .requirements.md and the three-artifact sentence (spec §Eval design K5, plan slice 19)"
+#
+# WHAT THIS SECTION OWNS. K5 (design ledger K5; ADR-001) fixes three artifacts to three
+# steps. AC-K5.3 pins that SKILL.md's own text — the Artifact-layout code block and the
+# Steps table's rows 1–3 — names all three (requirements.md, spec.md, plan.md) and, in
+# one sentence each, what each holds. This is the "human reads the skill" half of K5; the
+# hook arms that enforce it (governing-skill's frontmatter contract, evidence-gate's
+# Step-1 pointer) are pinned by their own suites, not here.
+#
+# NUMBERED FROM 98 (renumbered at the epic-22 K2+K5 merge, plan slices 16/19 landing
+# together — both sections were independently numbered "Section 13" and started their own
+# assertions back at ~83/90a; Section 13 above is K2's and keeps its numbers, this section
+# is K5's and starts fresh past its last one, 97h).
+#
+# ANTI-VACUITY, same discriminate-a-doctored-copy pattern as Section 12: each extractor is
+# re-run against a copy mutated to reproduce K5.3's own "fails-when" (absent), and must go red.
+
+LAYOUT_BLOCK="$(awk '/^## Artifact layout$/{f=1;next} f&&/^```$/{c++; if(c==2) exit} f&&c==1{print}' "$SKILL_MD")"
+
+expect_true "98: the Artifact-layout code block is found in SKILL.md" \
+  test -n "$LAYOUT_BLOCK"
+
+expect_contains "99: AC-K5.3 — the layout block names wave-NN-<slug>.requirements.md beside the spec (fails-when: absent)" \
+  "wave-NN-<slug>.requirements.md" "$LAYOUT_BLOCK"
+
+expect_regex "100: 99's requirements.md sits in the SAME specs/ line as .spec.md, not its own directory" \
+  '^<docs-root>/specs/epic-NN-<slug>/\{[^}]*wave-NN-<slug>\.spec\.md[^}]*wave-NN-<slug>\.requirements\.md[^}]*\}$' \
+  "$LAYOUT_BLOCK"
+
+# The three-artifact sentence: one sentence each, naming what requirements.md, spec.md
+# and plan.md hold. Pinned as three separate substring checks (the exact prose is not
+# pinned, only that each artifact name co-occurs with its content description) rather
+# than one long regex, so a future reword of the connective prose does not false-fail
+# a check whose real subject is "does the sentence exist and name the right things".
+THREE_ARTIFACT_TEXT="$(awk '/^\*\*Three artifacts, three steps\*\*/{f=1} f{print} f&&/^$/{exit}' "$SKILL_MD")"
+
+expect_true "101: the three-artifact sentence is found in SKILL.md" \
+  test -n "$THREE_ARTIFACT_TEXT"
+
+expect_contains "102a: AC-K5.3 — names requirements.md and what it holds (fails-when: absent)" \
+  "requirements.md\`: numbered requirements" "$THREE_ARTIFACT_TEXT"
+expect_contains "102b: AC-K5.3 — names spec.md and what it holds (fails-when: absent)" \
+  "spec.md\`: the technical design" "$THREE_ARTIFACT_TEXT"
+expect_contains "102c: AC-K5.3 — names plan.md and what it holds (fails-when: absent)" \
+  "plan.md\`: slices, sequencing" "$THREE_ARTIFACT_TEXT"
+
+# Steps table rows 1-3: each row's Gate cell also names its Step's artifact + one-line content.
+STEP1_ROW="$(grep -E '^\| 1 Scope \|' "$SKILL_MD")"
+STEP2_ROW="$(grep -E '^\| 2 Design \|' "$SKILL_MD")"
+STEP3_ROW="$(grep -E '^\| 3 Plan \|' "$SKILL_MD")"
+
+expect_contains "103a: AC-K5.3 — Step 1's table row names requirements.md + what it holds (fails-when: absent)" \
+  "requirements.md\` — numbered requirements" "$STEP1_ROW"
+expect_contains "103b: AC-K5.3 — Step 2's table row names spec.md + what it holds (fails-when: absent)" \
+  "spec.md\` — the technical design" "$STEP2_ROW"
+expect_contains "103c: AC-K5.3 — Step 3's table row names plan.md + what it holds (fails-when: absent)" \
+  "plan.md\` — slices, sequencing" "$STEP3_ROW"
+
+# --- Anti-vacuity: each extractor must go red on the fails-when it names (absent) ---
+
+# 104: a layout block with requirements.md stripped out fails 99.
+anchor "$SKILL_MD" ', wave-NN-<slug>.requirements.md}' 1
+DOCTORED_NO_REQ_LAYOUT="$TMP/skill-k5-no-req-layout.md"
+sed 's/, wave-NN-<slug>\.requirements\.md}/}/' "$SKILL_MD" > "$DOCTORED_NO_REQ_LAYOUT"
+DOCTORED_LAYOUT_104="$(awk '/^## Artifact layout$/{f=1;next} f&&/^```$/{c++; if(c==2) exit} f&&c==1{print}' "$DOCTORED_NO_REQ_LAYOUT")"
+case "$DOCTORED_LAYOUT_104" in
+  *"wave-NN-<slug>.requirements.md"*) no "104: a layout block with requirements.md stripped still 'has' it (pin is vacuous)" ;;
+  *) ok "104: a layout block with requirements.md stripped fails the name check (pin discriminates)" ;;
+esac
+
+# 105: a SKILL.md with the whole three-artifact sentence removed fails 101/102a-c.
+anchor -E "$SKILL_MD" '^\*\*Three artifacts, three steps\*\*' 1
+DOCTORED_NO_SENTENCE="$TMP/skill-k5-no-sentence.md"
+awk '/^\*\*Three artifacts, three steps\*\*/{skip=1} skip&&/^$/{skip=0;next} !skip{print}' "$SKILL_MD" > "$DOCTORED_NO_SENTENCE"
+DOCTORED_SENTENCE_105="$(awk '/^\*\*Three artifacts, three steps\*\*/{f=1} f{print} f&&/^$/{exit}' "$DOCTORED_NO_SENTENCE")"
+if [ -z "$DOCTORED_SENTENCE_105" ]; then
+  ok "105: a SKILL.md with the three-artifact sentence removed fails the presence check (pin discriminates)"
+else
+  no "105: a SKILL.md with the three-artifact sentence removed fails the presence check (pin discriminates)" \
+     "the mutated copy still carried the sentence — the mutation is a no-op"
+fi
+
+# 106: a Step-1 table row with its artifact clause stripped fails 103a.
+anchor "$SKILL_MD" "requirements.md\` — numbered requirements" 1
+DOCTORED_NO_ROW_CLAUSE="$TMP/skill-k5-no-row-clause.md"
+sed -E "s/; writes \`wave-NN-<slug>\.requirements\.md\`[^|]*//" "$SKILL_MD" > "$DOCTORED_NO_ROW_CLAUSE"
+DOCTORED_ROW1_106="$(grep -E '^\| 1 Scope \|' "$DOCTORED_NO_ROW_CLAUSE")"
+case "$DOCTORED_ROW1_106" in
+  *"requirements.md\` — numbered requirements"*) no "106: a Step-1 row with its artifact clause stripped still 'has' it (pin is vacuous)" ;;
+  *) ok "106: a Step-1 row with its artifact clause stripped fails the row check (pin discriminates)" ;;
+esac
+
+# ── Section 15: K4 — the prototype unit (AC-K4.1, AC-K4.3) ──────────────────
+#
+# NUMBERED FROM 107, past K5's last number (106) — same renumber-at-merge
+# convention Section 14's own header note explains.
+#
+# AC-K4.1: the skill defines the prototype unit — three fields (question, what "right"
+# looks like, timebox), two homes (Step 2 by default, Step 4 by exception with a stated
+# reason), the ruling-to-spec rule, ships nothing, and the no-row rule. It is one bounded
+# paragraph, extracted the same way the Step-2/3 cards are (heading in, blank line out) so
+# a `has_all` below cannot be satisfied by unrelated prose living elsewhere in the file.
+proto_span() {
+  awk '
+    index($0, "The prototype unit") { f=1 }
+    f { print }
+    f && /^$/ { exit }
+  ' "$SKILL_MD"
+}
+PROTO_SPAN="$(proto_span)"
+
+expect_true "107a: the prototype-unit paragraph exists in the skill file" test -n "$PROTO_SPAN"
+
+if has_all "$PROTO_SPAN" "question" '"right"' "timebox" "ships nothing" \
+                        "never owns a matrix row" "Step 2" "Step 4" "kind: prototype" \
+                        "states that reason" "refused by the evidence gate"; then
+  ok "107b: AC-K4.1 — the prototype unit names its three fields, two homes (the Step-4 exception stating its reason), the ruling-to-spec rule, ships nothing, and the no-row rule"
+else
+  no "107b: AC-K4.1 — the prototype unit names its three fields, two homes (the Step-4 exception stating its reason), the ruling-to-spec rule, ships nothing, and the no-row rule" \
+     "span: $PROTO_SPAN"
+fi
+
+# 107c: Anti-vacuity — a copy with the no-row rule's sentence stripped fails 107b's check.
+anchor "$SKILL_MD" 'never owns a matrix row' 1
+DOCTORED_NO_ROWRULE="$TMP/skill-k4-no-rowrule.md"
+sed '/never owns a matrix row/d' "$SKILL_MD" > "$DOCTORED_NO_ROWRULE"
+DOCTORED_PROTO_SPAN="$(awk '
+    index($0, "The prototype unit") { f=1 }
+    f { print }
+    f && /^$/ { exit }
+  ' "$DOCTORED_NO_ROWRULE")"
+if has_all "$DOCTORED_PROTO_SPAN" "question" '"right"' "timebox" "ships nothing" \
+                        "never owns a matrix row" "Step 2" "Step 4" "kind: prototype" \
+                        "states that reason" "refused by the evidence gate"; then
+  no "107c: a prototype-unit paragraph missing the no-row rule still passes 107b's check (pin is vacuous)" \
+     "doctored span: $DOCTORED_PROTO_SPAN"
+else
+  ok "107c: a prototype-unit paragraph missing the no-row rule fails 107b's check (pin discriminates)"
+fi
+
+# AC-K4.3: the Step-3 card's "Open at approval" section is a QUESTION → SLICE mapping, not
+# just a bare header — 93a already pins the header string; this pins the row shape it
+# names, `closed by slice <n>`, which is what makes the section machine-checkable rather
+# than a caption with nothing under it.
+expect_contains "107d: AC-K4.3 — the Step-3 card's Open-at-approval row maps a question to the slice that closes it" \
+  "closed by slice" "$CARD3"
+
+# 107e: Anti-vacuity — a Step-3 card with the mapping text stripped fails 107d.
+anchor "$SKILL_MD" 'closed by slice' 1
+DOCTORED_NO_CLOSEDBY="$TMP/skill-k4-no-closedby.md"
+sed 's/closed by slice/discharged eventually/' "$SKILL_MD" > "$DOCTORED_NO_CLOSEDBY"
+DOCTORED_CARD3_107="$(card_span "$DOCTORED_NO_CLOSEDBY" 'Step 3 · Plan')"
+case "$DOCTORED_CARD3_107" in
+  *"closed by slice"*) no "107f: a Step-3 card missing the 'closed by slice' mapping still 'has' it (pin is vacuous)" ;;
+  *) ok "107f: a Step-3 card missing the 'closed by slice' mapping fails the K4.3 check (pin discriminates)" ;;
+esac
+
+section "Section 16: K5.4 — the goal-paragraph rule text (design ledger K5.4, plan slice 21)"
+#
+# WHAT THIS SECTION OWNS. AC-K5.4 pins that SKILL.md's own text says each of the three
+# artifacts opens with a concise goal paragraph under '## Goal', and that a
+# governing-skill arm enforces it. The sentence is appended onto the END of Section 14's
+# "Three artifacts, three steps" paragraph, so it reuses THREE_ARTIFACT_TEXT (extracted
+# above) rather than re-deriving the same awk. The arm itself — its empty-section check,
+# its wave|epic scoping, its per-file messages — is pinned by
+# tests/canonical-sdlc-governing-skill.test.sh's own K5.4 section, not here; this section
+# owns the "human reads the skill" half only, same division Section 14 draws for K5.3.
+#
+# NUMBERED FROM 108 (continuing past Section 15's last number, 107f). Section 15 (K4) and
+# this section both landed a "Section 15" numbered from 107 in their own worktrees — the
+# same renumber-at-merge convention Section 14's own header note describes; K5.4 is the
+# one that moves, since it merges second.
+
+expect_contains "108: AC-K5.4 — the three-artifact sentence says each opens with a concise goal paragraph under '## Goal' (fails-when: absent)" \
+  "\`## Goal\` section — one concise paragraph" "$THREE_ARTIFACT_TEXT"
+
+expect_contains "109: AC-K5.4 — …and that a governing-skill arm refuses a write whose first section is not Goal (fails-when: absent)" \
+  "first section is not Goal" "$THREE_ARTIFACT_TEXT"
+
+# --- Anti-vacuity: 108/109 must go red when the K5.4 clause is stripped ---
+#
+# The clause is the tail of Section 14's own paragraph (spans the last four physical
+# lines of it, wrapped) — a narrower mutation than 105's whole-paragraph removal above,
+# because 105 already discharges anti-vacuity for 101/102a-c and would prove nothing new
+# for 108/109 specifically: this mutation keeps the rest of the paragraph (including the
+# ". Each" boundary) and strips only the sentence 108/109 are about.
+anchor "$SKILL_MD" 'validates `*.spec.md`, minus the design three-way rule (that stays spec-only). Each' 1
+DOCTORED_NO_K54_CLAUSE="$TMP/skill-k54-no-clause.md"
+sed -e "s/(that stays spec-only)\. Each\$/(that stays spec-only)./" \
+    -e '/^of the three opens with a `## Goal` section/d' \
+    -e '/^(design ledger K5\.4) — and a governing-skill arm/d' \
+    -e '/^write whose first section is not Goal, or whose Goal section is empty\.$/d' \
+    "$SKILL_MD" > "$DOCTORED_NO_K54_CLAUSE"
+DOCTORED_THREE_ARTIFACT_110="$(awk '/^\*\*Three artifacts, three steps\*\*/{f=1} f{print} f&&/^$/{exit}' "$DOCTORED_NO_K54_CLAUSE")"
+case "$DOCTORED_THREE_ARTIFACT_110" in
+  *"\`## Goal\` section — one concise paragraph"*) no "110a: a sentence with the K5.4 clause stripped still 'has' the goal-paragraph text (108 is vacuous)" ;;
+  *) ok "110a: a sentence with the K5.4 clause stripped fails 108's check (pin discriminates)" ;;
+esac
+case "$DOCTORED_THREE_ARTIFACT_110" in
+  *"first section is not Goal"*) no "110b: a sentence with the K5.4 clause stripped still 'has' the arm-refusal text (109 is vacuous)" ;;
+  *) ok "110b: a sentence with the K5.4 clause stripped fails 109's check (pin discriminates)" ;;
+esac
+# The mutation kept the rest of the paragraph — proof the delete was surgical, not
+# 105's whole-paragraph wipe reused under a new number.
+expect_contains "110c: the doctored copy still carries the REST of the paragraph (the mutation is surgical, not 105's whole-paragraph wipe)" \
+  "requirements.md\`: numbered requirements" "$DOCTORED_THREE_ARTIFACT_110"
 
 finish

@@ -465,6 +465,87 @@ expect_match "with a jq that answers, the duplicate is still found" \
   "*dup=bionic ids=bionic@bionic,bionic@claude-plugins-official*" \
   "$(probe_run BIONIC_INSTALLED_PLUGINS_FILE="$FIX_DUP" -- detect_plugin_duplicates)"
 
+section "Group 6c: detect_marketplace_source_path — keyed on the installed name, not the literal 'bionic' (W4 4/4, D1)"
+#
+# WHICH TREE THE CLI LOADS THE PLUGIN FROM. A directory feed records `source.path`;
+# a git feed has no path, only `source.repo` — both are read as a raw passthrough,
+# unresolved, because turning either into a "this checkout" verdict is doctor.sh's
+# comparison to make, not this function's. Absent, unparseable, no entry for the
+# resolved marketplace name, or no jq: one shape, empty stdout and exit 1.
+#
+# NEVER A FIXTURE KEYED LITERALLY "bionic". The registry is read through
+# `_detect_marketplace_name`, which resolves the name from installed_plugins.json's
+# own `bionic@<name>` key — a fixture that happened to be keyed "bionic" would pass
+# even against the OLD verbatim-omni body (`jq -r '.bionic.source...`), which is
+# exactly the defect L-DETECT/4.1 retired and the trap r1's highest-risk port #3
+# names. Every positive arm below registers under a NON-"bionic" marketplace name,
+# built at run time with `jq -n --arg` — no static fixture file, no hardcoded
+# `/Users/example` path.
+
+FORK_NAME="bionic-fork"
+FORK_MP="$TMP/mp-source-fork-known.json"
+FORK_REG="$TMP/mp-source-fork-installed.json"
+FORK_SRC_PATH="$TMP/fork-src-tree"
+mkdir -p "$FORK_SRC_PATH"
+
+jq -n --arg name "$FORK_NAME" --arg p "$FORK_SRC_PATH" \
+  '{($name): {source: {source: "directory", path: $p}}}' > "$FORK_MP"
+jq -n --arg name "$FORK_NAME" \
+  '{plugins: {("bionic@" + $name): [{installPath: "/nowhere", gitCommitSha: "deadbeef"}]}}' \
+  > "$FORK_REG"
+
+expect_eq "the fork fixture's directory-source path comes back verbatim" \
+  "$FORK_SRC_PATH" \
+  "$(probe_run BIONIC_INSTALLED_PLUGINS_FILE="$FORK_REG" BIONIC_KNOWN_MARKETPLACES_FILE="$FORK_MP" -- detect_marketplace_source_path)"
+
+probe_run_st BIONIC_INSTALLED_PLUGINS_FILE="$FORK_REG" BIONIC_KNOWN_MARKETPLACES_FILE="$FORK_MP" -- detect_marketplace_source_path
+expect_eq "…and exits 0 when registered" "0" "$P_ST"
+
+# A git-source entry has no `path` at all — `source.repo` is what comes back.
+GIT_MP="$TMP/mp-source-git-known.json"
+jq -n --arg name "$FORK_NAME" \
+  '{($name): {source: {source: "github", repo: "example/bionic"}}}' > "$GIT_MP"
+expect_eq "a git feed with no path hands back the repo slug instead" \
+  "example/bionic" \
+  "$(probe_run BIONIC_INSTALLED_PLUGINS_FILE="$FORK_REG" BIONIC_KNOWN_MARKETPLACES_FILE="$GIT_MP" -- detect_marketplace_source_path)"
+
+# UNREGISTERED, every way that can be true: absent file, no matching entry, no jq.
+probe_run_st BIONIC_INSTALLED_PLUGINS_FILE="$FORK_REG" BIONIC_KNOWN_MARKETPLACES_FILE="$TMP/no-such-mp-registry.json" -- detect_marketplace_source_path
+expect_eq "an absent registry is unregistered: empty stdout" "" "$P_OUT"
+expect_eq "…and exit 1" "1" "$P_ST"
+
+NO_MATCH_MP="$TMP/mp-source-no-match-known.json"
+jq -n '{"claude-plugins-official": {source: {source: "github", repo: "anthropics/x"}}}' > "$NO_MATCH_MP"
+probe_run_st BIONIC_INSTALLED_PLUGINS_FILE="$FORK_REG" BIONIC_KNOWN_MARKETPLACES_FILE="$NO_MATCH_MP" -- detect_marketplace_source_path
+expect_eq "a registry present but naming no entry for the resolved name is unregistered too" "" "$P_OUT"
+expect_eq "…and exit 1" "1" "$P_ST"
+
+R_PATH="$NOJQ_BIN" probe_run_st BIONIC_INSTALLED_PLUGINS_FILE="$FORK_REG" BIONIC_KNOWN_MARKETPLACES_FILE="$FORK_MP" -- detect_marketplace_source_path
+expect_eq "without jq the registry cannot be read honestly, so it is not read" "" "$P_OUT"
+expect_eq "…and exit 1, never a guessed path" "1" "$P_ST"
+
+# The seam chain is detect.sh's existing one, unchanged.
+CH_DIR_MP="$TMP/ch-mp-source"; mkdir -p "$CH_DIR_MP/plugins"
+cp "$FORK_MP" "$CH_DIR_MP/plugins/known_marketplaces.json"
+cp "$FORK_REG" "$CH_DIR_MP/plugins/installed_plugins.json"
+expect_eq "BIONIC_CLAUDE_HOME reaches the same registry (the shared chain)" \
+  "$FORK_SRC_PATH" \
+  "$(probe_run BIONIC_CLAUDE_HOME="$CH_DIR_MP" -- detect_marketplace_source_path)"
+
+# THE DISCRIMINATOR (r1's highest-risk port #3, shown once). A fixture keyed
+# LITERALLY "bionic" cannot tell the adapted function apart from the old
+# verbatim-omni body, because `_detect_marketplace_name` falls back to the
+# literal "bionic" whenever installed_plugins.json is absent — the same
+# stdout the fork fixture above proves only when a name-keyed registry is
+# actually consulted. Recorded, never asserted as a regression: this is the
+# fixture SHAPE the ledger warns away from, not a behaviour this suite pins.
+LITERAL_MP="$TMP/mp-source-literal-bionic-known.json"
+jq -n --arg p "$FORK_SRC_PATH" '{bionic: {source: {source: "directory", path: $p}}}' > "$LITERAL_MP"
+LITERAL_OUT="$(probe_run BIONIC_KNOWN_MARKETPLACES_FILE="$LITERAL_MP" -- detect_marketplace_source_path)"
+echo "      (discriminator: a fixture keyed literally 'bionic' also returns '$LITERAL_OUT' —"
+echo "       passing on the fallback name, not on name-resolution; the fork fixture above is"
+echo "       what actually exercises _detect_marketplace_name's jq path)"
+
 section "Group 7: read-only is a contract, not an intention"
 #
 # Same wall the rest of detect.sh lives under: fingerprint the inputs, run

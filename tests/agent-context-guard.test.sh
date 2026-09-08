@@ -198,6 +198,24 @@ run_guard() {  # <payload> <target...>
   return 0
 }
 
+# THE SAME CALL WITH THE DETAIL KNOB ON (slice 13, ruling D-1). The user stream is one
+# line now — `bionic: <verb> refused — <fact> (<fix>)` — and everything a refusal used to
+# spell out for the reader is `detail`, which reaches a stream only under
+# BIONIC_WALL_VERBOSE=1. A row that wants a value out of a refusal drives the call a
+# SECOND time through this, and asserts on $VERR; asserting that value on $ERR would now
+# be asserting that the wall leaks it. Driven only after a first drive that refused, so no
+# allowed call is ever run twice.
+VERR=""
+run_guard_verbose() {  # <payload> <target...> -> sets VERR
+  local payload="$1"; shift
+  local _sid; _sid=$(printf '%s' "$payload" | jq -r '.session_id // ""' 2>/dev/null) || _sid=""
+  printf '%s' "$payload" | env HOME="$FAKE_HOME" CLAUDE_CONFIG_DIR="$FAKE_HOME/.claude" \
+          CLAUDE_CODE_SESSION_ID="$_sid" BIONIC_WALL_VERBOSE=1 \
+          ANTHROPIC_API_KEY=sk-fixture-marker bash "$GUARD" "$@" >/dev/null 2>"$SANDBOX/.verr"
+  VERR=$(cat "$SANDBOX/.verr")
+  return 0
+}
+
 run_wall() {  # <payload> <wall> — the positive control: straight in, no guard
   local payload="$1" wall="$2"
   local _sid; _sid=$(printf '%s' "$payload" | jq -r '.session_id // ""' 2>/dev/null) || _sid=""
@@ -508,8 +526,11 @@ roster_row_fixture "session=$SID" name=t6nested "agent_id=$AGENT_ID" \
 # CELL 1: agent context + armed -> the arm runs, and refuses the off-budget suite.
 run_guard "$(mk_suite_payload "$REPO_S" 'bash tests/gamma.test.sh' yes)" "$SUITE_WALL"
 expect_eq "G9.1 agent context + armed: the budget arm REFUSES an off-budget suite" "2" "$ST"
-expect_contains "G9.1 …in the arm's own words" "BUDGET" "$ERR"
-expect_contains "G9.1 …naming the recorded set" "alpha.test.sh" "$ERR"
+expect_contains "G9.1 …in the ruled one line, and it is the BUDGET arm's" \
+  "suite-run refused — that suite is not on this agent's budget" "$ERR"
+run_guard_verbose "$(mk_suite_payload "$REPO_S" 'bash tests/gamma.test.sh' yes)" "$SUITE_WALL"
+expect_contains "G9.1 …in the arm's own words" "BUDGET" "$VERR"
+expect_contains "G9.1 …naming the recorded set" "alpha.test.sh" "$VERR"
 
 # …and the same channel lets an ON-budget suite through, so G9.1 is the budget and not the
 # channel refusing everything it is handed.

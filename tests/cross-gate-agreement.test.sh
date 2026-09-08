@@ -44,6 +44,15 @@ set -uo pipefail
 
 . "$(dirname "$0")/lib/resolve-roots.sh"
 . "$(dirname "$0")/lib/assert.sh"
+
+# THE DETAIL IS ON, FOR THE WHOLE SUITE (slice 13, ruling D-1). Since the migration a
+# wall's user stream is ONE line — `bionic: <verb> refused — <fact> (<fix>)` — and every
+# FACT this file cross-checks between hooks (a resolved path, a derived step, a roster
+# id, a live version constant, a main checkout) travels in `detail`. That is the right
+# reading for this suite and not a loosening: what a USER sees is each hook's own suite's
+# subject and tests/refuse.test.sh's, while this file is about whether two hooks agree
+# about the world. `BIONIC_WALL_VERBOSE=1` is the knob that asks a wall for its facts.
+export BIONIC_WALL_VERBOSE=1
 . "$(dirname "$0")/lib/bound-marker.sh"
 . "$(dirname "$0")/lib/live-answer.sh"
 . "$(dirname "$0")/lib/roster-row.sh"
@@ -471,8 +480,12 @@ verdict_er() {  # <repo> -> yes|no|other:<detail>
 # answer is `yes:<value>` where the others answer `yes`. Callers split on `:`.
 verdict_eg() {  # <repo> -> yes:<current>|no|other:<detail>
   local out st
+  # BIONIC_WALL_VERBOSE=1 (slice 13, ruling D-1). The gate's user line is one sentence
+  # now and the DERIVED VALUE this party reports — the step number the plan has no line
+  # for — lives in `detail`. Reading the line alone would make every row here
+  # `other:<prefix>`; the knob is how the party keeps reporting a value at all.
   out=$(mk_bash_payload "$SID_A" "$SANDBOX/t.jsonl" "$1" "git commit -m x" \
-        | env -u CLAUDE_PROJECT_DIR bash "$PARTY_EG" 2>&1); st=$?
+        | env -u CLAUDE_PROJECT_DIR BIONIC_WALL_VERBOSE=1 bash "$PARTY_EG" 2>&1); st=$?
   if [ "$st" -eq 0 ]; then echo no; return; fi
   case "$out" in
     *"has no 'Step "*)
@@ -514,7 +527,7 @@ verdict_lg() {  # <repo> -> yes|no|other:<detail>
   out=$(mk_stopsweep_payload "$repo" "$SID_LG" false | bash "$PARTY_LG" 2>&1); st=$?
   case "$st" in
     0) echo no ;;
-    2) if printf '%s' "$out" | grep -qF 'LANDING CONTRACT UNMET'; then echo yes; else echo "other:block-no-detail"; fi ;;
+    2) if printf '%s' "$out" | grep -qF "bionic: stop refused — a dispatched agent's contract is unmet"; then echo yes; else echo "other:block-no-detail"; fi ;;
     *) echo "other:exit-$st" ;;
   esac
 }
@@ -880,14 +893,34 @@ CKSUM_BEFORE=$(shasum "$PARTY_DP" "$PARTY_SG" "$PARTY_EG" "$PARTY_ER" "$PARTY_LG
 RUN_LIB="$BIONIC_HOOKS_DIR/../payload/scripts/lib/run.sh"
 [ -r "$RUN_LIB" ] || RUN_LIB="$BIONIC_HOOKS_DIR/../scripts/lib/run.sh"
 LIB_DIR_SRC="$(dirname "$RUN_LIB")"
+# THE DOCS-ROOT READER IS lib/roots.sh's NOW (epic-22 wave-01, N1), so two of the seven
+# mutations below have to be applied there. run.sh used to carry both `docs_root` and
+# `config_value`, and its own comment warned that moving `config_value` above `docs_root`
+# would land the `!d`-guarded awk edits on a reader the fixtures never call, making this
+# section "go quietly vacuous rather than red". The move happened — both functions are one
+# function in roots.sh — so the guard against that is here instead: each mutation names the
+# file it edits, and `mutate_lib` returns 1 when its awk target matches nothing, which the
+# loop below reports as a RED row and not a pass.
+ROOTS_LIB="$LIB_DIR_SRC/roots.sh"
 MUTDIR="$SANDBOX/mutants"; mkdir -p "$MUTDIR"
 
 expect_eq "the library under mutation is on disk (this section is not vacuous)" "yes" \
   "$([ -r "$RUN_LIB" ] && echo yes || echo no)"
+expect_eq "…and so is the roots library the docs-root mutations edit" "yes" \
+  "$([ -r "$ROOTS_LIB" ] && echo yes || echo no)"
+
+# mutate_lib_file <kind> -> the shipped library file this mutation edits
+mutate_lib_file() {
+  case "$1" in
+    docs-root-last-wins|keep-quotes) printf '%s' "$ROOTS_LIB" ;;
+    *)                               printf '%s' "$RUN_LIB" ;;
+  esac
+}
 
 # mutate_lib <kind> <dst>  — rc 1 if the mutation matched nothing
 mutate_lib() {
-  local kind="$1" dst="$2" src="$RUN_LIB"
+  local kind="$1" dst="$2" src
+  src="$(mutate_lib_file "$kind")"
   case "$kind" in
     docs-root-last-wins)   # head -1 -> tail -1 in docs_root
       awk 'BEGIN{d=0} !d && $0=="      | head -1 \\" {print "      | tail -1 \\"; d=1; next} {print}' \
@@ -925,10 +958,11 @@ for m in $MUTATIONS; do
   tree="$MUTDIR/$m"
   mkdir -p "$tree/hooks" "$tree/scripts/lib"
   cp "$LIB_DIR_SRC"/*.sh "$tree/scripts/lib/" 2>/dev/null
-  if ! mutate_lib "$m" "$tree/scripts/lib/run.sh"; then
+  if ! mutate_lib "$m" "$tree/scripts/lib/$(basename "$(mutate_lib_file "$m")")"; then
     # A mutation that matches nothing is not a passing test — it means the code moved
     # and this proof has gone vacuous (fixtures-can-pin-away-the-test).
-    no "mutation '$m' applies to lib/run.sh" "the awk target matched nothing — the library moved"
+    no "mutation '$m' applies to $(basename "$(mutate_lib_file "$m")")" \
+       "the awk target matched nothing — the library moved"
     continue
   fi
   for _pf in "$PARTY_DP" "$PARTY_SG" "$PARTY_EG" "$PARTY_ER" "$PARTY_LG" "$PARTY_SW"; do
@@ -4078,94 +4112,306 @@ expect_eq "…while the library defines the predicate it replaced them with" "ye
   "$(/usr/bin/grep -q '^active_plan()' "$BIONIC_HOOKS_DIR/../payload/scripts/lib/run.sh" && echo yes || echo no)"
 
 # ============================================================
-section "R — where a contracted path resolves: four copies, one rule (epic-17 W6 S15)"
+section "Roots — one resolver per root, one definition each (epic-22 wave-01, AC-N1.1/N1.2)"
 # ============================================================
 #
-# THE DISAGREEMENT THIS ENDS, measured on this epic's own dispatches. A brief writes
-# `Expected artifact: record/epic-17-w6/x.md` because that is the spelling the Step-5
+# WHAT THIS REPLACES. §R held FOUR copies of `resolve_docs_root()` — the evidence gate as
+# designated origin, plus the governing-skill hook, the sweeper and stop-check — to one
+# text, body for body, with a mutation arm proving the comparison discriminated. It could
+# not see a fifth: its count globbed `"$BIONIC_HOOKS_DIR"/*.sh`, and `docs_root()` in
+# payload/scripts/lib/run.sh answered the same question under another name, outside the
+# glob. That is the shape a body-for-body wall has: it holds the copies it was told about.
+#
+# THERE ARE NO COPIES NOW. payload/scripts/lib/roots.sh owns one resolver per root and every
+# former carrier is a caller, so the question this section asks is not "do the copies agree"
+# but "is there still exactly one of each" — over hooks/, payload/scripts/ AND
+# payload/scripts/lib/, which is what §R's glob could not reach.
+#
+# THE DISAGREEMENT §R ENDED, kept here because it is why any of this is pinned. A brief
+# writes `Expected artifact: record/epic-17-w6/x.md` because that is the spelling the Step-5
 # contract and canonical-sdlc-evidence-gate.sh publish for an artifact under the docs root.
-# The gate resolved it there. hooks/session-sweeper.sh resolved it against the REPO root
-# and reported the row missing; hooks/stop-check.sh resolved it against the observer's cwd
-# and printed `progress_state=absent` for a file that was present. Three readers of one
-# sentence, two of them wrong — and the cost was not just a wrong reading: one slice wrote
-# a duplicate copy at the repo root to satisfy the gate, so the wrong gate taught the work
-# to be wrong too.
+# The gate resolved it there. hooks/session-sweeper.sh resolved it against the REPO root and
+# reported the row missing; hooks/stop-check.sh resolved it against the observer's cwd and
+# printed `progress_state=absent` for a file that was present. Three readers of one
+# sentence, two of them wrong — and one slice then wrote a duplicate copy at the repo root
+# to satisfy the gate, so the wrong reader taught the work to be wrong too.
 #
-# WHY A BODY-FOR-BODY WALL AND NOT A THIRD ROUND TRIP. There is no shared library under
-# hooks/ — every hook is a standalone script the CLI invokes by path — so the honest fix is
-# the smallest duplication plus a wall that keeps the copies one text. That is §N.1's and
-# §Q's method, and this is the same shape: `canonical-sdlc-evidence-gate.sh` is the
-# designated ORIGIN (the copy that documents the rule at its definition site), one
-# non-vacuity check proves the extractor pulls a real body from it, then each carrier is
-# compared against it. A per-hook suite cannot see this drift: each carrier is green in its
-# own suite while all four disagree.
-#
-# TWO FAMILIES, both duplicated for the same reason:
-#   resolve_docs_root()   <docs-root:> in .bionic/config.yaml, else <project>/.bionic/docs
-#   the resolver itself   absolute stands · record/-led is docs-root-relative · else project
-# The resolver is named `resolve_walk_path` in the gate (its caller asks about a walk
-# artifact) and `abs_path` in the two hooks (theirs ask about a roster path). Same body,
-# different name — the `clean()`/`mline_value()` precedent in §N.1 above. Only the FIRST
-# family — `resolve_docs_root()` — is pinned below; the resolver-itself family and
-# canonical-sdlc-governing-skill.sh's own, deliberately WIDER `resolve_design_path()` (it
-# adds specs/plans/adrs/incidents/ leaders on top of `record/`, by design — see that hook's
-# own comment at the call site) are unchanged by this fix.
-#
-# THE FOURTH COPY (Step-6 duplication review, record/wave-1.4.0/review-duplication.md,
-# 05:55Z finding). ADOPT/4's assumption counted THREE `resolve_docs_root()` carriers — the
-# gate, the sweeper, stop-check — and named this section as the test that pins them. It
-# never was: this section built a mutant and asserted nothing (dead code — `R_MUT_DIR` was
-# read nowhere). A FOURTH live copy sits at canonical-sdlc-governing-skill.sh:150,
-# pre-dating this wave and never counted. What follows pins all FOUR: which files define
-# the function (a fifth or a missing one goes red), that their bodies agree with the
-# origin's, and that a doctored copy is caught.
+# STILL OUT OF SCOPE, and named so a later reader does not mistake absence for oversight:
+# `resolve_walk_path()` in the gate and `abs_path()` in two hooks (same body, different
+# name — the `clean()`/`mline_value()` precedent in §N.1), and the governing-skill hook's
+# deliberately WIDER `resolve_design_path()`, which adds specs/plans/adrs/incidents/ leaders
+# on top of `record/`. Those are path-SHAPE resolvers, not roots.
 
-R_ORIGIN="$PARTY_EG"
-R_CARRIERS='canonical-sdlc-evidence-gate session-sweeper stop-check canonical-sdlc-governing-skill'
+ROOTS_LIB_DIR="$BIONIC_HOOKS_DIR/../payload/scripts/lib"
+[ -d "$ROOTS_LIB_DIR" ] || ROOTS_LIB_DIR="$BIONIC_HOOKS_DIR/../scripts/lib"
+ROOTS_SCRIPTS_DIR="$(dirname "$ROOTS_LIB_DIR")"
 
-# (a) THE COUNT. Exactly these four hooks define resolve_docs_root() — named, not globbed,
-# for the same reason §N.1's N_ADOPTED is named: a glob shrinks silently to nothing if the
-# marker moves, and this row would pass over air.
-R_DEFINERS=$(/usr/bin/grep -ln '^resolve_docs_root()' "$BIONIC_HOOKS_DIR"/*.sh 2>/dev/null \
-  | while IFS= read -r _f; do basename "$_f" .sh; done | sort | tr '\n' ' ' | sed 's/ $//')
-R_EXPECT=$(printf '%s\n' $R_CARRIERS | sort | tr '\n' ' ' | sed 's/ $//')
-expect_eq "exactly four hooks define resolve_docs_root (a fifth or a missing one goes red)" \
-  "$R_EXPECT" "$R_DEFINERS"
+# roots_defcount <search root> <fn> -> how many files under it define <fn> at column 0.
+# The three directories are named rather than globbed from a marker, for §N.1's reason: a
+# glob that shrinks to nothing passes over air.
+roots_defcount() {  # <tree root> <fn>
+  local t="$1" fn="$2" hooks lib scripts
+  hooks="$t/hooks"; lib="$t/payload/scripts/lib"; scripts="$t/payload/scripts"
+  [ -d "$lib" ] || { lib="$t/scripts/lib"; scripts="$t/scripts"; }
+  /usr/bin/grep -lE "^${fn}\(\)" \
+    "$hooks"/*.sh "$scripts"/*.sh "$lib"/*.sh 2>/dev/null | sort -u | wc -l | tr -d ' '
+}
 
-# (b) THE BODY. canonical-sdlc-evidence-gate.sh is the designated origin (it documents the
-# rule at its definition site); a non-vacuity check first proves the extractor pulls a real
-# body from it, then each of the other three carriers is compared against it, body for body.
-expect_eq "the origin's resolve_docs_root is non-vacuous (extractor pulls a real body)" "yes" \
-  "$([ "$(fn_body "$R_ORIGIN" resolve_docs_root | wc -l | tr -d ' ')" -gt 3 ] && echo yes || echo no)"
+ROOTS_TREE="$(cd "$BIONIC_HOOKS_DIR/.." && pwd -P)"
+ROOTS_NAMES='project_root bionic_root docs_root tmp_root archive_root plugin_root claude_home worktree_root transcripts_dir config_value'
 
-R_ORIGIN_BODY="$(fn_body "$R_ORIGIN" resolve_docs_root)"
-for _h in session-sweeper stop-check canonical-sdlc-governing-skill; do
-  expect_eq "$_h.sh's resolve_docs_root is the gate's, body for body" \
-    "$R_ORIGIN_BODY" "$(fn_body "$BIONIC_HOOKS_DIR/$_h.sh" resolve_docs_root)"
+# --- (a) NON-VACUITY. The search set is real, and the library is inside it. Without this
+# every count below could be 0 over an empty glob and read as "no duplicates". ---
+expect_eq "Roots the search set is non-empty (this section is not counting over air)" "yes" \
+  "$([ "$(ls "$ROOTS_TREE/hooks"/*.sh "$ROOTS_LIB_DIR"/*.sh 2>/dev/null | wc -l | tr -d ' ')" -gt 20 ] \
+     && echo yes || echo no)"
+expect_eq "Roots payload/scripts/lib/roots.sh is on disk" "yes" \
+  "$([ -r "$ROOTS_LIB_DIR/roots.sh" ] && echo yes || echo no)"
+
+# --- (b) THE COUNT. Exactly one definition of each name, anywhere in the tree. ---
+for _rn in $ROOTS_NAMES; do
+  expect_eq "Roots $_rn() is defined exactly once across hooks/, scripts/ and scripts/lib/" \
+    "1" "$(roots_defcount "$ROOTS_TREE" "$_rn")"
 done
 
-# (c) MUTATION, the discriminator: doctor ONE copy back to the repo-root-only form the
-# family had before the config.yaml override existed — the shipped file is never touched —
-# and the (b) comparison above must be provably able to catch it. Without this, (a) and (b)
-# together prove only that four files exist and currently agree, not that disagreement is
-# detectable.
-R_MUT_DIR="$SANDBOX/resolver-mutant"; mkdir -p "$R_MUT_DIR"
-anchor -E "$SWEEPER" '^resolve_docs_root\(\) \{$' 1
-awk '
-  /^resolve_docs_root\(\) \{$/ {
-    print
-    print "  local proj=\"$1\""
-    print "  echo \"$proj/.bionic/docs\""
-    print "}"
-    skip = 1
-    next
-  }
-  skip { if ($0 == "}") skip = 0; next }
-  { print }
-' "$SWEEPER" > "$R_MUT_DIR/session-sweeper.sh"
+# --- (c) WHERE THE ONE DEFINITION IS. Nine of the ten live in roots.sh. `project_root` is
+# the deliberate exception: its implementation is lib/root.sh's ancestor walk, with its own
+# suite (tests/root.test.sh) and the candidate tags doctor and the SessionStart report
+# render, and roots.sh SOFT-SOURCES root.sh rather than restating it — re-defining it would
+# be the second definition this section forbids. ---
+for _rn in bionic_root docs_root tmp_root archive_root plugin_root claude_home worktree_root transcripts_dir config_value; do
+  expect_eq "Roots …and $_rn()'s one definition is in roots.sh" "1" \
+    "$(/usr/bin/grep -cE "^${_rn}\(\)" "$ROOTS_LIB_DIR/roots.sh")"
+done
+expect_eq "Roots project_root()'s one definition is root.sh's, and roots.sh re-exports it" "1" \
+  "$(/usr/bin/grep -cE '^project_root\(\)' "$ROOTS_LIB_DIR/root.sh")"
+expect_eq "Roots …by sourcing it, not by restating it" "1" \
+  "$(grep -cF '/root.sh"' "$ROOTS_LIB_DIR/roots.sh")"
 
-expect_ne "…and the mutated copy no longer agrees with the origin, body for body" \
-  "$R_ORIGIN_BODY" "$(fn_body "$R_MUT_DIR/session-sweeper.sh" resolve_docs_root)"
+# --- (d) THE FIVE RETIRED DOCS-ROOT COPIES ARE CALLERS. §R's four carriers plus run.sh's
+# `docs_root()`, the one §R could not see. Each defines nothing and calls the library. ---
+for _rh in canonical-sdlc-evidence-gate canonical-sdlc-governing-skill session-sweeper stop-check; do
+  expect_eq "Roots $_rh.sh defines no resolve_docs_root of its own" "0" \
+    "$(/usr/bin/grep -cE '^resolve_docs_root\(\)' "$ROOTS_TREE/hooks/$_rh.sh")"
+  expect_eq "Roots …and calls the library's docs_root" "yes" \
+    "$([ "$(/usr/bin/grep -cE '(^|[^a-z_])docs_root "' "$ROOTS_TREE/hooks/$_rh.sh")" -ge 1 ] \
+       && echo yes || echo no)"
+  # THE DECLARATION RULE, and why it is a disjunction. A hook reaches `docs_root` one of
+  # two ways: it declares roots.sh through the loader idiom, or it declares run.sh, which
+  # soft-sources roots.sh from its own directory. The second is not a loophole — it is the
+  # shape lib/detect.sh already has for lib/deps.sh, and no hook in the tree declares
+  # deps.sh either. What matters is that a hook does not reach a library it never named a
+  # route to; a hook declaring NEITHER is the regression this row catches.
+  expect_eq "Roots …declaring a route to it, roots.sh or the run.sh that pulls it in" "yes" \
+    "$([ "$(/usr/bin/grep -cE '^BIONIC_LIB_WANT=.*(roots\.sh|run\.sh)' "$ROOTS_TREE/hooks/$_rh.sh")" -ge 1 ] \
+       && echo yes || echo no)"
+done
+
+# The two hooks that source NEITHER run.sh nor any other carrier name roots.sh outright —
+# without the declaration the loader would qualify a directory that has no roots.sh in it,
+# and these two would resolve every contracted path against the wrong root in silence.
+for _rh in session-sweeper stop-check; do
+  expect_eq "Roots $_rh.sh names roots.sh outright — it sources no other carrier" "1" \
+    "$(/usr/bin/grep -cE '^BIONIC_LIB_WANT="roots\.sh( |")' "$ROOTS_TREE/hooks/$_rh.sh")"
+  expect_eq "Roots …and sources it" "1" \
+    "$(grep -cF '. "$BIONIC_LIB/roots.sh"' "$ROOTS_TREE/hooks/$_rh.sh")"
+  expect_eq "Roots …and really does not source run.sh (the disjunction above is not vacuous)" "0" \
+    "$(/usr/bin/grep -cE '^BIONIC_LIB_WANT=.*run\.sh' "$ROOTS_TREE/hooks/$_rh.sh")"
+done
+
+# lib/run.sh IS the carrier the disjunction leans on: it soft-sources roots.sh at source
+# time, so `. lib/run.sh` on its own is still a complete thing.
+expect_eq "Roots lib/run.sh soft-sources roots.sh, which is what makes the route real" "1" \
+  "$(grep -cF '/roots.sh"' "$ROOTS_LIB_DIR/run.sh")"
+expect_eq "Roots …and sourcing run.sh alone really does define docs_root and config_value" "yes" \
+  "$(bash -c '. "$1" >/dev/null 2>&1; declare -F docs_root >/dev/null 2>&1 && declare -F config_value >/dev/null 2>&1 && echo yes || echo no' _ "$ROOTS_LIB_DIR/run.sh")"
+expect_eq "Roots lib/run.sh defines no docs_root of its own (the fifth copy, invisible to §R)" "0" \
+  "$(/usr/bin/grep -cE '^docs_root\(\)' "$ROOTS_LIB_DIR/run.sh")"
+expect_eq "Roots …and lib/run.sh defines no config_value of its own either" "0" \
+  "$(/usr/bin/grep -cE '^config_value\(\)' "$ROOTS_LIB_DIR/run.sh")"
+
+# --- (e) MUTATION, THE DISCRIMINATOR. Without this, (b) proves only that the tree currently
+# has one of each — not that a SECOND one would be caught. A scratch copy of the tree gets a
+# second definition planted in a file that has no business owning one, and the same count
+# must come back 2. The shipped tree is never touched. Both directions are asserted: the
+# planted name goes to 2 AND an unplanted name stays at 1, so a plant that accidentally
+# broke the counter would not read as a pass. ---
+ROOTS_MUT="$SANDBOX/roots-mutant"
+mkdir -p "$ROOTS_MUT/hooks" "$ROOTS_MUT/payload/scripts/lib"
+cp "$ROOTS_TREE/hooks"/*.sh "$ROOTS_MUT/hooks/" 2>/dev/null
+cp "$ROOTS_LIB_DIR"/*.sh "$ROOTS_MUT/payload/scripts/lib/" 2>/dev/null
+cp "$ROOTS_SCRIPTS_DIR"/*.sh "$ROOTS_MUT/payload/scripts/" 2>/dev/null
+
+expect_eq "Roots the scratch copy starts clean (the mutation below is what moves the count)" "1" \
+  "$(roots_defcount "$ROOTS_MUT" docs_root)"
+
+# The plant is the exact regression this section exists to catch: a hook growing its own
+# copy of the docs-root rule back, under the library's name.
+cat >> "$ROOTS_MUT/hooks/session-sweeper.sh" <<'ROOTS_PLANT'
+
+docs_root() {
+  local proj="$1"
+  echo "$proj/.bionic/docs"
+}
+ROOTS_PLANT
+
+expect_eq "Roots …a SECOND docs_root planted in a hook makes the count go red" "2" \
+  "$(roots_defcount "$ROOTS_MUT" docs_root)"
+expect_eq "Roots …and an unplanted resolver is unaffected (the counter is per-name)" "1" \
+  "$(roots_defcount "$ROOTS_MUT" claude_home)"
+
+# The same proof one layer over, on a LIBRARY rather than a hook — the direction §R's
+# hooks/-only glob was blind to, and the one that hid `docs_root()` in run.sh for a wave.
+cat >> "$ROOTS_MUT/payload/scripts/lib/run.sh" <<'ROOTS_PLANT2'
+
+claude_home() {
+  printf '%s' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+}
+ROOTS_PLANT2
+
+expect_eq "Roots …a second claude_home planted in a LIBRARY goes red too" "2" \
+  "$(roots_defcount "$ROOTS_MUT" claude_home)"
+
+# ============================================================
+section "V — SUPPORTED_SDLC_VERSION: one owner, four carriers, five renderings (AC-19)"
+# ============================================================
+#
+# r3 §1E item 13: one logical constant, five renderings, and the two hooks were not held
+# in agreement by anything until this section — the only prior test hit was a single
+# spot-check literal in tests/canonical-sdlc-evidence-gate.test.sh, and operational-rules.md
+# itself says the pin-sync rows lived in tests/scripts.test.sh, retired at epic-18 W3
+# (8582861). `.claude/rules/hook-authoring.md` said both hooks pinned 12 well after they
+# moved to 14 — a stale literal in a FILE ABOUT the pin, the same failure mode this section
+# exists to catch in the pin's own carriers.
+#
+# THE OWNER is canonical-sdlc-evidence-gate.sh (spec AC-19, provenance table): it is the
+# file operational-rules.md's close-out contract cites by name ("Both hooks check
+# `SUPPORTED_SDLC_VERSION=14`") and the one whose refusal message names the fix. Four
+# carriers restate it: the governing-skill hook's own copy, the value operational-rules.md
+# documents in prose, and two SVG renderings — lifecycle.svg's title and hook-chain.svg's
+# three `class="version-pin"` chips (§1E's SVG count is 2; hook-chain.svg alone carries
+# three of the five total renderings the census counts as "both SVGs"). A per-file suite
+# cannot see this drift: each carrier reads fine on its own while all five disagree.
+
+V_ORIGIN="$PARTY_EG"
+V_GSKILL="$BIONIC_HOOKS_DIR/canonical-sdlc-governing-skill.sh"
+V_RULES="$BIONIC_SKILLS_DIR/canonical-sdlc/operational-rules.md"
+V_LIFECYCLE="$BIONIC_SKILLS_DIR/canonical-sdlc/diagrams/lifecycle.svg"
+V_HOOKCHAIN="$BIONIC_SKILLS_DIR/canonical-sdlc/diagrams/hook-chain.svg"
+
+# extractors — each pulls the bare integer out of its file's own rendering shape.
+v_hook_val() { grep -m1 '^SUPPORTED_SDLC_VERSION=' "$1" 2>/dev/null | cut -d= -f2 | tr -cd '0-9'; }
+v_rules_val() {  # operational-rules.md lists versions newest-first and says so at :17
+                 # ("Every version bullet below v14 in this file is historical record
+                 # only") — the FIRST `SUPPORTED_SDLC_VERSION=` hit is the live value, the
+                 # rest are superseded history. Same first-match convention §N.1's loader
+                 # block extraction and the evidence-gate's own frontmatter reads use.
+  grep -m1 -o 'SUPPORTED_SDLC_VERSION=[0-9]\+' "$1" 2>/dev/null | cut -d= -f2
+}
+v_lifecycle_val() {  # <text class="version-pin" data-pin="lifecycle-title" ...>...(v14)</text>
+  grep -m1 'data-pin="lifecycle-title"' "$1" 2>/dev/null | grep -oE '\(v[0-9]+\)' | tr -cd '0-9'
+}
+v_hookchain_vals() {  # three chips, one per line, in the order they render:
+                      #   "canonical_sdlc_version == 14" (x2) and
+                      #   "canonical_sdlc_version: 14 is the only value either hook accepts."
+  grep 'class="version-pin"' "$1" 2>/dev/null | while IFS= read -r _vline; do
+    printf '%s\n' "$_vline" | grep -oE 'canonical_sdlc_version[=: ]+[0-9]+' | grep -oE '[0-9]+$'
+  done
+}
+
+V_ORIGIN_VAL="$(v_hook_val "$V_ORIGIN")"
+expect_eq "the origin (evidence gate) declares a non-vacuous SUPPORTED_SDLC_VERSION" "yes" \
+  "$([ -n "$V_ORIGIN_VAL" ] && [ "$V_ORIGIN_VAL" -gt 0 ] 2>/dev/null && echo yes || echo no)"
+
+expect_eq "the governing-skill hook's SUPPORTED_SDLC_VERSION agrees with the gate's" \
+  "$V_ORIGIN_VAL" "$(v_hook_val "$V_GSKILL")"
+
+expect_eq "operational-rules.md's live SUPPORTED_SDLC_VERSION value agrees with the gate's" \
+  "$V_ORIGIN_VAL" "$(v_rules_val "$V_RULES")"
+
+expect_eq "lifecycle.svg's title renders the same version" \
+  "$V_ORIGIN_VAL" "$(v_lifecycle_val "$V_LIFECYCLE")"
+
+V_HC_VALS="$(v_hookchain_vals "$V_HOOKCHAIN")"
+expect_eq "hook-chain.svg carries exactly three version-pin chips (not fewer, not more)" "3" \
+  "$(printf '%s\n' "$V_HC_VALS" | grep -c '[0-9]')"
+V_HC_N=0
+for _v in $V_HC_VALS; do
+  V_HC_N=$((V_HC_N + 1))
+  expect_eq "…hook-chain.svg version-pin chip #$V_HC_N agrees with the gate's" \
+    "$V_ORIGIN_VAL" "$_v"
+done
+
+# MUTATION, the discriminator: doctor the governing-skill hook's value on a COPY — the
+# shipped file is never touched — and the comparison above must be provably able to catch
+# it. Without this, the rows above prove only that five renderings exist and currently
+# agree, not that disagreement is detectable. The replacement value is derived from the
+# live one (never a hardcoded "14") so this arm keeps discriminating after the next version
+# bump instead of silently passing over air the way the hook-authoring.md staleness did.
+V_MUT_DIR="$SANDBOX/version-mutant"; mkdir -p "$V_MUT_DIR"
+anchor -E "$V_GSKILL" "^SUPPORTED_SDLC_VERSION=${V_ORIGIN_VAL}\$" 1
+sed "s/^SUPPORTED_SDLC_VERSION=${V_ORIGIN_VAL}\$/SUPPORTED_SDLC_VERSION=$((V_ORIGIN_VAL + 1))/" \
+  "$V_GSKILL" > "$V_MUT_DIR/canonical-sdlc-governing-skill.sh"
+expect_ne "…and a doctored governing-skill copy no longer agrees with the gate" \
+  "$V_ORIGIN_VAL" "$(v_hook_val "$V_MUT_DIR/canonical-sdlc-governing-skill.sh")"
+
+# CONTROL — the same copy, unmutated, still agrees. Without this the RED above could be the
+# `sed`/copy machinery itself rather than the mutation.
+cp "$V_GSKILL" "$V_MUT_DIR/canonical-sdlc-governing-skill.clean.sh"
+expect_eq "control: an UNMUTATED copy still agrees with the gate" \
+  "$V_ORIGIN_VAL" "$(v_hook_val "$V_MUT_DIR/canonical-sdlc-governing-skill.clean.sh")"
+
+# AC-R6.3 — the governing-skill hook's two HINTS (the version-mismatch Fix line and the
+# missing-frontmatter YAML block) read SUPPORTED_SDLC_VERSION; neither one's source states a
+# digit. Both sites went through the hook before: the Fix line always interpolated the
+# variable, and the YAML block's `canonical_sdlc_version: 14` was a literal until this
+# wave's ed78ae3 pick bound the value near the top of the file and interpolated it there too.
+V_HINT_REPO="$(new_repo "v-hint")"
+V_HINT_PLAN="$V_HINT_REPO/.bionic/docs/plans/epic-99/wave-01-x.plan.md"
+
+# -- the version-mismatch Fix line, against the real (unmutated) hook: a planted write
+# declaring canonical_sdlc_version: 13 (one below origin, never hardcoded as 13 anywhere but
+# in this plant) must be told to set the LIVE value, not seed its own doctored one back. --
+V_MISMATCH_STDERR="$(jq -n --arg p "$V_HINT_PLAN" --arg s "$SID_A" \
+    --arg c $'---\ngoverning-skill: canonical-sdlc\ncanonical_sdlc_version: 13\n---\nbody\n' \
+    '{session_id:$s, tool_name:"Write", tool_input:{file_path:$p, content:$c}}' \
+  | env HOME="$V_HINT_REPO" CLAUDE_CODE_SESSION_ID="$SID_A" bash "$V_GSKILL" 2>&1 >/dev/null)"
+expect_contains "…a planted version-13 write's Fix line names the live value, not 13" \
+  "canonical_sdlc_version: ${V_ORIGIN_VAL}" "$V_MISMATCH_STDERR"
+expect_eq "…and never echoes the doctored value back as the fix" "" \
+  "$(printf '%s' "$V_MISMATCH_STDERR" | grep -oE "set 'canonical_sdlc_version: 13'" || true)"
+
+# -- the missing-frontmatter YAML hint: against the real hook it must print the live value,
+# and against the §V mutant built above (SUPPORTED_SDLC_VERSION=origin+1) it must print THAT
+# value instead — proving the hint tracks the variable rather than a baked-in literal. --
+V_MISSING_C='# no frontmatter here
+'
+V_MISSING_STDERR="$(jq -n --arg p "$V_HINT_PLAN" --arg s "$SID_A" --arg c "$V_MISSING_C" \
+    '{session_id:$s, tool_name:"Write", tool_input:{file_path:$p, content:$c}}' \
+  | env HOME="$V_HINT_REPO" CLAUDE_CODE_SESSION_ID="$SID_A" bash "$V_GSKILL" 2>&1 >/dev/null)"
+expect_contains "…the missing-frontmatter hint prints the live value" \
+  "canonical_sdlc_version: ${V_ORIGIN_VAL}" "$V_MISSING_STDERR"
+
+# A hook copied bare into $V_MUT_DIR resolves its libraries via loader.sh's `../scripts/lib`
+# fallback, which is not there — see .claude/rules/lib-changes-in-worktrees.md's trap, the
+# same shape one level down: a hook run standalone needs its sibling library directory, not
+# just its own file. §S.4's S4_MUT builds that sibling once for the whole suite; this arm
+# needs its own copy since it mutates the hook the shared one does not.
+V_EXEC_MUT="$SANDBOX/version-mutant-exec"
+mkdir -p "$V_EXEC_MUT/hooks" "$V_EXEC_MUT/scripts/lib"
+cp "$LIB_DIR_SRC"/*.sh "$V_EXEC_MUT/scripts/lib/" 2>/dev/null
+cp "$V_MUT_DIR/canonical-sdlc-governing-skill.sh" "$V_EXEC_MUT/hooks/canonical-sdlc-governing-skill.sh"
+V_MISSING_MUT_STDERR="$(jq -n --arg p "$V_HINT_PLAN" --arg s "$SID_A" --arg c "$V_MISSING_C" \
+    '{session_id:$s, tool_name:"Write", tool_input:{file_path:$p, content:$c}}' \
+  | env HOME="$V_HINT_REPO" CLAUDE_CODE_SESSION_ID="$SID_A" \
+    bash "$V_EXEC_MUT/hooks/canonical-sdlc-governing-skill.sh" 2>&1 >/dev/null)"
+expect_contains "…and a MUTATED hook's hint prints ITS value, proving the hint follows the variable" \
+  "canonical_sdlc_version: $((V_ORIGIN_VAL + 1))" "$V_MISSING_MUT_STDERR"
+
+# -- static proof: no site in the hook's own source states the value as a bare digit; every
+# rendering of the field name is followed by the variable, never a literal. --
+expect_eq "…no 'canonical_sdlc_version: <digit>' literal anywhere in the hook's source" "" \
+  "$(grep -nE 'canonical_sdlc_version:[[:space:]]*[0-9]' "$V_GSKILL" || true)"
 
 
 # ============================================================
@@ -4308,13 +4554,13 @@ q_spawn_echo "$Q_TX" toolu_q6 "Read first: review-close.md. The marker is $Q_MAR
 
 # Each reader answers from ITS OWN file, in its own subshell: the poker's counters are
 # extracted and called for real (§I.1's precedent), patrol is sourced as doctor sources it.
-q_poker() {  # <fn-name> <transcript>
+q_poker() {  # <fn-name> <transcript> [<since ISO>]
   ( eval "$(awk -v n="$1" '$0 ~ "^" n "\\(\\)" {f=1} f{print; if ($0=="}") exit}' "$PARTY_PK")"
-    "$1" "$2" ) 2>/dev/null
+    "$1" "$2" "${3:-}" ) 2>/dev/null
 }
-q_patrol() {  # <transcript> -> "<dispatches> <refused>"
+q_patrol() {  # <transcript> [<since ISO>] -> "<dispatches> <refused>"
   ( . "$PARTY_PT" >/dev/null 2>&1
-    _patrol_scan "$1" ) 2>/dev/null \
+    _patrol_scan "$1" "${2:-}" ) 2>/dev/null \
   | awk -F'\t' '$1=="AGENTS"{a=$2} $1=="REFUSED"{r=$2} END{printf "%d %d", a+0, r+0}'
 }
 
@@ -4360,6 +4606,57 @@ Q_MUT_R="$( ( . "$Q_MUT" >/dev/null 2>&1; _patrol_scan "$Q_C1" ) 2>/dev/null \
             | awk -F'\t' '$1=="REFUSED"{print $2+0}' )"
 expect_eq "…and the truncating copy misses the late marker, so the pair splits (§Q discriminates)" \
   "0" "$Q_MUT_R"
+
+# --- Q.3 the WINDOW: one rule, two readers ----------------------------------
+#
+# §Q above proved the refusal-JOIN rule is one rule on two files with `since` left empty
+# ("the whole transcript") on both sides. This is the sibling proof for the WINDOW itself:
+# hooks/session-poker.sh scopes count_main_thread_dispatches/count_refused_dispatches to
+# the roster's own window (`roster_window()`, exposed as the `window` verb) and
+# payload/scripts/lib/patrol.sh takes the identical `since` parameter through
+# `_patrol_scan` (patrol_window() shells out to that verb the same way patrol_interval()
+# already shells out for the interval). Windowing either file alone splits this pair, which
+# is why the whole cluster is one commit.
+#
+# THE FIXTURE IS A FILE ON DISK, tests/fixtures/patrol-two-wave.jsonl, rather than built
+# inline: this section's whole claim is about which entries a reader counts, so the entries
+# are reviewable as one artifact instead of as a sequence of jq calls. It can be a static
+# file precisely because `since` here is a LITERAL instant. tests/doctor-patrol.test.sh
+# Section 12 asks the same question end-to-end through doctor, where the window is the
+# roster file's own creation time and the waves have to be dated against it at run time —
+# a static file cannot express that, so Section 12 builds its own dated transcript.
+#
+# TWO WAVES: three entries before 2026-09-01T00:00:00Z carrying one refusal, four entries
+# after it carrying one refusal. Lifetime 5 dispatches / 2 refusals, windowed 3 / 1.
+Q3_TX="$REPO_ROOT/tests/fixtures/patrol-two-wave.jsonl"
+Q3_SINCE="2026-09-01T00:00:00Z"
+
+expect_true "Q.3 fixture: the two-wave transcript is on disk" test -f "$Q3_TX"
+
+Q3_PK_D="$(q_poker count_main_thread_dispatches "$Q3_TX" "$Q3_SINCE")"
+Q3_PK_R="$(q_poker count_refused_dispatches "$Q3_TX" "$Q3_SINCE")"
+Q3_PT="$(q_patrol "$Q3_TX" "$Q3_SINCE")"; Q3_PT_D="${Q3_PT%% *}"; Q3_PT_R="${Q3_PT##* }"
+
+expect_eq "windowed DISPATCHES: the poker counts only wave two (3)" "3" "$Q3_PK_D"
+expect_eq "windowed DISPATCHES: poker and patrol agree" "$Q3_PK_D" "$Q3_PT_D"
+expect_eq "windowed REFUSED: the poker counts only wave two's refusal, not wave one's (1)" \
+  "1" "$Q3_PK_R"
+expect_eq "windowed REFUSED: poker and patrol agree" "$Q3_PK_R" "$Q3_PT_R"
+
+# THE DISCRIMINATOR: with no window at all (since="") both readers fall back to the
+# transcript's whole life, so BOTH counts rise (5 dispatches, 2 refusals — one refusal per
+# wave) — proof `since`, not some other difference, is what produced the smaller windowed
+# counts above, and that this is not the coincidence of a fixture with one refusal in it.
+Q3_PK_D_LIFE="$(q_poker count_main_thread_dispatches "$Q3_TX" "")"
+Q3_PK_R_LIFE="$(q_poker count_refused_dispatches "$Q3_TX" "")"
+Q3_PT_LIFE="$(q_patrol "$Q3_TX" "")"; Q3_PT_D_LIFE="${Q3_PT_LIFE%% *}"; Q3_PT_R_LIFE="${Q3_PT_LIFE##* }"
+expect_eq "…and with no window at all, both readers count the earlier wave's dispatches too (5)" \
+  "5" "$Q3_PK_D_LIFE"
+expect_eq "…poker and patrol agree on the lifetime dispatch count too" \
+  "$Q3_PK_D_LIFE" "$Q3_PT_D_LIFE"
+expect_eq "…and the earlier wave's refusal too (2, not 1)" "2" "$Q3_PK_R_LIFE"
+expect_eq "…poker and patrol agree on the lifetime refused count too" \
+  "$Q3_PK_R_LIFE" "$Q3_PT_R_LIFE"
 
 # ============================================================
 section "Section R — the ADOPTED address: one construction, three sites"
@@ -5893,7 +6190,7 @@ LA_C0=$(la_check la-target)
 expect_contains "the dispatch wall counts the live open seat against the ceiling" \
   "open=1" "$LA_B0"
 expect_contains "…and refuses on it, which is the answer the count produces" \
-  "BLOCKED" "$LA_B0"
+  "bionic: " "$LA_B0"
 expect_absent "…rather than refusing because it could not read the answer at all" \
   "call ListAgents" "$LA_B0"
 expect_contains "the observation resolves a live target to its agent id" "$LA_TID" "$LA_C0"
@@ -5903,7 +6200,7 @@ expect_absent "…and does not report it as absent from the live set" "not live"
 # take; a target it does not find is not this gate's business and PASSES THROUGH. Those two
 # words ARE the resolution, and they are what moves when the parser does.
 expect_contains "the stop guard has standing over the same target: it blocks the stop" \
-  "BLOCKED" "$LA_G0"
+  "bionic: " "$LA_G0"
 expect_contains "…naming that very target in the observation it asks for" \
   "stop-check.sh la-target" "$LA_G0"
 expect_absent "…rather than passing it through as no agent of this session" \
@@ -6001,7 +6298,7 @@ LA_G5=$(la_guard la-target)
 expect_absent "idle open seat: the dispatch wall stops counting it" "open=1" "$LA_B5"
 expect_absent "…and prints no writers refusal at all" "writers:" "$LA_B5"
 expect_contains "…while the SAME answer still gives the stop guard standing over its target" \
-  "BLOCKED" "$LA_G5"
+  "bionic: " "$LA_G5"
 expect_absent "…which it does not call absent from the recorded answer" "is not live" "$LA_G5"
 
 # MUTATION A — the parser writes `running` into every row. The status the BUDGET reads is
@@ -6026,7 +6323,7 @@ LA_TREE="$BIONIC_HOOKS_DIR/.."
 
 expect_contains "mutation A: the wall counts the finished agent open again — the budget moved" \
   "open=1" "$LA_B5A"
-expect_contains "…and refuses on it" "BLOCKED" "$LA_B5A"
+expect_contains "…and refuses on it" "bionic: " "$LA_B5A"
 # The guard's channel quotes the tree it was loaded from in its `Fix:` lines, so the
 # compare normalises that one path away and is byte-exact on everything else — including
 # the verdict, which is the thing under test.
@@ -6036,7 +6333,7 @@ expect_eq "…while the guard's whole channel is otherwise unchanged — presenc
 expect_contains "…and the normaliser really did rewrite that path (not comparing raw text)" \
   "TREE/stop-check.sh" "$(la_norm "$LA_G5")"
 expect_contains "…and that channel is a real refusal, not an empty string (not vacuous)" \
-  "BLOCKED" "$LA_G5A"
+  "bionic: " "$LA_G5A"
 
 # MUTATION B — the parser drops every row that is not `running`. This is the WRONG place to
 # put S16's rule: filtering in the reader rather than in the budget. Now the GUARD moves and
@@ -8177,7 +8474,7 @@ expect_eq "S18.2 landing-gate.sh calls the shared mapping" "1" \
 expect_eq "S18.2 …and never redefines it" "0" \
   "$(grep -c '^worktree_for_row()' "$S18_LG")"
 expect_eq "S18.2 …declaring the dependency, per the loader contract" "1" \
-  "$(grep -cF 'BIONIC_LIB_WANT="root.sh run.sh session.sh worktree.sh"' "$S18_LG")"
+  "$(grep -cF 'BIONIC_LIB_WANT="refuse.sh root.sh run.sh session.sh worktree.sh"' "$S18_LG")"
 
 # --- §S18.3 the reconciliation re-asks the SAME impact-command key S13's dispatch wall
 # reads — never a second config key, never a second derivation command ---
@@ -8251,13 +8548,33 @@ expect_eq "S19.2 …and the same sweep DOES fire on a copy with the idiom plante
 
 # --- §S19.3 POSITIVE: every doctoring site declares through `anchor` ---
 # The census: a doctoring site in docs-pins is a `DOCTORED…="$TMP/…"` assignment.
-expect_eq "S19.3 docs-pins holds 23 doctoring sites" "23" \
+# RE-POINTED at THIS merge (epic-22 K1 + K3 + K4 + K5 + K5.4, plan slices 15/17/18/19/21,
+# landing together): K1 (Section 12) added three doctoring sites and three anchor calls,
+# 23->26/24->27; K3 (Section 6) added three more (order-reversed, Mechanisms-inherited-
+# stripped, strategic-by-rule-stripped mutants), 26->29/27->30; K5 (Section 13) added
+# three more again (DOCTORED_NO_REQ_LAYOUT, DOCTORED_NO_SENTENCE, DOCTORED_NO_ROW_CLAUSE),
+# 29->32/30->33; K4 (Section 15) added two more (DOCTORED_NO_ROWRULE,
+# DOCTORED_NO_CLOSEDBY), 32->34/33->35; K5.4 (Section 16, plan slice 21) added one more
+# (DOCTORED_NO_K54_CLAUSE), 34->35/35->36 — A-31's own warning that a later card with a
+# branch pair moves this count, landing on schedule. RE-DERIVED BY DIRECT GREP over the
+# merged docs-pins.test.sh at each point, not carried forward from any pre-merge side.
+expect_eq "S19.3 docs-pins holds 35 doctoring sites" "35" \
   "$(/usr/bin/grep -cE '^DOCTORED[A-Z0-9_]*="\$TMP/' "$S19_DOCS_PINS")"
-expect_eq "S19.3 …declared by 24 anchor calls (Section 8's doctoring rewrites two sentences)" "24" \
+expect_eq "S19.3 …declared by 36 anchor calls (Section 8's doctoring rewrites two sentences; Section 12 adds three, K1; Section 6 adds three, K3; Section 13 adds three, K5; Section 15 adds two, K4; Section 16 adds one, K5.4)" "36" \
   "$(/usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]' "$S19_DOCS_PINS")"
 # 25 since Step 6: §S13.2 lifts the wall's own reduction out of the hook and
-# anchors both lines it lifts (review-b B-3).
-expect_eq "S19.3 …and this suite's own mutant trees and lifts by 25 more" "25" \
+# anchors both lines it lifts (review-b B-3). 26 at epic-21 wave-02 S12, when §V's
+# governing-skill mutation added one. 25 at this merge: epic-22 wave-01 N1 retired §R
+# along with the four `resolve_docs_root()` copies it held, and its awk mutant's `anchor`
+# went with it. §Roots replaces §R and deliberately carries none — an anchor exists to catch
+# a pattern-based rewrite that silently matched nothing, and §Roots' arm APPENDS a heredoc,
+# which cannot no-op, then asserts the definition count moved from 1 to 2. That is a
+# stronger precondition than an anchor, and it is a row a reader can watch fail.
+# 26 at epic-22 wave-01 slice 11: §Refuse's migration mutant anchors the four BLOCKED
+# lines it strips from a scratch copy of protect-main.sh before stripping them, so a
+# rename of that hook's refusal text cannot leave the "a migrated hook drops out of the
+# set" arm passing over an unmutated file.
+expect_eq "S19.3 …and this suite's own mutant trees and lifts by 26 more" "26" \
   "$(/usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]' "$S19_TESTS_DIR/cross-gate-agreement.test.sh")"
 # The two suites the waiver used to name. `mutate_guard` anchors per call (its callers pass
 # the shipped line they delete). landing-gate anchors its inverted-guard awk, and — since
@@ -8274,7 +8591,32 @@ expect_eq "S19.3 …and landing-gate by three: the inverted-guard mutant, and th
 # anchors — F1 in this suite, F2 in landing-gate — and each rewrote this total from 49
 # to 51 in BYTE-IDENTICAL text, so the merge was conflict-free and the pin was two short
 # of the tree. Measured at the merged head, not predicted: 24 + 25 + 1 + 3 = 53.
-expect_eq "S19.3 …53 anchor call sites across the four doctoring suites, all told" "53" \
+# 65 once five epic-22 slices landed on the 53 baseline, THIS merge included: K1 (plan
+# slice 15) gave docs-pins three more anchor CALLS (Section 12's anti-vacuity mutants);
+# R6 (plan slice 3) gave this suite one more through §V; K3 (plan slice 17, Section 6)
+# gave docs-pins three more again; K5 (plan slice 19, Section 13) gave docs-pins three
+# more again; K4 (plan slice 18, Section 15) gave docs-pins two more; K5.4 (plan slice
+# 21, Section 16) gave docs-pins one more — 27 -> 36 across K1+K3+K4+K5+K5.4 (the first
+# row above, which counts anchor CALLS — one more than its 35 doctoring SITES, a
+# pre-existing +1 offset Section 8's own comment names: one doctoring site there is
+# rewritten by two anchored sentences). N1 retired §R and the one anchor its awk mutant
+# declared (down from 26). E1 (plan slice 11) gave this suite one BACK through §Refuse,
+# whose migration mutant anchors the four BLOCKED lines it strips from a scratch
+# protect-main.sh before stripping them — so this suite is 26 again (the row above this
+# one), for a different reason than it was before N1.
+#
+# 36 + 26 + 1 + 3 = 66 — RE-DERIVED BY DIRECT GREP over the merged files at THIS commit,
+# never carried forward from any pre-merge side, which is the whole reason this literal
+# exists.
+#
+# tests/refuse.test.sh IS NOT IN THIS CENSUS, and that is a Step-9 disposition rather
+# than an oversight. It carries ONE anchor call site, reached three times: its
+# `mutant()` helper calls `anchor` before every `sed`, so a mutant cannot be added
+# there without a precondition, and the census's per-file grep would count 1 whatever
+# the number of mutants. §S19.2's absence sweep already reads every suite in tests/,
+# including that one. What is missing is only this bookkeeping count, and adding a
+# fifth term to it is a change to a section slice 11 does not own.
+expect_eq "S19.3 …66 anchor call sites across the four doctoring suites, all told" "66" \
   "$(cat "$S19_DOCS_PINS" "$S19_TESTS_DIR/cross-gate-agreement.test.sh" \
         "$S19_TESTS_DIR/agent-context-guard.test.sh" "$S19_TESTS_DIR/landing-gate.test.sh" \
      | /usr/bin/grep -cE '^[[:space:]]*anchor[[:space:]]')"
@@ -8455,6 +8797,370 @@ expect_eq "S17c youngest_suite_writer greps the shared constant, not a literal" 
   "0" "$(awk '/^youngest_suite_writer\(\)/,/^\}/' "$PARTY_PK" | grep -cF "grep '^${SWEPT_SCHEMA}|'")"
 expect_eq "S17c …and it does grep the marker, through the constant (the zero is not absence)" \
   "1" "$(awk '/^youngest_suite_writer\(\)/,/^\}/' "$PARTY_PK" | grep -cF 'grep "^${SWEPT_SCHEMA}|"')"
+
+
+# ============================================================
+section "B — no backtick pair hides inside a double-quoted assertion name (AC-B.1/AC-B.2, epic-22 slice 7)"
+# ============================================================
+#
+# THE DEFECT CLASS (seed ideas/fixit-residue-names.md item 3, critic issue 3 / A-S18a-6).
+# `expect_*` calls take their FIRST argument as a human-readable label, always inside double
+# quotes. A label that wraps a literal token in backticks for readability — "the neighbour
+# the `.` would have swallowed" — is not quoted text to bash: a double-quoted string still
+# expands backtick command substitution, so the shell RUNS `.` (the `source` builtin, no
+# argument) on every pass, corrupts the label to whatever it printed, and dumps a usage
+# error to stderr. This landed three times in this wave alone and once executed `uv tool
+# install --force omnigent` for real (critic issue 3) — a machine-mutating class of test
+# defect, not a cosmetic one. The instance live on main is tests/stop-check.test.sh:298,
+# fixed by 8727375 (this slice's cherry-pick, landed in this same tree).
+#
+# THE SCAN. A per-line state machine, not a bare regex: it tracks single/double-quote state,
+# stops at a `#` outside any quote (comments never execute), and skips heredoc BODY lines
+# entirely between an opening `<<[-]DELIM` (quoted or not) and its closing delimiter line —
+# heredoc text is never "inside a double-quoted string" as a shell grammar node. An escaped
+# backtick (`\``) is consumed by its backslash, so no pair forms. THE ONE CASE THAT NEEDS ITS
+# OWN RULE: a legitimate $(...) substitution nested inside a double-quoted string reopens
+# ordinary shell quoting for its own body, so a backtick nested inside a SINGLE-quoted
+# argument of a $(...) call — e.g. "$(printf '```markdown```')" — is inert there for the
+# same reason it is inert anywhere else inside single quotes; the scanner re-enters its own
+# state machine for a $(...) span instead of reading it as flat text. Without that rule, four
+# genuine committed lines (fenced code blocks passed to `printf` inside $(...), in
+# tests/canonical-sdlc-governing-skill.test.sh) false-positive and §B.2 could never be green
+# on this tree. Left alone, by design: a bare backtick pair directly inside a $(...) body,
+# not nested in further quotes, is real intentional legacy substitution nested in the modern
+# form — a style question, not this defect class. A hit prints as `<file>:<line>`, one per
+# PAIR found.
+
+B_AWK="$SANDBOX/backtick-scan.awk"
+cat > "$B_AWK" <<'AWK_EOF'
+function skip_squote(line, i, n,    c) {
+  while (i <= n) { c = substr(line, i, 1); if (c == "'") return i + 1; i++ }
+  return n + 1
+}
+function scan_subshell(line, i, n,    c, r) {
+  while (i <= n) {
+    c = substr(line, i, 1)
+    if (c == "\\") { i += 2; continue }
+    if (c == "'") { i = skip_squote(line, i + 1, n); continue }
+    if (c == "\"") { r = scan_dquote(line, i + 1, n); i = r + 1; continue }
+    if (c == "$" && substr(line, i + 1, 1) == "(") { i = scan_subshell(line, i + 2, n); continue }
+    if (c == ")") return i + 1
+    i++
+  }
+  return n + 1
+}
+function find_second_backtick(line, i, n,    c) {
+  while (i <= n) {
+    c = substr(line, i, 1)
+    if (c == "\\") { i += 2; continue }
+    if (c == "`") return i
+    if (c == "\"") return 0
+    i++
+  }
+  return 0
+}
+function scan_dquote(line, i, n,    c, j) {
+  while (i <= n) {
+    c = substr(line, i, 1)
+    if (c == "\\") { i += 2; continue }
+    if (c == "\"") return i
+    if (c == "$" && substr(line, i + 1, 1) == "(") { i = scan_subshell(line, i + 2, n); continue }
+    if (c == "`") {
+      j = find_second_backtick(line, i + 1, n)
+      if (j > 0) { HIT = 1; i = j + 1; continue }
+      i++; continue
+    }
+    i++
+  }
+  return n + 1
+}
+function scan_line(line,    i, n, c, r) {
+  HIT = 0; i = 1; n = length(line)
+  while (i <= n) {
+    c = substr(line, i, 1)
+    if (c == "#") return HIT
+    if (c == "\\") { i += 2; continue }
+    if (c == "'") { i = skip_squote(line, i + 1, n); continue }
+    if (c == "\"") { r = scan_dquote(line, i + 1, n); i = r + 1; continue }
+    i++
+  }
+  return HIT
+}
+function heredoc_start(line,    tmp) {
+  if (match(line, /<<-?[ \t]*'[A-Za-z_][A-Za-z0-9_]*'/)) {
+    tmp = substr(line, RSTART, RLENGTH); HD_STRIP = (tmp ~ /^<<-/) ? 1 : 0
+    sub(/^<<-?[ \t]*'/, "", tmp); sub(/'$/, "", tmp); HD_DELIM = tmp; return 1
+  }
+  if (match(line, /<<-?[ \t]*"[A-Za-z_][A-Za-z0-9_]*"/)) {
+    tmp = substr(line, RSTART, RLENGTH); HD_STRIP = (tmp ~ /^<<-/) ? 1 : 0
+    sub(/^<<-?[ \t]*"/, "", tmp); sub(/"$/, "", tmp); HD_DELIM = tmp; return 1
+  }
+  if (match(line, /<<-?[ \t]*[A-Za-z_][A-Za-z0-9_]*/)) {
+    tmp = substr(line, RSTART, RLENGTH); HD_STRIP = (tmp ~ /^<<-/) ? 1 : 0
+    sub(/^<<-?[ \t]*/, "", tmp); HD_DELIM = tmp; return 1
+  }
+  return 0
+}
+function is_delim_line(line,    t) {
+  t = line; if (HD_STRIP) sub(/^[ \t]+/, "", t); return (t == HD_DELIM)
+}
+FNR == 1 { IN_HEREDOC = 0 }
+{
+  if (IN_HEREDOC) { if (is_delim_line($0)) IN_HEREDOC = 0; next }
+  if (scan_line($0)) print FILENAME ":" FNR
+  if (heredoc_start($0)) IN_HEREDOC = 1
+}
+AWK_EOF
+
+b_scan() { awk -f "$B_AWK" "$@" 2>/dev/null; }
+
+# (a) §B.2 — GREEN ON THE COMMITTED TREE. The same two roots 8727375's own sweep grep named
+# (minus tests/drill/, which does not exist on main, per plan Assumption A-6).
+B_TESTS_HITS="$(b_scan "$REPO_ROOT"/tests/*.test.sh "$REPO_ROOT"/tests/lib/*.sh)"
+expect_empty "§B.2 the scan is silent on the committed tree (the fix landed, nothing else hides)" \
+  "$B_TESTS_HITS"
+
+# (b) §B.1 — THE MUTATION, the discriminator. A scratch COPY of one suite (the shipped file
+# is never touched), with a fresh backtick pair planted at a known line — line 2, right
+# after the shebang, so no `anchor` precondition is needed: this is an INSERTION at a fixed
+# offset, not a pattern-matched deletion that could silently miss its target.
+B_MUT_DIR="$SANDBOX/backtick-mutant"; mkdir -p "$B_MUT_DIR"
+{
+  head -n 1 "$REPO_ROOT/tests/session-sweeper.test.sh"
+  printf 'expect_eq "a planted `pair` right here" "x" "x"\n'
+  tail -n +2 "$REPO_ROOT/tests/session-sweeper.test.sh"
+} > "$B_MUT_DIR/session-sweeper.test.sh"
+
+B_MUT_HITS="$(b_scan "$B_MUT_DIR/session-sweeper.test.sh")"
+expect_eq "§B.1 a planted pair makes the scan RED naming file:line" \
+  "$B_MUT_DIR/session-sweeper.test.sh:2" "$B_MUT_HITS"
+
+# CONTROL — the same file, unplanted: still silent, or the RED above was the `cp`/`head`/
+# `tail` reshuffle and not the plant.
+B_CTRL_DIR="$SANDBOX/backtick-control"; mkdir -p "$B_CTRL_DIR"
+cp "$REPO_ROOT/tests/session-sweeper.test.sh" "$B_CTRL_DIR/session-sweeper.test.sh"
+expect_empty "…control: the unmutated copy stays silent" \
+  "$(b_scan "$B_CTRL_DIR/session-sweeper.test.sh")"
+
+# (c) THE EXCLUSIONS, individually named — one fixture line per shape, so a future edit that
+# widens the scan (and starts flagging safe text) is caught here rather than being
+# discovered as a false-positive drowning out a real hit. Five shapes: an ESCAPED pair
+# (line 2), a legitimate $(...) with a nested SINGLE-quoted pair (line 3), a pair inside a
+# COMMENT (line 4), a pair inside a bare SINGLE-quoted string (line 5), and a pair inside a
+# HEREDOC body opened with a quoted delimiter (lines 6-8) — the fourth exclusion class
+# 8727375's own commit message named. Only line 9, a real unescaped pair inside a plain
+# double-quoted string, is a hit.
+B_FX="$SANDBOX/backtick-exclusions.sh"
+cat > "$B_FX" <<'FX_EOF'
+#!/bin/bash
+expect_eq "the \`escaped\` pair is inert" "yes" "yes"
+expect_eq "fence" "$(printf '```markdown```')" "x"
+# this comment mentions `a pair` right here
+MSG='the `pair` is inert in single quotes'
+cat <<'HEREDOC_EOF'
+a heredoc body line with a `pair` in it, quoted delimiter
+HEREDOC_EOF
+expect_eq "the neighbour the `.` would have swallowed" "x" "y"
+FX_EOF
+B_FX_HITS="$(b_scan "$B_FX")"
+expect_eq "…the five exclusions (escaped, \$(...) w/ nested single quotes, comment, single-quoted, heredoc body) stay silent; only the real pair on line 9 is a hit" \
+  "$B_FX:9" "$B_FX_HITS"
+
+
+# ============================================================
+section "Refuse — no hook prints a refusal directly; refuse.sh is the only renderer (epic-22 wave-01, AC-E1.2)"
+# ============================================================
+#
+# THE CRITERION. AC-E1.2: "no hook prints a refusal directly; all go through
+# refuse.sh", fails-when "a hook prints directly". The renderer landed in slice 11;
+# the 21 hooks are migrated in slice 13. So the wall this section builds cannot be
+# "zero hooks print directly" yet — it would be red for the whole of slice 11 and 12
+# and would be turned off rather than fixed.
+#
+# THE SHAPE INSTEAD: A SHRINKING ALLOWLIST, ASSERTED BY EQUALITY. The roster below is
+# every hook file that still emits a refusal of its own, measured 2026-09-07 at the
+# head of wt/s11-refuse-lib, and the assertion is that the measured set EQUALS it. So:
+#
+#   - a NEW hook that prints its own refusal makes the measured set bigger and this
+#     section goes red — the criterion's fails-when, held from the day the renderer
+#     exists rather than from the day the last hook is migrated;
+#   - a hook slice 13 MIGRATES makes the measured set smaller and this section also
+#     goes red, until its name is struck from the roster below. That is the point: the
+#     roster shrinks by deliberate edit, one line per migrated hook, and when it is
+#     empty the equality is the criterion itself with nothing left to except.
+#
+# An allowlist that only bounded the set from above would let slice 13 finish without
+# anyone editing this file, and the exception would outlive the thing it excepted.
+#
+# WHAT COUNTS AS PRINTING A REFUSAL DIRECTLY. A non-comment line carrying the string
+# `BLOCKED` — the headline every one of the tree's 83 emitting sites uses (surfaces
+# map §B.3). Comments are excluded by line shape, so the paragraph in a hook that
+# EXPLAINS its wall is not counted as one; a heredoc body is counted, because a
+# heredoc body is printed. The 21 shared `loader_fail_closed` walls are inside this
+# count deliberately: they are 21 copies of one refusal, and they are the largest
+# single block of text slice 13 removes.
+
+REFUSE_TREE="$(cd "$BIONIC_HOOKS_DIR/.." && pwd -P)"
+REFUSE_LIB_DIR="$REFUSE_TREE/payload/scripts/lib"
+[ -d "$REFUSE_LIB_DIR" ] || REFUSE_LIB_DIR="$REFUSE_TREE/scripts/lib"
+
+# refuse_direct_files <hooks dir> -> the basename of every file in it that emits a
+# refusal of its own, one per line, sorted.
+#
+# `grep -c`, NOT `grep -q`, ON THE RIGHT OF THE PIPE. A `producer | grep -q` pair
+# under `pipefail` exits 141 when the producer outgrows the pipe buffer and grep
+# leaves early — canonical-sdlc-evidence-gate.sh is 1500 lines and is exactly the
+# producer that does it. `grep -c` reads its whole input, so the status is the
+# match/no-match answer and nothing else.
+refuse_direct_files() {
+  local d="$1" f n
+  for f in "$d"/*.sh; do
+    [ -f "$f" ] || continue
+    n="$(/usr/bin/grep -vE '^[[:space:]]*#' "$f" | /usr/bin/grep -c 'BLOCKED')"
+    n="$(printf '%s' "${n:-0}" | tr -cd '0-9')"
+    [ "${n:-0}" -gt 0 ] && printf '%s\n' "${f##*/}"
+  done | sort
+}
+
+# THE ROSTER — the five CLI COMMANDS, and nothing else. Slice 13 migrated every WALL
+# in hooks/ to scripts/lib/refuse.sh; what remains on this list is exempt by RULING D-5
+# (record/wave-01-plugin-only/s12-refusal-wording.md), and the reason is a boundary and
+# not a carve-out:
+#
+#   A WALL refuses an act the platform was taking. The reader is interrupted, so the
+#   refusal is an object rendered once, in one line, by one renderer.
+#   A COMMAND answers a request the agent made. It speaks in its own voice, with its
+#   own exit codes, to a caller that asked it a question.
+#
+# The five commands are `session-poker.sh`, `stop-orders.sh`, `stop-check.sh`,
+# `preflight-probe.sh` and `payload/scripts/spawn-worktree.sh`. Four live in hooks/ and
+# so fall inside this section's glob; spawn-worktree.sh does not and is named here for
+# completeness rather than matched.
+#
+# WHY A SUBSET AND NOT AN EQUALITY. Only `preflight-probe.sh` still spells the scanner's
+# word: measured after the migration, `session-poker.sh`, `stop-orders.sh` and
+# `stop-check.sh` carry no `BLOCKED` at all, because their own voice never used it. An
+# equality against the five would therefore be red for three names that are exempt and
+# silent. The subset check plus the zero-walls check below says the thing that matters —
+# no WALL prints its own refusal, and anything the scanner does find is one of the five.
+REFUSE_ALLOWLIST='preflight-probe.sh
+session-poker.sh
+stop-check.sh
+stop-orders.sh'
+
+# --- (a) NON-VACUITY OF THE SEARCH SET. Every count below is over a real glob, and
+# the renderer this section exists for is on disk. ---
+expect_eq "Refuse the hooks glob is non-empty (this section is not counting over air)" "yes" \
+  "$([ "$(ls "$BIONIC_HOOKS_DIR"/*.sh 2>/dev/null | wc -l | tr -d ' ')" -ge 20 ] && echo yes || echo no)"
+expect_eq "Refuse payload/scripts/lib/refuse.sh is on disk" "yes" \
+  "$([ -r "$REFUSE_LIB_DIR/refuse.sh" ] && echo yes || echo no)"
+
+# --- (b) THE SUBSET, AND THE ZERO. Everything the scanner finds is one of the five
+# commands, and no wall is among them. A hook added to the tree that prints its own
+# refusal fails the first; a wall that was never migrated fails the second. ---
+REFUSE_FOUND="$(refuse_direct_files "$BIONIC_HOOKS_DIR")"
+REFUSE_STRAY=""
+while IFS= read -r _f; do
+  [ -n "$_f" ] || continue
+  case "
+$REFUSE_ALLOWLIST
+" in
+    *"
+$_f
+"*) : ;;
+    *) REFUSE_STRAY="$REFUSE_STRAY$_f " ;;
+  esac
+done <<REFUSE_FOUND_EOF
+$REFUSE_FOUND
+REFUSE_FOUND_EOF
+expect_eq "Refuse every file still printing its own refusal is one of the five CLI commands" \
+  "" "$REFUSE_STRAY"
+expect_eq "Refuse …and no WALL is among them: the hooks-that-are-walls count is zero" "0" \
+  "$(printf '%s\n' "$REFUSE_FOUND" | /usr/bin/grep -cE '^(agent-context-guard|background-suite-guard|canonical-sdlc-evidence-gate|canonical-sdlc-governing-skill|context-spend|dispatch-preflight|engage|execution-recorder|farm-out-reminder|landing-gate|patrol-duties-gate|patrol-revive|protect-database|protect-main|session-start|session-sweeper|stop-guard)\.sh$' || true)"
+expect_eq "Refuse …and the set is what slice 13 left: preflight-probe.sh alone still spells it" \
+  "preflight-probe.sh" "$(printf '%s\n' "$REFUSE_FOUND" | tr -d ' ')"
+
+# --- (c) THE SCANNER FINDS A PLANTED PRINT. Without this the equality above could be
+# passing because the scanner matches nothing at all. A scratch copy of the hook
+# directory takes one new file whose only content is a direct refusal print. ---
+REFUSE_MUT="$SANDBOX/refuse-mut-hooks"
+mkdir -p "$REFUSE_MUT"
+cp "$BIONIC_HOOKS_DIR"/*.sh "$REFUSE_MUT/"
+cat > "$REFUSE_MUT/aaa-planted-wall.sh" <<'PLANTED_EOF'
+#!/bin/bash
+# A comment mentioning BLOCKED, which must NOT be what the scanner catches.
+echo "BLOCKED: this hook formats its own refusal instead of calling refuse" >&2
+exit 2
+PLANTED_EOF
+REFUSE_MUT_FOUND="$(refuse_direct_files "$REFUSE_MUT")"
+expect_contains "Refuse MUTANT a planted direct print is found by the scanner" \
+  "aaa-planted-wall.sh" "$REFUSE_MUT_FOUND"
+expect_ne "Refuse MUTANT …so the subset check above would go RED on a new direct printer" \
+  "$REFUSE_ALLOWLIST" "$REFUSE_MUT_FOUND"
+
+# A comment is not a print. The planted file's own first line says BLOCKED in a
+# comment; a scanner that counted it would flag every hook that merely documents its
+# wall, and the roster would stop shrinking when slice 13 removes the code but keeps
+# the explanation.
+cat > "$REFUSE_MUT/aaa-comment-only.sh" <<'COMMENT_EOF'
+#!/bin/bash
+# This hook used to print BLOCKED here. It calls refuse now.
+#   BLOCKED: the old text, kept in a comment for the reader.
+exit 0
+COMMENT_EOF
+expect_absent "Refuse MUTANT a hook whose only BLOCKED is in a comment is NOT flagged" \
+  "aaa-comment-only.sh" "$(refuse_direct_files "$REFUSE_MUT")"
+
+# --- (d) THE OTHER DIRECTION: a MIGRATED hook shrinks the set and the equality goes
+# red until the roster is edited. This is what makes the allowlist shrink rather than
+# rot. protect-main.sh is the stand-in — the scratch copy has its refusal prints
+# removed, the way slice 13 will remove them for real. ---
+REFUSE_MIG="$SANDBOX/refuse-mig-hooks"
+mkdir -p "$REFUSE_MIG"
+cp "$BIONIC_HOOKS_DIR"/*.sh "$REFUSE_MIG/"
+# preflight-probe.sh is the stand-in now: protect-main.sh no longer prints the word at
+# all, so stripping it from that file would mutate nothing and the arm would pass over
+# an unmutated copy.
+anchor "$REFUSE_MIG/preflight-probe.sh" "BLOCKED" 3
+/usr/bin/grep -v 'BLOCKED' "$BIONIC_HOOKS_DIR/preflight-probe.sh" > "$REFUSE_MIG/preflight-probe.sh"
+REFUSE_MIG_FOUND="$(refuse_direct_files "$REFUSE_MIG")"
+expect_absent "Refuse MUTANT a migrated hook drops out of the measured set" \
+  "preflight-probe.sh" "$REFUSE_MIG_FOUND"
+expect_ne "Refuse MUTANT …so the measured set moves when a file stops printing its own refusal" \
+  "$REFUSE_ALLOWLIST" "$REFUSE_MIG_FOUND"
+
+# --- (e) THE RENDERER ITSELF. One definition of `refuse` in the tree, and it does
+# not print the word this section counts: the new user line is
+# `bionic: <verb> refused — <fact> (<fix>)`, which is what replaces `BLOCKED`. ---
+# THE NAME COLLISION IS GONE, AND THIS PIN IS WHAT KEEPS IT GONE. There used to be TWO
+# `refuse()` definitions in the tree: the renderer, and a private one-line helper in
+# payload/scripts/spawn-worktree.sh — one argument where the renderer takes five.
+# Nothing sourced both, so nothing was broken; but the day that script needed a refusal
+# and declared refuse.sh, the later definition would silently replace the earlier one
+# and every existing call site would pass one argument to a function that refuses on
+# arity — a wall that starts refusing everything, or a script that starts refusing
+# nothing, depending which order the sourcing landed in. Invisible at the call site.
+#
+# Slice 13 renamed the private one to `_wt_refuse` (ruling D-6). The count is ONE now,
+# and a second definition anywhere turns this red.
+expect_eq "Refuse refuse() is defined exactly once in the tree: the renderer" \
+  "1" "$(/usr/bin/grep -lE '^refuse\(\)' "$REFUSE_TREE/hooks"/*.sh "$(dirname "$REFUSE_LIB_DIR")"/*.sh "$REFUSE_LIB_DIR"/*.sh 2>/dev/null | sort -u | wc -l | tr -d ' ')"
+expect_eq "Refuse …and no HOOK defines one, which is the half AC-E1.2 is about" "0" \
+  "$(/usr/bin/grep -lE '^refuse\(\)' "$REFUSE_TREE/hooks"/*.sh 2>/dev/null | wc -l | tr -d ' ')"
+expect_eq "Refuse …spawn-worktree.sh's private helper is renamed and still one-argument" "1" \
+  "$(/usr/bin/grep -cE '^_wt_refuse\(\) \{ contract ' "$(dirname "$REFUSE_LIB_DIR")/spawn-worktree.sh")"
+expect_eq "Refuse …and it defines no bare refuse() any more" "0" \
+  "$(/usr/bin/grep -cE '^refuse\(\)' "$(dirname "$REFUSE_LIB_DIR")/spawn-worktree.sh" || true)"
+expect_eq "Refuse …and that one definition is refuse.sh's" "1" \
+  "$(/usr/bin/grep -cE '^refuse\(\)' "$REFUSE_LIB_DIR/refuse.sh")"
+expect_eq "Refuse the renderer prints no BLOCKED of its own" "0" \
+  "$(/usr/bin/grep -vE '^[[:space:]]*#' "$REFUSE_LIB_DIR/refuse.sh" | /usr/bin/grep -c 'BLOCKED')"
+
+# THE FORMAT STRING HAS ONE SITE. Two printf sites spelling the user line is how a
+# renderer drifts from its own criterion — one of them gets the em dash and the other
+# a hyphen, and AC-E1.3's regex passes on whichever the test happens to drive.
+expect_eq "Refuse the user line's format string is written exactly once" "1" \
+  "$(/usr/bin/grep -c 'refused — %s (%s)' "$REFUSE_LIB_DIR/refuse.sh")"
 
 
 # ============================================================

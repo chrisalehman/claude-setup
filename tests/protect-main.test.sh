@@ -399,6 +399,73 @@ else
   ok "AC-20 control — the same driver on the ENGAGED repo still BLOCKS"
 fi
 
+# ============================================================
+section "AC-E1.3/E1.5: every refusal is one line, in the criterion's shape"
+# ============================================================
+#
+# fails-when: a refusal reaches the user as more than one line, or in any shape but
+# `bionic: <verb> refused — <fact> (<fix ≤ 40 cols>)`. Each of this wall's three
+# refusal sites is TRIPPED for real here — the stderr asserted is the one a live
+# session would paint (e1-measurement.md §D-2 F-D2-3) — and each is checked against
+# the criterion's own regex, then against the exact line the ruled wording table
+# gives it (s12-refusal-wording-draft.md §1 rows 2, 3 and 4).
+
+PM_LINE_RE='^bionic: [a-z-]+ refused — .+ \(.{1,40}\)$'
+pm_stderr() {  # <branch> <command> -> the hook's stderr, verbatim
+  FAKE_BRANCH="$1" pm_payload "$ENGAGED_REPO" "$2" \
+    | env CLAUDE_CODE_SESSION_ID="$SID" CLAUDE_PROJECT_DIR= FAKE_BRANCH="$1" \
+        bash "$HOOK" 2>"$PM_SANDBOX/.err" >/dev/null
+  cat "$PM_SANDBOX/.err"
+}
+
+pm_one_line() {  # <label> <branch> <command> <expected line>
+  local _lbl="$1" _br="$2" _cmd="$3" _want="$4" _got _n
+  _got="$(pm_stderr "$_br" "$_cmd")"
+  _n="$(wc -l < "$PM_SANDBOX/.err" | tr -d ' ')"
+  eq_or() { if [ "$2" = "$3" ]; then ok "$1"; else no "$1" "want [$3] got [$2]"; fi; }
+  eq_or "$_lbl: exactly one line on the user stream" "$_n" "1"
+  if printf '%s' "$_got" | /usr/bin/grep -qE "$PM_LINE_RE"; then
+    ok "$_lbl: in AC-E1.3's shape"
+  else
+    no "$_lbl: in AC-E1.3's shape" "line=[$_got]"
+  fi
+  eq_or "$_lbl: and it is the table's own wording" "$_got" "$_want"
+}
+
+pm_one_line "row 2 (a protected destination)" "feature/x" "git push origin main" \
+  "bionic: push refused — main is a protected branch here (push from your own terminal)"
+pm_one_line "row 3 (a force push)" "feature/x" "git push --force origin feature/x" \
+  "bionic: push refused — this is a force push (push from your own terminal)"
+pm_one_line "row 4 (pushing from a protected branch)" "main" "git push origin feature/x" \
+  "bionic: push refused — the current branch is protected (switch to a feature branch)"
+
+# THE DETAIL IS BEHIND THE KNOB, end to end through this real wall (AC-E1.5). The
+# branch name is the value the one line had no room for, and the knob is where it
+# lives — asserted absent without it and present with it, so neither half can pass
+# over an empty stream.
+PM_KNOB_OFF="$(pm_stderr "main" "git push origin feature/x")"
+case "$PM_KNOB_OFF" in
+  *"feature branch"*) ok "AC-E1.5 without the knob the user line carries no detail" ;;
+  *) no "AC-E1.5 without the knob the user line carries no detail" ;;
+esac
+case "$PM_KNOB_OFF" in
+  *'The current branch is'*) no "AC-E1.5 …the detail sentence is NOT on the user stream" ;;
+  *) ok "AC-E1.5 …the detail sentence is NOT on the user stream" ;;
+esac
+pm_payload "$ENGAGED_REPO" "git push origin feature/x" \
+  | env CLAUDE_CODE_SESSION_ID="$SID" CLAUDE_PROJECT_DIR= FAKE_BRANCH="main" \
+      BIONIC_WALL_VERBOSE=1 bash "$HOOK" 2>"$PM_SANDBOX/.errv" >/dev/null || true
+PM_KNOB_ON="$(cat "$PM_SANDBOX/.errv")"
+case "$PM_KNOB_ON" in
+  *'The current branch is "main"'*) ok "AC-E1.5 with BIONIC_WALL_VERBOSE=1 the detail names the branch" ;;
+  *) no "AC-E1.5 with BIONIC_WALL_VERBOSE=1 the detail names the branch" "got=[$PM_KNOB_ON]" ;;
+esac
+if printf '%s' "$PM_KNOB_ON" | head -1 | /usr/bin/grep -qE "$PM_LINE_RE"; then
+  ok "AC-E1.5 …and the one line is still the first of it"
+else
+  no "AC-E1.5 …and the one line is still the first of it"
+fi
+
 rm -rf "$PM_SANDBOX"
 
 finish

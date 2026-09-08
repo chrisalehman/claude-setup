@@ -481,11 +481,31 @@ run_guarded() {  # <payload> — through agent-context-guard, as hooks.json regi
   run_hook "$1" "$CTX_GUARD" "$BG_GUARD"
 }
 
+# THE SAME PAIR WITH THE DETAIL KNOB ON (slice 13, ruling D-1). A refusal puts ONE line on
+# the user stream — `bionic: <verb> refused — <fact> (<fix>)` — and everything else it has
+# to say is `detail`, which is emitted only under BIONIC_WALL_VERBOSE=1. A row that needs a
+# value out of a refusal drives the call a second time through this and asserts on $VERR;
+# asserting that value on $ERR would now be asserting that the wall leaks it.
+VERR=""
+run_guarded_verbose() {  # <payload> -> sets VERR
+  local payload="$1"
+  local _sid; _sid=$(printf '%s' "$payload" | jq -r '.session_id // ""' 2>/dev/null) || _sid=""
+  printf '%s' "$payload" | env HOME="$FAKE_HOME" CLAUDE_CONFIG_DIR="$FAKE_HOME/.claude" \
+      BIONIC_PLUGINS_DIR="$SANDBOX/no-plugins" CLAUDE_CODE_SESSION_ID="$_sid" \
+      CLAUDE_PROJECT_DIR= BIONIC_WALL_VERBOSE=1 bash "$CTX_GUARD" "$BG_GUARD" \
+      >/dev/null 2>"$SANDBOX/.verr"
+  VERR=$(cat "$SANDBOX/.verr")
+  return 0
+}
+
 # --- AC-23: agent context + armed + run_in_background true + suite-class -> REFUSED
 run_guarded "$(mk_bash_payload "$GREPO" 'bash tests/run.sh' "$AGENT_ID" true)"
 expect_eq "AC-23 a backgrounded suite in an agent context of an armed session is REFUSED" 2 "$ST"
-expect_contains "AC-23 …and the refusal names the foreground tee form" "2>&1 | tee" "$ERR"
-expect_contains "AC-23 …quoting the command it refused" "bash tests/run.sh" "$ERR"
+expect_contains "AC-23 …in the ruled one line, and it is the BACKGROUND arm's" \
+  "suite-run refused — a backgrounded suite's result is never read" "$ERR"
+run_guarded_verbose "$(mk_bash_payload "$GREPO" 'bash tests/run.sh' "$AGENT_ID" true)"
+expect_contains "AC-23 …and the refusal names the foreground tee form" "2>&1 | tee" "$VERR"
+expect_contains "AC-23 …quoting the command it refused" "bash tests/run.sh" "$VERR"
 
 # --- AC-24: the three cells that must stay silent ---
 run_guarded "$(mk_bash_payload "$GREPO" 'bash tests/run.sh' "$AGENT_ID" omit)"

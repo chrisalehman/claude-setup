@@ -295,7 +295,7 @@ OUT=$(run_check "$H1" "$R1" "w1r.slice-4-3"); ST=$?
 expect_status "a metacharacter target is still resolved as ambiguous" 1 "$ST"
 expect_contains "…and counted LITERALLY: two, not the four its pattern would have matched" \
   "2 live agents answer to 'w1r.slice-4-3'" "$OUT"
-expect_absent_ci "…so the neighbour the `.` would have swallowed is never listed under it" \
+expect_absent_ci "…so the neighbour the \`.\` would have swallowed is never listed under it" \
   "w1r-slice-4-3 " "$OUT"
 
 # A NAME THE ANSWER DOES NOT CARRY is not live, whatever is on disk. `departed` has a full

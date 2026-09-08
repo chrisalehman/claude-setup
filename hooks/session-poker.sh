@@ -261,11 +261,30 @@ loader_fail_closed() {
     "bash $_bl_root/scripts/doctor.sh"|\
     "bash $_bl_root/scripts/setup.sh") exit 0 ;;
   esac
-  cat >&2 <<BIONIC_LOADER_REFUSE
-BLOCKED: $1 cannot load its library (${BIONIC_LIB_MISSING:-the bionic library}), so it
-cannot read this command. A wall that cannot read a command refuses it rather than
-waving it through.
+  # THE ONE LINE, AND THE ONE PLACE IN THE TREE THAT SPELLS IT WITHOUT
+  # scripts/lib/refuse.sh. Every other wall calls `refuse`; this one cannot, because
+  # refuse.sh is IN the library this function exists to report missing. So the row-1
+  # wording (record/wave-01-plugin-only/s12-refusal-wording-draft.md §1) is written
+  # out here by hand, in the renderer's exact format, and tests/loader.test.sh §F
+  # drives it against AC-E1.3's own regex so the two spellings cannot drift.
+  #
+  # THE NAME IS BOUNDED IN PURE BASH for the same reason: `bionic_trunc` is in the
+  # missing library. 23 columns of prefix, 31 of fact after the name, 3 of brackets
+  # and 18 of fix leaves 25 for the hook's name, and the longest caller
+  # (`canonical-sdlc-evidence-gate`, 28) is over it — F-8's runtime-width hazard,
+  # arriving at the one site that cannot ask the truncator. The ellipsis is spent
+  # from inside the budget, exactly as bionic_trunc spends it.
+  _bl_who="${1:-a bionic hook}"
+  if [ "${#_bl_who}" -gt 25 ]; then _bl_who="${_bl_who:0:24}…"; fi
+  printf 'bionic: load refused — %s cannot load the bionic library (run /bionic:doctor)\n' "$_bl_who" >&2
+  # THE DETAIL, on the knob only. Ruling D-1: the reader who is interrupted gets one
+  # sentence; the rest is for whoever asks. There is no hook log to write here — the
+  # library that owns logging is the one that did not load.
+  if [ "${BIONIC_WALL_VERBOSE:-}" = "1" ]; then
+    cat >&2 <<BIONIC_LOADER_REFUSE
+A wall that cannot read a command refuses it rather than waving it through.
 
+Wanted: ${BIONIC_LIB_MISSING:-the bionic library}
 Looked in: ${BIONIC_LIB_CANDS:-(no candidate)}
 
 Until the plugin is whole again this wall permits exactly four commands, each matched
@@ -279,6 +298,7 @@ as a whole string:
 Anything else is refused, including one of those four with another command chained
 after it. Run one of them, or act from your own terminal.
 BIONIC_LOADER_REFUSE
+  fi
   exit 2
 }
 # --- bionic-loader/v2 END
@@ -374,6 +394,7 @@ usage() {  # [message]
   die "  bash ${HOOK_DIR}/session-poker.sh disarm     remove that stamp at run close — this Patrol was ended on purpose"
   die "  bash ${HOOK_DIR}/session-poker.sh interval    the configured Patrol interval, in seconds"
   die "  bash ${HOOK_DIR}/session-poker.sh interval-default   this script's built-in default interval, in seconds (ignores config)"
+  die "  bash ${HOOK_DIR}/session-poker.sh window     the instant this session's roster begins, UTC ISO-8601 (empty when it cannot be dated)"
   die "  bash ${HOOK_DIR}/session-poker.sh adopt      every open row a PREDECESSOR session left on this project's rosters"
   die "  bash ${HOOK_DIR}/session-poker.sh adopt --report-only   the same rows, with the adoption itself not taken (writes nothing)"
   die "  bash ${HOOK_DIR}/session-poker.sh sweep      delete every DEAD session's leftover state under this project's .bionic/tmp"
@@ -422,7 +443,7 @@ case "$VERB" in
     fi
     BIND_ARG="$1"
     ;;
-  tick|arm|disarm|interval|interval-default)
+  tick|arm|disarm|interval|interval-default|window)
     [ $# -eq 0 ] || usage "$VERB takes no arguments."
     ;;
   *) usage "unknown verb: $VERB" ;;
@@ -555,6 +576,34 @@ patrol_stamp_file() {  # <session-id> -> absolute path, or empty
   real="$(cd "$repo" 2>/dev/null && pwd -P)"
   [ -n "$real" ] || return 1
   printf '%s/.bionic/tmp/%s%s%s' "$real" "$PATROL_STAMP_PREFIX" "$1" "$PATROL_STAMP_SUFFIX"
+}
+
+# THE WINDOW. `file_birth` is the creation time the filesystem itself recorded — `stat %B`
+# here, `%W` on GNU, where 0 means "this filesystem does not keep one" and is not an answer.
+# Never mtime: the roster is append-only, so its mtime is the LAST dispatch, and scoping to
+# that would hide every gap but the newest.
+file_birth() {  # <path> -> epoch seconds, empty when the platform has none
+  local b
+  b="$(stat -f %B "$1" 2>/dev/null || stat -c %W "$1" 2>/dev/null)" || return 1
+  case "$b" in ''|*[!0-9]*|0) return 1 ;; esac
+  printf '%s' "$b"
+}
+
+epoch_iso() {  # <epoch seconds> -> UTC ISO-8601, the shape the CLI stamps entries with
+  date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+    || date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null
+}
+
+# roster_window <roster file> <session id> -> the ISO instant this roster's own record of
+# this session begins, or nothing when neither file can date it (see the block comment).
+# The Patrol stamp is the fallback because it is written at ARMING, which precedes the
+# first dispatch by doctrine — so on a session whose roster was never written it still
+# dates the stretch this session is answerable for.
+roster_window() {
+  local b
+  b="$(file_birth "$1")" || b="$(file_birth "$(patrol_stamp_file "$2")" 2>/dev/null)" || return 1
+  [ -n "$b" ] || return 1
+  epoch_iso "$b"
 }
 
 # THE .bionic/tmp WRITE GUARD, one copy for both of this script's writers — the Patrol
@@ -714,11 +763,34 @@ session_transcript() {  # <session-id> -> path on stdout, nonzero if none
 # assistant entry, and a line-counting read would report that batch as a single dispatch.
 # The literal `"name":"Agent"` cannot be forged from prose quoting it, because inside a JSON
 # string every quote is backslash-escaped and the escaped form does not contain it.
-count_main_thread_dispatches() {  # <transcript> -> count on stdout
-  awk '
+#
+# <since> is the window's ISO instant, empty for "the whole transcript". Comparison is on the
+# entry's own `timestamp` truncated to the second — the CLI writes fractional seconds and a
+# raw string compare would sort `…:23.9Z` BEFORE `…:23Z` and drop an in-window entry.
+count_main_thread_dispatches() {  # <transcript> [<since ISO>] -> count on stdout
+  awk -v since="${2:-}" '
+    function in_window(   t) {
+      if (since == "") return 1
+      if (match($0, /"timestamp"[[:space:]]*:[[:space:]]*"[^"]+"/) == 0) return 1
+      t = substr($0, RSTART, RLENGTH)
+      sub(/^.*:[[:space:]]*"/, "", t); sub(/"$/, "", t)
+      return (substr(t, 1, 19) >= substr(since, 1, 19))
+    }
     /"isSidechain"[[:space:]]*:[[:space:]]*true/          { next }
     /"agent_?[Ii][dD]"[[:space:]]*:[[:space:]]*"[^"]/     { next }
-    { n += gsub(/"name"[[:space:]]*:[[:space:]]*"Agent"/, "") }
+    {
+      # THE CHEAP TEST FIRST. A line with no compact `"name":"Agent"` literal — the shape
+      # every entry this partition can count is written in, the CLI own compact
+      # serialization, never a hand-spaced one — cannot hold a dispatch, so a plain
+      # substring index() runs before the per-line timestamp match() inside in_window()
+      # ever does. `line` is `$0` SAVED FIRST, into its own variable, because the counting
+      # `gsub` below mutates whatever it is pointed at — targeting `line` rather than the
+      # bare (implicit-`$0`) form keeps `$0` intact for the match() inside in_window() to
+      # test against the untouched record.
+      line = $0
+      if (index(line, "\"name\":\"Agent\"") == 0) next
+      if (in_window()) n += gsub(/"name"[[:space:]]*:[[:space:]]*"Agent"/, "", line)
+    }
     END { print n+0 }
   ' "$1" 2>/dev/null
 }
@@ -745,13 +817,25 @@ count_main_thread_dispatches() {  # <transcript> -> count on stdout
 #
 # ONE PASS is enough: a result cannot be written before the call it answers, so every Agent
 # id is already known by the time its tool_result is read.
-count_refused_dispatches() {  # <transcript> -> count on stdout
-  awk '
+#
+# THE SAME WINDOW as the dispatch count, and for the same reason: a refusal from the wave
+# before this roster would otherwise be subtracted from a gap in this one, turning a real
+# blind wall silent.
+count_refused_dispatches() {  # <transcript> [<since ISO>] -> count on stdout
+  awk -v since="${2:-}" '
     function quoted_value(seg,   v) {     # `"key" : "value"` -> value
       v = seg; sub(/^.*:[[:space:]]*"/, "", v); sub(/"$/, "", v); return v
     }
+    function in_window(   t) {
+      if (since == "") return 1
+      if (match($0, /"timestamp"[[:space:]]*:[[:space:]]*"[^"]+"/) == 0) return 1
+      t = substr($0, RSTART, RLENGTH)
+      sub(/^.*:[[:space:]]*"/, "", t); sub(/"$/, "", t)
+      return (substr(t, 1, 19) >= substr(since, 1, 19))
+    }
     /"isSidechain"[[:space:]]*:[[:space:]]*true/          { next }
     /"agent_?[Ii][dD]"[[:space:]]*:[[:space:]]*"[^"]/     { next }
+    !in_window()                                          { next }
     {
       # Every `Agent` tool_use on this line, by id. The CLI writes a tool_use as
       # {"type","id","name","input",...}, so the id is the last one before the name.
@@ -1887,6 +1971,43 @@ case "$VERB" in
       exit 2
     }
     printf '%s\n' "$SECS"
+    exit 0
+    ;;
+
+  # THE WINDOW, ANSWERED BY ITS OWNER. "Since when does THIS roster's own record of this
+  # session begin" is a question two readers ask: hooks/session-poker.sh's own counters
+  # (`count_main_thread_dispatches`, `count_refused_dispatches`, both of which take the
+  # instant as `<since>`) and payload/scripts/lib/patrol.sh, which reconstructs the same
+  # tally for doctor. patrol.sh cannot source this file, so without this verb it would grow
+  # its own copy of `file_birth`/`epoch_iso`/`roster_window` — a second, silently driftable
+  # answer to one question. `patrol_window()` shells out here instead, the same call
+  # `patrol_interval()` already makes for the interval and for the identical reason.
+  #
+  # OUTSIDE THE ENGAGEMENT GATE, exactly like `interval` above it. The gate in this script
+  # is per-verb (`adopt`, `sweep`, `tick`), and it guards verbs that DECIDE something about
+  # a run. This one decides nothing: it reports a file's creation instant to whoever asks.
+  # A session that never engaged bionic still has a doctor page, and that page must not
+  # silently fall back to a whole-transcript count because a read-only date refused.
+  #
+  # READ-ONLY, and — unlike `tick` and `arm` — it writes no stamp: a caller asking "what
+  # window would you use" is not itself a firing, and a stamp written here would make
+  # doctor's own diagnosis look like a live Patrol.
+  window)
+    SESSION_ID="$(session_id)" || SESSION_ID=""
+    if [ -z "$SESSION_ID" ]; then
+      die "REFUSED — no session key (CLAUDE_CODE_SESSION_ID is unset or empty)."
+      die "A window answers for ONE session's roster, so without the key there is nothing to date."
+      exit 3
+    fi
+    REPO="$(project_root "$PWD")"
+    REPO_REAL="$(cd "$REPO" 2>/dev/null && pwd -P)"
+    if [ -z "$REPO_REAL" ]; then
+      die "REFUSED — cannot resolve the working directory."
+      exit 2
+    fi
+    ROSTER_FILE="$REPO_REAL/.bionic/tmp/roster-${SESSION_ID}.state"
+    WINDOW="$(roster_window "$ROSTER_FILE" "$SESSION_ID")" || WINDOW=""
+    [ -n "$WINDOW" ] && printf '%s\n' "$WINDOW"
     exit 0
     ;;
 

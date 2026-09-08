@@ -72,7 +72,7 @@ ACTOR=$(_jq '.agent_id')
 # cheap next to refusing every backgrounded command in every session on the machine
 # because one file is missing. The failure directions in this repo are chosen by the
 # cost of the mistake, never uniformly.
-BIONIC_LIB_WANT="cmd-class.sh root.sh run.sh session.sh"
+BIONIC_LIB_WANT="cmd-class.sh refuse.sh root.sh run.sh session.sh"
 # --- bionic-loader/v2 BEGIN
 # Find the bionic library. This text is pasted BYTE-IDENTICALLY into every hook; a
 # library cannot load itself, so the duplication is the design and
@@ -179,11 +179,30 @@ loader_fail_closed() {
     "bash $_bl_root/scripts/doctor.sh"|\
     "bash $_bl_root/scripts/setup.sh") exit 0 ;;
   esac
-  cat >&2 <<BIONIC_LOADER_REFUSE
-BLOCKED: $1 cannot load its library (${BIONIC_LIB_MISSING:-the bionic library}), so it
-cannot read this command. A wall that cannot read a command refuses it rather than
-waving it through.
+  # THE ONE LINE, AND THE ONE PLACE IN THE TREE THAT SPELLS IT WITHOUT
+  # scripts/lib/refuse.sh. Every other wall calls `refuse`; this one cannot, because
+  # refuse.sh is IN the library this function exists to report missing. So the row-1
+  # wording (record/wave-01-plugin-only/s12-refusal-wording-draft.md §1) is written
+  # out here by hand, in the renderer's exact format, and tests/loader.test.sh §F
+  # drives it against AC-E1.3's own regex so the two spellings cannot drift.
+  #
+  # THE NAME IS BOUNDED IN PURE BASH for the same reason: `bionic_trunc` is in the
+  # missing library. 23 columns of prefix, 31 of fact after the name, 3 of brackets
+  # and 18 of fix leaves 25 for the hook's name, and the longest caller
+  # (`canonical-sdlc-evidence-gate`, 28) is over it — F-8's runtime-width hazard,
+  # arriving at the one site that cannot ask the truncator. The ellipsis is spent
+  # from inside the budget, exactly as bionic_trunc spends it.
+  _bl_who="${1:-a bionic hook}"
+  if [ "${#_bl_who}" -gt 25 ]; then _bl_who="${_bl_who:0:24}…"; fi
+  printf 'bionic: load refused — %s cannot load the bionic library (run /bionic:doctor)\n' "$_bl_who" >&2
+  # THE DETAIL, on the knob only. Ruling D-1: the reader who is interrupted gets one
+  # sentence; the rest is for whoever asks. There is no hook log to write here — the
+  # library that owns logging is the one that did not load.
+  if [ "${BIONIC_WALL_VERBOSE:-}" = "1" ]; then
+    cat >&2 <<BIONIC_LOADER_REFUSE
+A wall that cannot read a command refuses it rather than waving it through.
 
+Wanted: ${BIONIC_LIB_MISSING:-the bionic library}
 Looked in: ${BIONIC_LIB_CANDS:-(no candidate)}
 
 Until the plugin is whole again this wall permits exactly four commands, each matched
@@ -197,12 +216,15 @@ as a whole string:
 Anything else is refused, including one of those four with another command chained
 after it. Run one of them, or act from your own terminal.
 BIONIC_LOADER_REFUSE
+  fi
   exit 2
 }
 # --- bionic-loader/v2 END
 if [ -n "$BIONIC_LIB_MISSING" ]; then loader_fail_open "background-suite-guard"; fi
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/cmd-class.sh"
+# shellcheck source=/dev/null
+. "$BIONIC_LIB/refuse.sh"
 # shellcheck source=/dev/null
 . "$BIONIC_LIB/root.sh"
 # shellcheck source=/dev/null
@@ -248,10 +270,8 @@ engaged_session "$BSG_REPO" "$BSG_SID" || exit 0
 # quoted whole rather than scrubbed and truncated the way farm-out-reminder.sh's audit
 # line is.
 if [ "$IS_BACKGROUND" = yes ]; then
-cat >&2 <<EOF
-BLOCKED: a suite may not run with run_in_background — nobody would read the result.
-
-A backgrounded suite returns a shell id, not an outcome. Your turn can end before it
+  refuse exit2 suite-run "a backgrounded suite's result is never read" "run it in the foreground" \
+    "A backgrounded suite returns a shell id, not an outcome. Your turn can end before it
 finishes, and then the evidence this slice exists to produce lives nowhere: no file, no
 exit status anyone saw. Reports are turn-scoped; files are not.
 
@@ -261,9 +281,7 @@ a timeout/gtimeout binary), with the output tee'd to the evidence log your brief
     $COMMAND 2>&1 | tee <evidence log>
 
 Then read the log and quote the pass/total line. If the suite is genuinely longer than any
-timeout you can set, say so in your report and stop — do not background it.
-EOF
-exit 2
+timeout you can set, say so in your report and stop — do not background it."
 fi
 
 # ---------- ARM 2 (S13, AC-21): THE BUDGET ARM ----------
@@ -358,8 +376,8 @@ budget_refuse() {  # <suite basename>
   # the problem. Two readers hit it before this branch existed.
   case "$1" in
     *'$'*|*'`'*)
-      cat >&2 <<EOF
-BLOCKED: $1 cannot be named at hook time.
+      refuse exit2 suite-run "the suite name here is a shell variable" "spell each suite literally" \
+        "The name as read: $1
 
 This command names its suite with a shell variable, and this wall reads your command
 text BEFORE the shell expands it — so the name never resolves to a suite it can check
@@ -369,14 +387,10 @@ Spell the suite literally, one per call:
     bash tests/alpha.test.sh
     bash tests/beta.test.sh
 
-On the budget: ${2:-(nothing — this brief declared Suites: none)}
-EOF
-      exit 2 ;;
+On the budget: ${2:-(nothing — this brief declared Suites: none)}" ;;
   esac
-  cat >&2 <<EOF
-BLOCKED: $1 is not on this agent's suite budget.
-
-This is a BUDGET arm, not a safety wall: an extra suite run breaks nothing, it spends
+  refuse exit2 suite-run "that suite is not on this agent's budget" "run only the budgeted suites" \
+    "This is a BUDGET arm, not a safety wall: an extra suite run breaks nothing, it spends
 forty minutes of a machine nobody else can use. The set was recorded on this agent's
 roster row at dispatch, from the files its brief declared.
 
@@ -385,9 +399,7 @@ You asked for: $1
 
 Run only what is on it. If the change genuinely reaches further than the brief said,
 say so in your report and let the orchestrator widen the brief — a wider instrument is
-its decision to make, and it is the one holding the one-regression budget for the run.
-EOF
-  exit 2
+its decision to make, and it is the one holding the one-regression budget for the run."
 }
 
 # THE READING IS SCOPED TO THIS REPOSITORY and the split is guarded. `$BSG_REPO` is what
@@ -405,10 +417,8 @@ for _target in $_TARGETS; do
     case " $SUITES_ALLOWED " in
       *" run.sh "*) continue ;;
     esac
-    cat >&2 <<EOF
-BLOCKED: the full tree (tests/run.sh) is not on this agent's suite budget.
-
-This is a BUDGET arm, not a safety wall. One regression means one: the whole tree is
+    refuse exit2 suite-run "the full tree is not on this agent's budget" "run your brief's suites" \
+      "This is a BUDGET arm, not a safety wall. One regression means one: the whole tree is
 proved once per run, by one dispatched runner whose row carries tests/run.sh, at
 integration close. A second full run costs forty minutes and proves what the first one
 already did.
@@ -416,9 +426,7 @@ already did.
 On the budget: ${SUITES_ALLOWED:-(nothing — no set was recorded for this agent)}
 
 Run the suites your brief named instead. If the tree genuinely must be re-proved, say so
-in your report: the orchestrator records the cause on the plan and dispatches the runner.
-EOF
-    exit 2
+in your report: the orchestrator records the cause on the plan and dispatches the runner."
   fi
   [ "$BUDGET_STATED" = yes ] || continue
   case " $SUITES_ALLOWED " in

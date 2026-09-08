@@ -689,12 +689,29 @@ for h in protect-main canonical-sdlc-evidence-gate landing-gate; do
   cp "$HOOKS/$h.sh" "$BROKEN/hooks/$h.sh"
 done
 
+# TWO DRIVES OF THE SAME CALL, and the pair is what slice 13's ruling D-1 made necessary.
+# `loader_fail_closed` puts ONE line on the user stream — `bionic: load refused — <hook>
+# cannot load the bionic library (run /bionic:doctor)` — and the four permitted repair
+# commands, the library it wanted and the candidates it tried are `detail`, emitted only
+# under BIONIC_WALL_VERBOSE=1. So $DRV_ERR is asserted for the LINE and $DRV_VERR for the
+# detail; asserting the repair commands on $DRV_ERR would now be asserting that the wall
+# leaks them. The second drive runs only when the first refused, so nothing permitted is
+# ever run twice — and the loader wall exits before it sources anything, so it has no side
+# effect for a second drive to double.
+DRV_VERR=""
 drive_broken() {  # <hook> <payload>
   DRV_OUT=$(printf '%s' "$2" | env HOME="$SANDBOX/home" \
       BIONIC_PLUGINS_DIR="$SANDBOX/plugins-empty" CLAUDE_CODE_SESSION_ID="$SID" \
       bash "$BROKEN/hooks/$1.sh" 2>"$SANDBOX/.err")
   DRV_ST=$?
   DRV_ERR=$(cat "$SANDBOX/.err")
+  DRV_VERR=""
+  if [ "$DRV_ST" -ne 0 ]; then
+    printf '%s' "$2" | env HOME="$SANDBOX/home" \
+        BIONIC_PLUGINS_DIR="$SANDBOX/plugins-empty" CLAUDE_CODE_SESSION_ID="$SID" \
+        BIONIC_WALL_VERBOSE=1 bash "$BROKEN/hooks/$1.sh" >/dev/null 2>"$SANDBOX/.verr"
+    DRV_VERR=$(cat "$SANDBOX/.verr")
+  fi
   return 0
 }
 bash_payload_at() {  # <command> <cwd>
@@ -724,10 +741,11 @@ for h in protect-main canonical-sdlc-evidence-gate; do
   CCWD="$(closed_cwd "$h")"
   drive_broken "$h" "$(bash_payload_at 'git push origin main' "$CCWD")"
   expect_eq "$h with no library refuses a push (exit 2)" "2" "$DRV_ST"
-  expect_contains "…naming the repair verb" "claude plugin update bionic@bionic" "$DRV_ERR"
-  expect_contains "…and the install verb" "claude plugin install bionic@bionic" "$DRV_ERR"
-  expect_contains "…and doctor" "bash $BROKEN_REAL/scripts/doctor.sh" "$DRV_ERR"
-  expect_contains "…and setup" "bash $BROKEN_REAL/scripts/setup.sh" "$DRV_ERR"
+  expect_contains "…in the ruled one line" "cannot load the bionic library (run /bionic:doctor)" "$DRV_ERR"
+  expect_contains "…naming the repair verb" "claude plugin update bionic@bionic" "$DRV_VERR"
+  expect_contains "…and the install verb" "claude plugin install bionic@bionic" "$DRV_VERR"
+  expect_contains "…and doctor" "bash $BROKEN_REAL/scripts/doctor.sh" "$DRV_VERR"
+  expect_contains "…and setup" "bash $BROKEN_REAL/scripts/setup.sh" "$DRV_VERR"
 
   # CLOSED CLASS, permitting: the repair itself, whole-string matched.
   drive_broken "$h" "$(bash_payload_at "bash $BROKEN_REAL/scripts/doctor.sh" "$CCWD")"
@@ -780,6 +798,14 @@ drive_broken_home() {  # <hook> <home> <payload>
       bash "$BROKEN/hooks/$1.sh" 2>"$SANDBOX/.err")
   DRV_ST=$?
   DRV_ERR=$(cat "$SANDBOX/.err")
+  # The detail, on the knob only — see drive_broken above.
+  DRV_VERR=""
+  if [ "$DRV_ST" -ne 0 ]; then
+    printf '%s' "$3" | env HOME="$2" \
+        BIONIC_PLUGINS_DIR="$SANDBOX/plugins-empty" CLAUDE_CODE_SESSION_ID="$SID" \
+        BIONIC_WALL_VERBOSE=1 bash "$BROKEN/hooks/$1.sh" >/dev/null 2>"$SANDBOX/.verr"
+    DRV_VERR=$(cat "$SANDBOX/.verr")
+  fi
   return 0
 }
 
@@ -809,8 +835,9 @@ expect_empty "…silently" "$DRV_ERR"
 # unchanged fail-closed behaviour, named repair commands and all.
 drive_broken_home canonical-sdlc-evidence-gate "$FH" "$(bash_payload_at 'ls' "$FH/proj/sub")"
 expect_eq "evidence gate, no library, real .bionic above the cwd: [ls] REFUSED (exit 2)" "2" "$DRV_ST"
-expect_contains "…naming the repair verb" "claude plugin update bionic@bionic" "$DRV_ERR"
-expect_contains "…and doctor" "bash $BROKEN_REAL/scripts/doctor.sh" "$DRV_ERR"
+expect_contains "…in the ruled one line" "cannot load the bionic library (run /bionic:doctor)" "$DRV_ERR"
+expect_contains "…naming the repair verb" "claude plugin update bionic@bionic" "$DRV_VERR"
+expect_contains "…and doctor" "bash $BROKEN_REAL/scripts/doctor.sh" "$DRV_VERR"
 # …and the repair allowlist still fires from inside such a project.
 drive_broken_home canonical-sdlc-evidence-gate "$FH" \
   "$(bash_payload_at "bash $BROKEN_REAL/scripts/doctor.sh" "$FH/proj/sub")"

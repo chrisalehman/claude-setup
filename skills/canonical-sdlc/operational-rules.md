@@ -267,7 +267,7 @@ column is the obligation the reviewer reads back. Shape:
 ```
 | concept | owning module (SSoT) | rendering surfaces | agreement test |
 |---|---|---|---|
-| version pin value | no single place — typed at each site; that IS the finding | both hooks · scripts.test.sh assertions · SKILL.md prose · this file's version history · the two SVG diagrams | pin-sync rows in tests/scripts.test.sh pin the two hook sites, and tests/diagrams.test.sh pins the four diagram renderings against the hook's value; the two prose sites drift silently |
+| version pin value | canonical-sdlc-evidence-gate.sh's `SUPPORTED_SDLC_VERSION` | both hooks · this file's version history · the two SVG diagrams | `tests/cross-gate-agreement.test.sh` §V pins all five renderings against the gate's value, with a mutation arm |
 | agreement-test exemplar + authoring rules | SKILL.md §Step 6 | SKILL.md §Step 6 · agents/critic.md AXIS block · this section | AXIS-marker rows in tests/agent-roles.test.sh — the pin covers two of the three surfaces; this section is the unpinned one |
 ```
 
@@ -281,18 +281,54 @@ column is the obligation the reviewer reads back. Shape:
   three surfaces, and the doc is the one that drifts, because nothing runs it.
 - **The agreement test is a real hermetic test that fails when the surfaces disagree** — named,
   not a suite and not "covered by the unit tests". The standing exemplar is the
-  `SUPPORTED_SDLC_VERSION` pin-sync rows in `tests/scripts.test.sh`: one logical constant, two
-  rendering sites pinned — the two hooks — and one test that goes red the moment either moves
-  alone. It is also the honest limit, and the limit is the half worth knowing while you write the
-  cell: the version paragraph in `SKILL.md` and the version-history bullet at the top of this file
-  are rendering sites *outside* that tuple, and they drift silently — which is exactly the row the
-  table above writes down rather than rounding up to "pinned". The diagrams used to sit in that
-  same unpinned set and no longer do: composing them as SVG made their four version renderings
-  greppable, and `tests/diagrams.test.sh` reads the hook's value rather than restating it. That is
-  the general move — a surface becomes pinnable by changing its format, not by promising to
-  remember it. `none — <why>`
+  `SUPPORTED_SDLC_VERSION` pin in `tests/cross-gate-agreement.test.sh` §V (epic-21 wave-02
+  S12): one logical constant, five rendering sites — the two hooks, this file's own
+  version-history bullet, and both diagram SVGs — held against the evidence gate as origin,
+  with a mutation arm. It replaced a narrower exemplar that pinned only the two hooks
+  (`tests/scripts.test.sh`, retired epic-18 W3) and left the prose and diagram sites to drift
+  silently — which was, for a while, exactly the honest-limit case this cell exists to
+  document, and is the half worth knowing while you write one: name what a tuple leaves out
+  rather than rounding up to "pinned". The general move that closed it: a surface becomes
+  pinnable by changing its format (composing the diagrams as SVG made their version
+  renderings greppable) or by naming it in the same agreement test as the origin, not by
+  promising to remember it. `none — <why>`
   is a legitimate cell — some pairs are prose against prose, and a mandate dispatched verbatim
   has no seam to test — but it is a cell the reviewer will stop on, so give it the reason.
+
+### The Eval design table
+
+`## Eval design` sits beside `## Design` in a wave-or-epic spec, one row per acceptance
+criterion. SKILL.md carries the contract — the six columns, the type ladder, the rule that an
+eval with no nameable "Fails when" is refused at the card. This is how to fill one in.
+
+- **Approach is one line, and it is a design decision.** "Grep the rendered file for the six
+  column headers" is an approach; "test it" is not. It names the seam the eval reaches through,
+  which is exactly why the table is authored at Step 2 and not at Step 3: the architecture has
+  just decided what is observable, and an approach written before that is a guess about a shape
+  nobody has chosen yet.
+- **Eval type is the ladder in words** — static · unit · hermetic · live · human, T0–T4. Words
+  rather than tier codes because the Step-2 card counts types per requirement and a user
+  reading `T0 T0 T2` learns nothing they can push back on. The tier code still travels into the
+  plan's matrix, which is machine-read; this column is the one a person ratifies.
+- **Eval is `command → expected observation`,** both halves. A command with no expected
+  observation is a thing you ran, not an eval — the reader cannot tell a pass from a crash — and
+  an observation with no command is a hope. The observation is what the terminal shows, not the
+  conclusion you would draw: `rc=2, stderr names AC-K2.3`, never `the wall works`.
+- **Fails when names a PLANTED DEFECT, singular and specific.** "the code is broken" fails the
+  column; "the `fails-when:` line is deleted from one AC block" passes it, because a writer can
+  go and do that and watch the eval turn red. It is the sentence the writer implements first —
+  red on that exact mutation — before any of the code the eval is for.
+- **A criterion that admits no "Fails when" goes back to Step 1.** That is the loop the column
+  exists to close, and it closes upward: the defect is in the criterion's wording, not in the
+  eval, and rewriting the eval around an unfalsifiable criterion buys a green that means
+  nothing. Step 1's quality bar — write each criterion so a "fails when" is nameable — is this
+  rule paid for early, where it is cheap.
+- **One row per criterion, and the plan renders them.** Step 3 adds sequencing (which slice
+  implements which eval, in what order) and the matrix's bookkeeping columns. It authors no eval
+  of its own, and a matrix row with no row here is a criterion that skipped a step.
+- **The gate reads the rendered column.** From `current: 4` on, an AC block whose `fails-when:`
+  is missing or empty refuses the commit, naming the row. A waiver does not excuse it: a waiver
+  dissolves the obligation to RUN an eval, never the obligation to have designed one.
 
 ### Scaling
 
@@ -338,23 +374,9 @@ SKILL.md carries the terminal-disposition rule and names the report's ten parts;
 authoring detail — what each part is for, and the bound that keeps the whole thing from
 growing back into ceremony.
 
-<!-- TERMDISP-BEGIN -->
-> Abolish "continuation candidate." Every finding gets exactly one of three terminal
-> dispositions at wave close:
-> 1. **DO-NOW** — folded into the closing wave.
-> 2. **ACCEPT-CLOSED** — ruled won't-fix, recorded beside its reasoning, and never
->    carried forward again. An accepted residual is knowledge, not work.
-> 3. **PROMOTE** — kept only with one of two homes: **(a) a trigger** — the named
->    EVENT that reactivates it ("diagnose the flake when it next fires — output now
->    preserved"), or **(b) a charter** — promotion into a named future effort (an
->    ideas/ seed or epic charter) by the user's explicit materiality ruling at close.
->    A charter costs a decision and gives the work its own document that competes
->    for prioritization openly. What stays forbidden is the homeless deferral: an
->    item on a wave's continuation list with no decision, no home, no identity —
->    that is what schedules cleanup waves by momentum. (Amended 2026-08-16 on
->    Chris's catch: the original trigger-only form had no bin for legitimately
->    deferred major work — the plugin conversion itself is the proof case.)
-<!-- TERMDISP-END -->
+The rule itself is not restated here. It lives once, in `agents-src/blocks/terminal-disposition.md`,
+and is rendered into `SKILL.md` §Step 9 — read it there. A second copy in this file was the
+duplicate wave-02 removed (spec AC-6).
 
 **The report is one turn.** Not a document, not a file the user has to open — it is the
 close-out message itself, sent once, at Step 9. A close-out that spans multiple turns or
@@ -387,6 +409,16 @@ confirmation dressed up as an audit. If a part has nothing to say, it gets one c
 material risks") rather than a heading with nothing under it. Plain English means no jargon a
 plain reader would have to look up, and conceptual altitude means decisions and outcomes, not
 diffs, commands, or file paths.
+
+**Archiving a closed run (epic-22 wave-01, REQ-C; ADR-003).** Two config keys in
+`.bionic/config.yaml`, read by `payload/scripts/lib/roots.sh` and `archive.sh`, sit beside
+`docs-root:` and `rigor-floor:` above: `archive-root:` (default `$HOME/bionic-archive`) names
+where a closed run's directory goes; `archive-on-close:` (default `true`; `false` opts a
+project out entirely) governs whether Step 9 moves anything at all. The move itself —
+`specs:`/`plans:`/`adrs:` for one epic slug, to `<archive-root>/<project>/.bionic/<same
+relative path>`, never `record:` — is `archive_run`'s contract, documented at its own
+definition in `payload/scripts/lib/archive.sh`; SKILL.md §Step 9 names the call and the
+`archived:` evidence line it produces.
 
 ## Evidence gate
 

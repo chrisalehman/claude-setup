@@ -36,6 +36,11 @@ needs:
 loading: deferred
 ---
 
+<!-- GENERATED FILE — DO NOT EDIT.
+     Rendered by agents-src/render.sh from agents-src/templates/skills/canonical-sdlc/SKILL.md.tmpl and the shared
+     blocks in agents-src/blocks/. Edit those, then re-run `bash agents-src/render.sh`.
+     tests/docs-pins.test.sh goes red whenever this file and its sources disagree. -->
+
 # Canonical SDLC
 
 Governs non-trivial engineering work. Every run declares a triple — `<intent> · <rigor> · <scale>` — and walks the applicable steps, leaving evidence a hook can read.
@@ -95,7 +100,7 @@ Do not carve a sensitive concern into a tiny unflagged wave to dodge a floor. Th
 ## Artifact layout
 
 ```
-<docs-root>/specs/epic-NN-<slug>/{epic.spec.md, wave-NN-<slug>.spec.md}
+<docs-root>/specs/epic-NN-<slug>/{epic.spec.md, wave-NN-<slug>.spec.md, wave-NN-<slug>.requirements.md}
 <docs-root>/plans/epic-NN-<slug>/{epic.plan.md, wave-NN-<slug>.plan.md}
 <docs-root>/adrs/epic-NN-<slug>/adr-NNN-<slug>.md
 <docs-root>/incidents/NNNN-<slug>/{spec.md, plan.md, rca.md}
@@ -118,6 +123,20 @@ frontmatter on them and blocks a canonical artifact written anywhere else. `reco
 only by citing a path. That is the whole distinction, and it is the boundary test applied to
 this tree: growth in the gated dirs is governed, growth in the operational ones is free.
 
+**Three artifacts, three steps** (design ledger K5; ADR-001) — Steps 1–3 write exactly one
+artifact apiece, chained requirement → criterion → design decision → eval → evidence. Step 1
+writes `wave-NN-<slug>.requirements.md`: numbered requirements/user stories, each with
+provenance and acceptance criteria written so a "fails when" is nameable, plus Not Doing. Step
+2 writes `wave-NN-<slug>.spec.md`: the technical design (domain model, architecture, ownership
+table, rejected alternatives), the Eval design table, and ADR pointers. Step 3 writes
+`wave-NN-<slug>.plan.md`: slices, sequencing, the dispatch ledger, and the verification matrix
+rendered from Step 2's Eval design. Requirements live beside the spec, both under
+`specs/epic-NN-<slug>/` — the governing-skill hook validates `*.requirements.md` frontmatter the
+same way it validates `*.spec.md`, minus the design three-way rule (that stays spec-only). Each
+of the three opens with a `## Goal` section — one concise paragraph, first after the title
+(design ledger K5.4) — and a governing-skill arm at `scale: wave` or `scale: epic` refuses a
+write whose first section is not Goal, or whose Goal section is empty.
+
 **Anything the matrix cites as evidence goes in `record/`, never `tmp/`.** Auditor reports,
 critic findings, review-axis artifacts, test-run captures — the matrix names them by path, so
 they must outlive the run that produced them. `tmp/` is wiped at Step 8 and takes its contents
@@ -137,9 +156,9 @@ Every artifact carries frontmatter with `governing-skill:`, `sdlc-step:`, `inten
 | Step | Governing skill | Gate |
 |---|---|---|
 | 0 Configure | `canonical-sdlc` | Frontmatter complete, matrix derived, user confirmed, task list created |
-| 1 Scope | `agent-skills:idea-refine` | Refined idea + explicit "Not Doing" + alternatives lens cites prior art |
-| 2 Design | `agent-skills:spec-driven-development` | Every requirement has an acceptance criterion; every criterion cites its `provenance:`; wave+ carries a governing design |
-| 3 Plan | `superpowers:writing-plans` | No placeholders; `integration-branch:` present; matrix locked; slices tagged; user approved |
+| 1 Scope | `agent-skills:idea-refine` | Refined idea + explicit "Not Doing" + alternatives lens cites prior art; writes `wave-NN-<slug>.requirements.md` — numbered requirements/user stories with provenance and acceptance criteria, plus Not Doing |
+| 2 Design | `agent-skills:spec-driven-development` | Every requirement has an acceptance criterion; every criterion cites its `provenance:`; wave+ carries a governing design; writes `wave-NN-<slug>.spec.md` — the technical design, ownership table, and the Eval design table |
+| 3 Plan | `superpowers:writing-plans` | No placeholders; `integration-branch:` present; matrix locked; slices tagged; user approved; writes `wave-NN-<slug>.plan.md` — slices, sequencing, and the verification matrix rendered from Step 2's Eval design |
 | 4 Implement | `agent-skills:incremental-implementation` | Every slice RED before GREEN; assumptions logged |
 | 5 Verify | `superpowers:verification-before-completion` | Walk artifact in `record/`; tests floor green; every matrix row discharged at tier or waived; auditor CONFIRMED |
 | 6 Review | `agent-skills:code-review-and-quality` | Every axis has a verdict; independent critic attached |
@@ -162,76 +181,70 @@ Committing is a cross-cutting rhythm (~once per step), not a numbered step. Upda
 3. **Infer the flags.** `language` from repo files; `surface_type`/`has_ui` from the request; `multi_agent` defaults **true** (infer `false` only when there is genuinely nothing to offload — never key it off an installed plugin catalog, which silently disables the dispatched-task ledger guard); `deploy_target` **defaults to `n/a` and is never inferred** — a live surface exists only where the user names one, in the request or at this step's confirmation, and deploy-shaped signals in the repo are not that naming; `cleanup_on_finish` true; `use_worktree` false; `integration_branch` from the epic plan, else the current mainline, else `main` — print it as `unknown` rather than dropping it; `model_plan` is mechanical, never invented or recalled from memory: the orchestrator tier is the detected session model, and every other tier (implementor, senior-implementor, researcher, test-runner, auditor, critic) is read verbatim from that role's `model:` + `effort:` frontmatter in the rendered role files — `agents/*.md` in this repo, or `${CLAUDE_PLUGIN_ROOT}/agents/*.md` for an installed run.
 4. **Derive the walk requirement.** From the declared surface flags: a surface an agent can open and drive → `walk: required`; nothing drivable → `walk: exempt`. It prints in the confirmation display and is recorded as plan-frontmatter `walk:`. **Exemptions derive from declared configuration and are ratified at Step 0, never invented mid-run** — there is no mid-run `n/a`, and the Verify gate reads an absent or unrecognized key as `required`, so an omission never becomes an exemption.
 5. **Derive the Verification Matrix.** One row per acceptance criterion. Tier defaults: user-visible behavior → **T3**; engine-divergent → **T2 both engines** plus **T3** for the user-visible AC; pure substrate with no runtime surface → **T1/T2** with a one-line justification; perceptual fidelity → **T3**, T4 available; docs → **T0/none**. A criterion whose only evidence is a lifecycle artifact — a close-out report, `continuation.md`, an ADR — is a Step-9 checklist item, never a matrix row: it is a property of the report Step 9 writes, not a product behaviour the gate can validate mid-run. Print it under a `close-out obligations:` line in the confirmation display instead.
-6. **Present the confirmation display in full, in the layout below.** Every section, every flag, every inference rationale, every matrix row, the `integration-branch:` line. Never elide, sample, summarize, defer, or restate it as prose — the user is approving exactly what they can see, and an abbreviated display invalidates the confirmation. Print every matrix row even past 12 ACs; a matrix is precisely what must not be sampled. An unknown value prints as `unknown` rather than dropping its line.
+6. **Present the confirmation display in full, in the layout below.** Settings only — no matrix, no per-line inference rationale, no hooks-ok line, no slug line, no "at risk" lines; the Verification Matrix renders at Step 3 instead (`## Step-3 card`). Never elide, sample, summarize, defer, or restate it as prose — the user is approving exactly what they can see. An unknown value prints as `unknown` rather than dropping its line. Branches always carries both the `working` and the `integration` line. Omit Seed when no document seeded the run, and Warnings when there is nothing to warn about; every other section always prints, in the order shown.
 
 ```
-═══ Plan Configuration — confirm before Step 1 ═══
-environment:
-  bionic-root:  <abs path>/.bionic                   [verified | MISSING]
-  docs-root:    .bionic/docs                         [default | from config.yaml]
-  bionic-tmp:   <abs path>/.bionic/tmp               [ready]
-  hooks:        evidence-gate, governing-skill       [installed+executable | <what is wrong>]
+Step 0 · Plan Configuration
 
-slug: <wave-NN-slug | epic-NN-slug | incident-NNNN-slug>
+  Purpose
+    <one paragraph: what this run ships, in plain language>
 
-Triple:                          [the run's shaping decision]
-  intent:  <value>               [inferred: <rationale — cite the machinery test for build/bugfix>]
-  rigor:   <value>               [inferred: <rationale — name the binding floor>]
-  scale:   <value>               [inferred: <rationale — why not the neighbouring scales>]
+  Seed                                     (only when a document seeded the run)
+    brief         <path>  (rev <n>, <date>)
+    source        <path>  (cherry-picks for <theme>)
 
-  floor derivation:  scale default <v> · intent floor <v> · flag floor <v> · project floor <v>
-                     · epic floor <v> → effective <v> = MAX
+  Run
+    intent        <value>
+    rigor         <value>  (<scale default | overridden>)
+    scale         <value>
+    name          <wave-NN-slug | epic-NN-slug | incident-NNNN-slug>
 
-integration-branch: <name>       [<source: epic plan | current mainline | main> — Step 8 merges here]
+  Branches
+    working       <branch>          (from <base branch> @ <sha>)
+    integration   <branch>          (Step 8 merges here)
 
-resources:                       [probed at this step — the ceiling every dispatch batch is measured against]
-  cores: <n>  mem_gb: <n>  disk_free_gb: <n>  load_1m: <f>  os: <macos | linux>
-  parallel-budget: writers=<n> suites=<n> worktrees=<n> test_jobs=<n> source=<probe | override>
+  Paths
+    project       <abs path>
+    docs          <path>            (default | from config.yaml)
+    tmp           <path>            (default)
+    archive       <path>            (default)
+    spec          <path>            (Step 2 writes)
+    plan          <path>            (Step 3 writes)
+    record        <path>            (evidence)
 
-Discriminator flags:
-  surface_type:    <value>      [inferred: <evidence>]
-  language:        <value>      [inferred: <evidence>]
-  has_ui:          <value>      [inferred: <evidence>]
-  multi_agent:     <value>      [inferred: <evidence>]
-  deploy_target:   <value>      [n/a unless you name a live surface — never inferred]
+  Machine
+    budget        <n> writers · <n> suites · <n> worktrees · <n> test jobs
+    probe         <n> cores · <n> GB · <n> GB free · load <f>
 
-Opt-in flags:
-  cleanup_on_finish: <value>    [<consequence at Step 8>]
-  use_worktree:      <value>    [<why isolation is or is not needed>]
+  Shape
+    surface       <value>
+    agents        <multi-agent, tiered dispatch | single-thread>
+    deploy        <value>
+    worktree      <value>
+    cleanup       <value>
 
-Walk requirement:                [Step 5 opens with it — decided here, no mid-run exemption]
-  walk: <required | exempt>     [derived: <which surface flags — what an agent would open>]
+  Gates
+    walk          <required | exempt>
+    interview     <required | waived (<who or why>)>
 
-Design interview:                [Step 2's mandate — the user's to waive, never derived]
-  design-interview: <true | false>   [default true; false = the user has waived the interview]
+  Models
+    orchestrator        <detected session model>
+    implementor         <model>
+    senior-implementor  <model>
+    researcher          <model>
+    auditor             <model>
+    critic              <model>
+    test-runner         <model>
 
-Model plan:                      [multi_agent=<value> → <tiered dispatch | single-thread>; every tier below read from agents/*.md, never invented]
-  orchestrator:       <detected session model>   [main thread, fixed all wave — detected, not a role file]
-  implementor:        <model>    [standard slices — role-file default: agents/implementor.md]
-  senior-implementor: <model>    [complex slices, root-cause debugging — role-file default: agents/senior-implementor.md]
-  researcher:         <model>    [exploration — role-file default: agents/researcher.md]
-  test-runner:        <model>    [mechanical + test execution — role-file default: agents/test-runner.md]
-  auditor:            <model>    [Step 5 — fresh, independent, never the implementer — role-file default: agents/auditor.md]
-  critic:             <model>    [Step 6 — fresh, independent, never the author — role-file default: agents/critic.md]
+  Warnings                                  (preflight problems only; omitted when empty)
+    <warning text>
 
-Verification Matrix:            [locked at Step 3 approval — every row shown, never sampled]
-  stack-health: <PENDING — taken at Step 5 | snapshot | n/a: reason>
-  | AC   | tier | status  | evidence | auditor |
-  | AC-1 | <T>  | pending | see AC-1 |         |  [<tier rationale> — <criterion in one line>]
-  | AC-2 | <T>  | pending | see AC-2 |         |  [<tier rationale> — <criterion in one line>]
-
-  live-tier count: <n> of <total> rows require T3
-  at-risk rows:    <AC-id (why it may end up blocked)> | none
-  slices carrying NO ROW: <slice + why it produces a determination, not behaviour> | none
-  close-out obligations: <criterion (why its evidence is a lifecycle artifact)> | none
-
-Reply "confirm" to accept, or specify overrides:
-  e.g. "set use_worktree=true, set verify(AC-2)=T2, then confirm"
-  Reply "explain" (or "explain <axis>") for a plain-language guide to these choices.
+Do you approve this configuration? Reply "approved" to ratify it.
+explain <axis> · set <flag>=<value>
 ```
 
    **This layout is literal, and it is deliberately not marked unenforced.** No hook can check it — the display is conversational, never a file — so the template *is* the whole enforcement. A previous version expressed it as descriptive prose, which read as decoration and was deleted in an instruction-surface cut; the run then drifted into free-form summaries that satisfied nobody. Keep it as a block.
-7. **Block until explicit confirmation.** No timeout, no implicit acceptance.
+7. **Block until the literal reply `approved`.** No timeout, no implicit acceptance; a question, silence, or a partial reply is never transcribed as approval.
 8. **Create the task list immediately on approval** — one task per planned step, `0:` marked completed. Nothing runs in between.
 
 **The `design-interview:` flag.** `design-interview: true | false` is standing Step-0 configuration, default `true`, printed in the confirmation display above and recorded in plan frontmatter beside `walk:`. It is not derived from anything: `false` is the **standing Step-0 form** of Step 2's user-only interview waiver, carrying that waiver's whole force and none of it weakened — the run proceeds without the Design Interview because the user said so. A standing form is **not a second way to discharge that waiver**: the reason is still written verbatim into the design's assumptions, quoting the Step-0 reply, and the flag itself records with attribution — `design-interview: false <user> <date>`, the sibling literal of `design-waived:` and `rigor-override:`, because that attribution is the only trace that a human made the call. `design-interview:` is recorded, not validated — no hook parses it, unlike `walk:`, whose enum blocks at write time, and `rigor-override:`, whose presence the floor checks read; **an agent never sets it**, in either direction, and a later reader meets a decision rather than an absent interview.
@@ -253,6 +266,48 @@ The list is the user's visible progress surface. Nothing enforces this — no ho
 
 **Evidence:** `Step 0: configured at <ISO> via <reply>; model_plan=<tiers>; integration-branch=<name>; parallel-budget=<writers=N suites=N worktrees=N test_jobs=N source=…>`
 
+### Step 1 — Scope
+
+Step 1 is interactive Q&A and is never skipped. It authors ONE kind of knowledge — what is
+wanted, in the user's terms — and lands it in ONE artifact: `wave-NN-<slug>.requirements.md`,
+beside the spec under `specs/epic-NN-<slug>/`. Numbered requirements, each with its
+`provenance:` and its acceptance criteria; then "Not Doing". No design, no slices, no evals.
+
+**Write every criterion so a "fails when" is nameable.** Step 2 has to be able to say what
+planted defect would turn each criterion's eval red; a criterion that admits no such sentence
+("the code is clean", "performance is good") cannot be evaluated and is rewritten here, where
+it is still cheap. That is a Step-1 quality bar, not a Step-2 discovery.
+
+**The step ends at the card below, rendered in full.** One line per requirement, never a
+paragraph — the artifact path is the depth, and `explain <requirement>` opens one. Ratification
+is against the card, and the card's own question is the gate.
+
+```
+Step 1 · Requirements
+
+  Purpose
+    <one paragraph: what this run ships, and for whom>
+
+  Branches
+    working       <branch>              (from <base> @ <sha>)
+    integration   <branch>              (Step 8 merges here)
+
+  Requirements
+    REQ-<id>   <the requirement in one line>
+               provenance <user quote | spec section | ticket | report>    ACs <n>
+
+  Not Doing
+    <one line per excluded item — what is out, and why>
+
+  Artifacts
+    requirements  <docs-root>/specs/epic-NN-<slug>/wave-NN-<slug>.requirements.md
+
+Do you approve these requirements? Reply "approved" to ratify it.
+explain <requirement>
+```
+
+**Evidence:** `Step 1: requirements: <path>; <how the scope was ratified>`
+
 ### Step 2 — Design
 
 Every acceptance criterion carries a `provenance:` line naming where its requirement came from, authored *with* the criterion. Four forms: `provenance: user <date> "<quote>"` · `spec §N` · `ticket-N` · `report §N`. It is written here because circularity is undetectable downstream by definition — "correctly implements a real requirement" and "requirement transcribed from the code" are observably identical at verification time, so the distinction exists only at authoring. A citation beats a category label: a false citation means fabricating a reference anyone can check by opening the source.
@@ -269,15 +324,36 @@ The citation travels with the criterion into the plan's matrix AC block, where t
 
 Every design decision cites the requirements it serves. That is the middle link of the provenance chain — **requirement → design decision → criterion → evidence** — and the Step-5 auditor walks it whole. Authoring guidance, and what a table row is worth, live in `operational-rules.md`.
 
+**The spec's `## Eval design` section.** Beside `## Design`, a wave-or-epic spec carries a
+flush-left `## Eval design` table — one row per acceptance criterion. It is authored HERE and
+not at Step 3 because the architecture is what decides what is observable: the seams the design
+just chose are the ones an eval can reach. Six columns, in this order:
+
+| Requirement | Approach | Criterion | Eval type | Eval | Fails when |
+|---|---|---|---|---|---|
+| `REQ-<id>` | how this criterion is proven, one line | the acceptance criterion | static / unit / hermetic / live / human | `<command>` → `<expected observation>` | the planted defect this eval must go red on |
+
+`Eval type` is the tier ladder in words — **static · unit · hermetic · live · human** = T0–T4 —
+so the card can count types without teaching the user a code. **An eval with no nameable "Fails
+when" is not an eval**: the row is refused at this step's card, and the criterion goes back to
+Step 1 until a failure can be named. Step 3 RENDERS this table into the plan's matrix, adding
+only sequencing and the matrix's bookkeeping columns; it authors no eval of its own. The writer
+implements the eval first, red on the named failure, then the code.
+
+The evidence gate reads the rendered column: from `current: 4` on, an AC block with no
+`fails-when:` refuses the commit, naming the row.
+
 **The Design Interview — mandatory.** Step 2 is semi-interactive, and this is what that interactivity is for. It runs as an interview: a frame, then a walk, one turn at a time. Two shapes are refuted by dogfood — **batch presentation**, the design delivered whole as a wall of text with an ambiguous call to action, and **question-without-frame**, a fork posed before its terms exist.
 
-**Open with the frame**, before any question: the problem and the goal; your own **Design intuition**, the shape you expect to be right, stated so the user can push on it; **Requirements served**, citing the requirements this design answers — the provenance chain's first link, upstream of every decision's own citation; a decision map naming each choice ahead **strategic** or **tactical**; the capture plan, naming where the design ledger accretes; and the artifact form derived from the form menu. Which views the change touches and which you considered and excluded belong here too, one clause each (the view menu lives in `operational-rules.md`). **Question 1 ratifies the frame**; nothing is walked until it holds.
+**Open with the frame**, before any question. Its first ratification is **Context and Problem, for a stranger**: the problem and the goal, written as if for a reader who has never opened this repo; this comes before your own design intuition and before every decision in the frame below it — a change not yet explainable to someone who was not there is not yet understood. Then your own **Design intuition**, the shape you expect to be right, stated so the user can push on it; **Requirements served**, citing the requirements this design answers — the provenance chain's first link, upstream of every decision's own citation; **Mechanisms inherited**, one line per substrate or mechanism the design builds on, each marked `kept` or `questioned` — a `questioned` line becomes a strategic fork; a decision map naming each choice ahead **strategic** or **tactical**, where placing a test cohort in a tier, a job on a runtime surface, or a workload on hardware is **strategic by rule** and is never defaulted; the capture plan, naming where the design ledger accretes; and the artifact form derived from the form menu. Which views the change touches and which you considered and excluded belong here too, one clause each (the view menu lives in `operational-rules.md`). **Question 1 ratifies the frame, Context and Problem first**; nothing is walked until it holds.
 
 **Then walk the map, one decision per turn.** A strategic choice gets a question stating the tension and your own lean; a tactical choice you may default, but every default is **surfaced at ratification**, never silent. The design ledger accretes visibly — each answer folds in as a named delta the turn it lands, so the user reads a design being built rather than a transcript. Load-bearing assumptions are posed as **questions to the user**, not as statements they must think to challenge.
 
 **Close by composing.** The design goes back whole — decisions, rejected alternatives with the reason each lost, assumptions — for ratification **before the spec's first Write**. Proceed only on the user's engagement, or on the user's explicit waiver of the interview, recorded verbatim in the design's assumptions; `design-interview: false` at Step 0 is that waiver's **standing Step-0 form** — recorded as `false <user> <date>`, and the verbatim assumptions line is still owed, quoting the Step-0 reply. Silence is not engagement, and **an agent never waives it** — there is no agent-side waiver.
 
 No new *approval* stop: the binding approval remains the Step-3 checkpoint, which ratifies design, plan, and matrix together, and the wall below is a write-time structural gate that grants approval to nothing. **No hook can see a conversation** — exactly as with Step 1's Q&A, the mandate is the whole enforcement. It does fix the authoring order: the interview is where the design gets composed, so the spec lands after it in one complete Write — a requirements-only first draft of a wave-or-epic spec blocks on the write that would create the file.
+
+**The prototype unit — a design question answered by a throwaway.** A prototype is named before it starts, three fields: the *question* it answers, what "right" looks like, and a *timebox*. It **ships nothing** — its output is a design decision, written to the spec with attribution, that the build slice cites — and it **never owns a matrix row**, because nothing about a throwaway is provable by an eval. Two homes: **Step 2** by default — a candidate prototype is proposed inside the design interview and the user picks whether to run it, walk it as an ordinary decision instead, or skip it; and **Step 4**, by exception, as a `kind: prototype` slice — dispatched, throwaway, its record artifact and the ruling it writes back to the spec — only when the shape could not be seen without code, and the slice states that reason. The no-row rule is structural, not advisory: a `kind: prototype` slice whose Verification Matrix carries an AC block naming it is refused by the evidence gate — the row belongs to whichever slice ships the ruling, never to the prototype that produced it.
 
 **The form menu — derived, then ratified, never mandated.** What the design is *written as* is itself a decision the frame carries. Five forms: a **design paragraph** in the session plan (the task-scale form); a flush-left **`## Design` section** in the spec (the wave default); a **standalone design doc** for a design that outlives the wave or serves as a `design:` pointer target; **structured models** — a logical domain model, C4 views, sequence diagrams — where the change's shape is the hard part; and a **full Technical Design Document** where the surface is large enough that its decisions no longer fit beside the requirements. Derivation heuristics live in `operational-rules.md`; what they produce is a *suggested default*, printed in the frame and ratified, moved up, or moved down by the user there.
 
@@ -290,6 +366,42 @@ No new *approval* stop: the binding approval remains the Step-3 checkpoint, whic
 Presence and resolution are the whole check; the five parts are never inspected and their quality never graded. An empty `## Design` clears the wall and fails the Step-3 approval — which is the ratification that was always going to be the one that could tell.
 
 **Scale.** `task` gets a design paragraph per non-trivial task, written in the session plan — a prose obligation the reviewer reads, with **no wall at task scale at all**. `wave` gets a page or two. Nothing gets forty.
+
+**The step ends at the card below, rendered in full.** One row per design decision, the
+ownership table, and the Eval design as ONE ROW PER REQUIREMENT with its type counts — never
+the whole eval table, which is hundreds of lines and was rejected as a display. `show evals
+<req>` renders one requirement's block: its approach, and per criterion the criterion, the type,
+the eval, and its "fails when".
+
+```
+Step 2 · Design
+
+  Branches
+    working       <branch>              (from <base> @ <sha>)
+    integration   <branch>              (Step 8 merges here)
+
+  Decisions
+    D<n>   <the decision in one line>
+           serves <REQ ids>                                    ADR <file | none>
+
+  Ownership
+    <concept>        owner <module>      surfaces <where it renders>     test <suite>
+
+  Eval design                                static  unit  hermetic  live  human
+    REQ-<id>   <how it is proven, one line>       2     1         3     0      1
+    REQ-<id>   <how it is proven, one line>       1     0         2     1      0
+    total                                        3     1         5     1      1
+
+  Open at approval
+    <design question still open>   → <what closes it>
+
+  Artifacts
+    spec  <docs-root>/specs/epic-NN-<slug>/wave-NN-<slug>.spec.md
+    adrs  <docs-root>/adrs/epic-NN-<slug>/adr-NNN-<slug>.md
+
+Do you approve this design? Reply "approved" to ratify it.
+show evals <req> · explain <decision>
+```
 
 ### Step 3 — Plan shape
 
@@ -316,7 +428,63 @@ current: <N>
 
 Tag every Step-4 slice `complexity: standard | complex`. When uncertain, tag `complex`.
 
-**The approval presentation names the governing design.** One line, listing the absolute path(s) of whatever governs — the spec carrying the `## Design` section, the file its `design:` pointer resolves to, or the word `waived` — with an instruction to review them before answering. Do not render the design's content in the display: paths are what the user opens, and a transcribed domain model is ceremony that makes the display longer without making the decision better. The sole gate is approved / not approved.
+**The approval presentation is the Step-3 card.** It names the governing design on one line —
+the absolute path(s) of the spec carrying `## Design`, the file its `design:` pointer resolves
+to, or the word `waived` — and it renders the CONTRACT the approval binds: the problem, both
+branch lines, the slice table, the parallel width and the first batch, the Eval design as one
+counted line, the verification one-liner, and every design question still open with the slice
+that closes it. The domain model is still not transcribed — paths are what the user opens — but
+what the user is agreeing to is on the card, because ratification is against the card.
+
+**The gate is the literal word `approved`, and nothing else is.** Silence, a question, or a
+partial reply is never transcribed as approval. On that word, write into `## SDLC State`:
+
+```
+approved-by: <user> <ISO-UTC> "<verbatim reply>"
+```
+
+While that line is absent the evidence gate refuses every commit at `current: 4` or later, and
+dispatch-preflight refuses every writer-class dispatch (implementor, senior-implementor). Both
+walls, and the fails-when wall beside them, bind at every scale — a task-scale plan at
+`current: T<n>` is past Step 3. The Patrol's below-Step-4 fill refusal stays as the second
+backstop.
+
+```
+Step 3 · Plan
+
+  Problem
+    <the Step-2-era problem in one paragraph — what is wrong now, including the
+     artifact, eval and prototype gaps this plan closes. No Context: it was
+     ratified at Step 1.>
+
+  Branches
+    working       <branch>              (from <base> @ <sha>)
+    integration   <branch>              (Step 8 merges here)
+
+  Slices                                      kind      depends   agent
+    <n>   <the slice in one line>             build     —         senior-implementor
+    <n>   <the slice in one line>             test      <n>       implementor
+
+  Parallel width
+    <n> writers · first batch <slice numbers>
+
+  Eval design
+    <n> criteria · <n> static · <n> unit · <n> hermetic · <n> live · <n> human
+
+  Verification
+    <n> matrix rows · floor <suite> · walk <required | exempt> · auditor <rigor>
+
+  Open at approval
+    <design question still open>   → closed by slice <n>
+
+  Artifacts
+    requirements  <docs-root>/specs/epic-NN-<slug>/wave-NN-<slug>.requirements.md
+    spec          <docs-root>/specs/epic-NN-<slug>/wave-NN-<slug>.spec.md
+    plan          <docs-root>/plans/epic-NN-<slug>/wave-NN-<slug>.plan.md
+
+Do you approve this plan? Reply "approved" to ratify it.
+show evals <req> · show slice <n> · explain <decision>
+```
 
 **Wave shape locks at approval.** Mid-wave discoveries go to `## Assumptions` as W+1 candidates — they do not reshape the current wave. Two exceptions: a discovery that makes the wave structurally impossible (surface a Wake Note and halt — the answer is "this wave cannot ship," not "ship a different wave"), and one-line trivial corrections.
 
@@ -373,7 +541,9 @@ A lower tier passing while a higher one fails is a **locator, not a contradictio
 
 A **fresh, independent** exec-complex agent (`subagent_type: bionic:auditor`) — never the implementer, never a fork of the orchestrator, whose context is the thing under audit. Dispatch carries this mandate **verbatim**; a paraphrase is a weakened auditor:
 
+<!-- AUDITOR-MANDATE-BEGIN -->
 > Your job is to falsify the claim that this wave's requirements were faithfully implemented **and proven** — not to review its code. You hold the spec, its governing design, the Verification Matrix, the per-row evidence, and repo access. Walk three levels, top-down. **(1) Coverage** — walk the chain whole: requirement → design decision → criterion → evidence. For every requirement in the spec, name both the design decisions and the criteria that serve it; a requirement answered by criteria but by no design decision is a hole in the chain, not a covered requirement (where the design is waived, say so and walk requirement → criterion). Seed this mechanically: invert the `provenance:` citation map and the design section's requirement references, and requirements with zero inbound citations from either are the uncovered list before any judgment is spent; spend the judgment on the harder half — requirements cited but weakly expressed, covered in letter and missed in substance. A hole is a **wave-level** finding, because the per-row verdict scheme cannot express a missing row: emit one wave-level verdict alongside the row verdicts. **(2) Power** — for every row, state what the observation would have shown had the change been absent; if the answer is "the same thing," the row proves nothing, whatever its tier. A zero, empty, or not-present readback with no paired positive case is presumed powerless and cannot discharge — you are that rule's enforcement. Once per wave, go one step past judgment with a revert-and-watch demonstration: you are read-only and must not revert or stub anything yourself, so have the test-runner revert or stub the named change and capture a named check going red, then validate the capture — the change really absent, the check one the matrix leans on, the red the failure you predicted. Its value over per-slice RED evidence is that it is durable, auditable after integration, and covers the whole change. **(3) Authenticity** — confirm each row's evidence was produced at its declared tier: a T3 row must cite the declared real surface, its per-origin freshness proofs, a cold client, and a feature-scoped semantic readback; a T2 row must carry its fixture-fidelity declaration, and the fixture must be structurally able to reach the failure the AC guards. Re-execute at least one evidence command per tier used (cap 3 total) and compare outputs. Verdict per row **and one for the wave**: CONFIRMED / REFUTED / UNVERIFIABLE. "The evidence is plausible" is not a verdict. Agreement without re-execution is not acceptable output. Hold every report to the reporting contract: a factual claim carrying neither its proving command with output nor the label "unverified" is itself a finding.
+<!-- AUDITOR-MANDATE-END -->
 
 Bounds: audits the verification, not the wave — never re-verifies the feature, re-runs the whole suite, or reviews the code. The boundary with Step 6's critic sharpens rather than moves: the auditor proves the *verification* faithful to the *requirements*; the critic attacks the *code*. Read-only is literal — the revert-and-watch demonstration is performed by the `test-runner` on request and the auditor validates the capture it returns. One auditor, one pass, ≤3 re-executions.
 
@@ -395,15 +565,19 @@ Note the hole: the hook checks only that the token `waiver` is present — not w
 
 **Architecture-axis closure check:** for each new primitive added this wave, trace user input → new code, and confirm the Step-5 T3 readback reached the same code. No callsite reaching it means the substrate is dead and the axis is FAIL.
 
+<!-- DUPLICATION-AXIS-BEGIN -->
 **Duplication axis — one implementation site per concept.** The design's ownership table is the anchor: its owner column already says where each concept lives, so the axis is a comparison, not a hunt. A second site computing or deciding the same thing is a FLAG; a concept the table gives two owners is a FAIL; a concept the wave introduced and the table never named is a FLAG against the design, not against the code.
 
 **Agreement tests.** Each shared-truth pair in the ownership table — one concept, more than one rendering surface — names one hermetic test that fails when the surfaces disagree. The standing exemplar is `tests/cross-gate-agreement.test.sh` §N.1: one logical text, the loader idiom, rendered into nineteen hooks, pinned byte-for-byte against `bionic_loader_pin`'s live output, with a mutation arm that doctors one copy and proves the pin goes red. §R does the same for the four-copy `resolve_docs_root` family — and it is also the honest limit: until wave 1.4.0 that section built its mutant and asserted nothing, and two documents cited it as the safety net anyway. A pin nobody has watched fail is prose wearing a test. A listed pair with no named test is a FLAG, and "the suite covers it" is not a named test.
+<!-- DUPLICATION-AXIS-END -->
 
 Neither of these is a wall. **No hook sees the duplication axis or the agreement-test obligation** — they are carried by the reviewer and critic mandates and enforced by judgment, which is the whole reason the ownership table is authored at Step 2 where a human ratifies it.
 
 **Stance 2 — adversarial critic.** Mandatory at `audited`. Must be an **independent** agent (`subagent_type: bionic:critic`) — never the author, never self-graded. Distinct from the Step-5 auditor: the critic falsifies the *code*, the auditor falsifies the *evidence*. Prompt template:
 
+<!-- CRITIC-TEMPLATE-BEGIN -->
 > _Your job is to find what went wrong in this change. You have the spec, the plan, the diff, and the 6-axis self-review notes. Read them and try to falsify the claim that this is ready to merge. Look specifically for: silent wrong assumptions not logged in the `## Assumptions` section, scope creep beyond the spec, missing edge cases, fabricated evidence, and cross-cutting concerns a single-axis review would miss. Output either: at least one specific, reproducible issue, or an explicit "no issues found" followed by the three strongest falsification attempts you made and why each failed. Confirmation-seeking agreement is not acceptable output._
+<!-- CRITIC-TEMPLATE-END -->
 
 Incident framing: does the fix mask a deeper issue, and is the monitoring-gap analysis honest. Sycophantic output is not evidence.
 
@@ -421,7 +595,7 @@ Atomic, one task. Merge the wave into the declared integration branch (local mer
 
 **Close-out is an institution, not a courtesy.** Every finding this run's rigor machinery surfaced — walk, matrix discharge, auditor, critic — gets exactly one terminal disposition. "Continuation candidate" is abolished; nothing leaves this step homeless.
 
-<!-- TERMDISP-BEGIN -->
+<!-- TERMINAL-DISPOSITION-BEGIN -->
 > Abolish "continuation candidate." Every finding gets exactly one of three terminal
 > dispositions at wave close:
 > 1. **DO-NOW** — folded into the closing wave.
@@ -437,13 +611,15 @@ Atomic, one task. Merge the wave into the declared integration branch (local mer
 >    that is what schedules cleanup waves by momentum. (Amended 2026-08-16 on
 >    Chris's catch: the original trigger-only form had no bin for legitimately
 >    deferred major work — the plugin conversion itself is the proof case.)
-<!-- TERMDISP-END -->
+<!-- TERMINAL-DISPOSITION-END -->
 
 The vehicle is a single-turn close-out report, sent to the user at Step 9 and never re-run as ceremony: plain English, at the altitude of decisions rather than of code, covering ten parts — goal, accomplished, deferred-with-dispositions (each finding's DO-NOW / ACCEPT-CLOSED / PROMOTE named), special attention, material risks, challenges, decisions, success/failure verdict, learnings, next. Authoring detail per part and the anti-ceremony bound live in `operational-rules.md`. Write `continuation.md` (§Handoff above) alongside it — the report is what the user reads; the file is what the next wave opens.
 
 **Where the run ends.** Every close-out records `delivered:` — the terminal state of the work, which is a PR open and ready for a human to review, or commits landed locally and ready to push. That boundary is the default endpoint of the lifecycle: what happens past it is the human's process, and a run that claims it has overstated what it did.
 
 Where — and only where — `deploy_target` names a live surface this run operates, the close-out also carries `deployed:`, `verified:`, and `monitored:`: the release lands, it is verified on the surface, and it is watched for one cycle before the report claims done. `deploy_target` defaults to `n/a` and is never inferred (Step 0), so this trio is strictly opt-in — the ordinary run owes nothing past delivery.
+
+**Archiving.** Once `delivered:` is written, call `archive_run` (`payload/scripts/lib/archive.sh`) with the closing plan's own directory under `<docs-root>/plans/`: an epic close or a standalone run's close moves that directory's `specs:`/`plans:`/`adrs:` trio to `<archive-root>/<project>/.bionic/<same relative path>`, and a wave inside an open epic moves nothing. `archive-on-close: false` in `.bionic/config.yaml` turns this off for the project. The close-out report's `delivered:` line is followed by an `archived:` line naming what moved, or why nothing did — the line `archive_run` itself printed.
 
 ## Evidence shapes
 
@@ -458,7 +634,7 @@ One evidence artifact per step under `Step N:` in `## SDLC State`. The gate vali
 | 6 | pointer to the 6-axis body + critic findings; matrix re-validated here |
 | 7 | `adr:` OR `rca:` OR `n/a:` |
 | 8 | `merge:`, `worktree-removed:`, and (`cleanup:`, `tmp-wiped:`, `tasks-completed:` OR `cleanup: n/a`) |
-| 9 | `delivered:` always, ON the `Step 9:` line itself — the run-closure predicate (`lib/run.sh`) greps that one line, so a `delivered:` written on a continuation line leaves the run open forever; plus `deployed:`, `verified:`, `monitored:` exactly when `deploy_target` names a live surface |
+| 9 | `delivered:` always, ON the `Step 9:` line itself — the run-closure predicate (`lib/run.sh`) greps that one line, so a `delivered:` written on a continuation line leaves the run open forever; `archived:` always, naming what `archive_run` moved or why nothing moved; plus `deployed:`, `verified:`, `monitored:` exactly when `deploy_target` names a live surface |
 
 **Placeholder ban.** These exact values are rejected anywhere evidence is required: `todo`, `pending`, `in progress`, `inprogress`, `xxx`, `tbd`, `placeholder`.
 
@@ -466,12 +642,13 @@ One evidence artifact per step under `Step N:` in `## SDLC State`. The gate vali
 
 ## Hooks
 
-**`canonical-sdlc-evidence-gate.sh`** (`PreToolUse|Bash`) fires only on a real `git commit` segment. It finds the newest `*.md` under the plan dirs, and if it has a `## SDLC State` section, validates the current step's evidence, the matrix, and the task ledger. **From `current: 5` onward** it also blocks on `provenance: implementation` in any AC block — read flush left or as a flush-left list item (`AC-1:`, `- AC-1:`, `* AC-1:`, `+ AC-1:`; an indented header is not read) — and, once any row is `discharged` and the plan does not declare `walk: exempt`, on a missing `walk-artifact:` line, a path that does not resolve to a real file under `<docs-root>/record/`, or an AC identifier inside that file. **The gate reads the plan as it is when the call starts, not as it will be once the rest of the command runs** — a Bash call that edits the plan and commits in the same invocation is judged on the pre-edit plan, so edit the plan in one call and commit in a separate one. Log-only (never blocks): the epic merge-target check, and the `refactor`/`tune` intent-scoped Step-5 keys.
+**`canonical-sdlc-evidence-gate.sh`** (`PreToolUse|Bash`) fires only on a real `git commit` segment. It finds the newest `*.md` under the plan dirs, and if it has a `## SDLC State` section, validates the current step's evidence, the matrix, and the task ledger. The `approved-by:` and `fails-when:` checks bind at every scale — a task-scale plan at `current: T<n>` is past Step 3. **From `current: 5` onward** it also blocks on `provenance: implementation` in any AC block — read flush left or as a flush-left list item (`AC-1:`, `- AC-1:`, `* AC-1:`, `+ AC-1:`; an indented header is not read) — and, once any row is `discharged` and the plan does not declare `walk: exempt`, on a missing `walk-artifact:` line, a path that does not resolve to a real file under `<docs-root>/record/`, or an AC identifier inside that file. **The gate reads the plan as it is when the call starts, not as it will be once the rest of the command runs** — a Bash call that edits the plan and commits in the same invocation is judged on the pre-edit plan, so edit the plan in one call and commit in a separate one. Log-only (never blocks): the epic merge-target check, and the `refactor`/`tune` intent-scoped Step-5 keys.
 
-**`canonical-sdlc-governing-skill.sh`** (`PreToolUse|Write,Edit`) blocks any artifact under `<docs-root>/{specs,plans,adrs,incidents}/` lacking `governing-skill:` frontmatter, and blocks a `mode:` line, a missing or non-enum triple, a missing flag or `model_plan`, a `walk:` value outside `required|exempt`, or a missing `## Verification Matrix` at `sdlc-step ≥ 3`. On a **spec** artifact at `scale: wave` or `scale: epic` it also blocks a write satisfying no arm of the three-way design rule: no flush-left `## Design` in place, no `design:` pointer resolving to a real file that itself carries a flush-left `## Design` (a dangling path, a target without the section, and a `..` component each fail the arm), and no `design-waived:` token. A `design:` pointer that is present is validated on the unwaived path whether or not the spec also carries its own section. Plans and every task-scale artifact are untouched by it. Floor-consistency checks are log-only, and log `user-overridden` in place of a floor violation when frontmatter carries `rigor-override:` — presence only; the marker's fields are never validated, and it does not quiet a malformed `rigor-floor:` value in `config.yaml`.
+**`canonical-sdlc-governing-skill.sh`** (`PreToolUse|Write,Edit`) blocks any artifact under `<docs-root>/{specs,plans,adrs,incidents}/` lacking `governing-skill:` frontmatter, and blocks a `mode:` line, a missing or non-enum triple, a missing flag or `model_plan`, a `walk:` value outside `required|exempt`, or a missing `## Verification Matrix` at `sdlc-step ≥ 3`. On a **spec** artifact at `scale: wave` or `scale: epic` it also blocks a write satisfying no arm of the three-way design rule: no flush-left `## Design` in place, no `design:` pointer resolving to a real file that itself carries a flush-left `## Design` (a dangling path, a target without the section, and a `..` component each fail the arm), and no `design-waived:` token. A `design:` pointer that is present is validated on the unwaived path whether or not the spec also carries its own section. On the same wave/epic **spec** it also blocks, from `sdlc-step ≥ 3` only, an `adrs:` frontmatter line naming a path (or several, joined by ` · `) that does not resolve to a real file — the momentous-ADR pointer D6 requires; below `sdlc-step 3` the arm is silent, since the ADR is drafted alongside the spec that names it. Plans and every task-scale artifact are untouched by it. Floor-consistency checks are log-only, and log `user-overridden` in place of a floor violation when frontmatter carries `rigor-override:` — presence only; the marker's fields are never validated, and it does not quiet a malformed `rigor-floor:` value in `config.yaml`.
 
 **Known holes — do not mistake these for enforcement.** The governing-skill hook validates `Write` content but not `Edit` content, so one valid write covers every later edit. Flag *values* are never checked, only presence. The evidence gate reads the plan file's text, so an `Edit` that writes evidence for tests never run passes unseen. Proof-shape is a heuristic: a digit plus a `/` satisfies it.
 
+<!-- ORCHESTRATOR-DISPATCH-BEGIN -->
 ## Dispatch
 
 The orchestrator stays free: it keeps Steps 0–3, slice decomposition, and every approval-shaped decision, and offloads research, execution, verification, and review. Subagents return summaries, never payloads. Dispatch is the orchestrator's authority alone: a dispatched agent never dispatches — it asks the orchestrator — and the wall says so when a subagent tries.
@@ -482,11 +659,15 @@ Roles, by `subagent_type`: `researcher` and `test-runner` for exploration and me
 
 **The brief declares the FILES the slice will touch; the machine derives the suites.** `Files:` on a line of its own names the paths this slice will write, and the impact command named in `.bionic/config.yaml` turns them into the closed set of suites the agent may run — recorded on its roster row, and held there by a budget arm that refuses any suite outside it. Where no impact command is configured, name the closed set yourself under `Suites:`; a brief that runs no suite at all waives with `Suites: none`. A brief carrying neither label refuses at dispatch. `tests/run.sh` belongs on one row per run, the Step-5 runner's — a second one refuses unless the plan's `## SDLC State` carries a `regression-cause:` line for it. `Files:` names every path the work FORCES, including a manifest a renderer refreshes and a census file whose count must move (A-28, A-32, f2-hooks-docs).
 
-**Command discipline.** Bound a long command with the Bash tool's own `timeout` parameter — never a `timeout`/`gtimeout` binary; macOS ships neither, and a runner that falls back silently when the prefix command is missing has silently changed the run's own preconditions (the drill-run failure that motivates this: a missing `timeout` dropped an `export` prefix the retry needed, and the run went invalid unnoticed). A runner never substitutes or rewrites a brief's command on its own judgment — a command it cannot run as written is refused and reported, not adjusted.
+**Command discipline.** Bound a long command with the Bash tool's own `timeout` parameter — never a `timeout`/`gtimeout` binary; macOS ships neither, and a runner that falls back silently when the prefix command is missing has silently changed the run's own preconditions (the failure that motivates this: a missing `timeout` dropped an `export` prefix the retry needed, and the run went invalid unnoticed). A runner never substitutes or rewrites a brief's command on its own judgment — a command it cannot run as written is refused and reported, not adjusted.
 
 **Five failures this wave hand-fixed, so the next brief doesn't repeat them.** A runner captures a command's exit on the command itself — `{ cmd; echo "rc=$?"; } > log 2>&1` — never `PIPESTATUS`, which is 1-indexed under the tool shell's zsh and expands to nothing (A-37(3)). A cwd guard belongs on the WHOLE command, `cd <tree> || exit 1` first, never on one `&&`-joined assignment — a failed cd with `;`-chained commands runs them in the main checkout (A-46). A writer stops touching its tree the moment it has sent its completion message — the orchestrator lands on that message (A-46). A brief names a knob only after reading its docblock — `BIONIC_TEST_TIMING` is a file path, and `=1` wrote the timing rows to a file named `1` (A-47). A brief's artifact names are checked against `ls <docs-root>/record/<wave>/` before dispatch and never reuse a Step-4 slice label — a reused name overwrote a landed slice's evidence log (A-49).
 
+**Normative values ship as VERBATIM tables in dispatch briefs, never paraphrase** (2026-07-18, epic-07 wave 1). Two competent opus implementers resolved the same spec ambiguity (critic placement in the rigor ladder) in OPPOSITE directions because the tier→gate mapping lived in prose paraphrase; the D1/D4 tables embedded verbatim in the plan had zero drift. Where a value matters, the implementer copies a table — they don't interpret a sentence. Corollary: after correcting any such value, grep EVERY artifact that restates it (ADR ledgers, spec tables, evidence blocks) — decision records drift independently of the prose they record, and single-document review sweeps miss them.
+
 **Liveness fields.** The progress-artifact path carries a `cadence` alongside it — how often the task is expected to write there, extending the 15-minute rule by one number: "too quiet" means quieter than the author's own declaration, not a fixed clock. A subprocess claim — a process pattern plus its output file — is conditional-required: declared only when the task backgrounds a long-running command. While the claimed process exists, quiescence is irrelevant; its absence with no deliverable is what the landing verdict reads as a broken contract. No shape label rides beside these fields — shape emerges from which are present: no progress path is short/turns, progress-plus-cadence is long in-agent, adding a subprocess claim is a delegated command.
+
+**Backgrounding gets DECLARED in the brief** (2026-08-06, epic-15 wave-04 D3, user-ratified): when work genuinely exceeds 10 minutes or must run alongside other work, the dispatch brief MUST declare it — the `claims=` process pattern plus output file that is this subprocess claim by name — so it lands on the session roster the landing verdict later reads. Declaring `claims=` is what lets the verdict call a mid-flight row STILL-LIVE instead of UNMET; nothing watches it between decisions, and the declaration is advisory only — no bionic machinery relies on it existing.
 
 **The Patrol.** One clock per run, and only one. **Arm it at engagement** — the Step-0 confirmation of a new run, or the resume ritual of an open one, in every session of that run — as a session-scoped cron job (`CronCreate`) at the interval `bash <plugin-root>/hooks/session-poker.sh interval` reports (config knob `poker-interval:` in `.bionic/config.yaml`, default 20m), and stamp it alive in the same breath with `bash <plugin-root>/hooks/session-poker.sh arm`. Arming is not conditional on having dispatched anything: the Patrol carries the run, not the roster, and a session that waits for a subagent to exist has no pulse for every stretch it works alone. Never an OS cron, never a resident process — the job is session-scoped, dies with the session, and the roster on disk is the record that survives it; its 7-day auto-expiry is the forgotten-disarm backstop, not the disarm. **At run close, stop it on both sides: `CronDelete` the job AND `bash <plugin-root>/hooks/session-poker.sh disarm`, which removes this session's stamp.** The stamp is the only record on disk that a Patrol is running here, so a `CronDelete` without the `disarm` leaves a deliberate stop that reads exactly like a Patrol a plugin update killed — and `hooks/patrol-revive.sh`, which cannot tell the two apart, then reports the stop you chose as a death on every remaining turn of the session. **Subagents stay timerless:** a dispatched agent arms nothing — it holds its turn and polls its own output, and the one Patrol lives in the session that dispatched it. The manual `/loop` poke ritual is retired with the old poker duty it carried: its work is the patrol prompt's now, and a second timer is a second answer to "what should I be doing right now." **The walls no longer die with the conversation** (bionic 1.4.0), **and they no longer bind a session that never asked for them** (bionic 1.4.1). Every hook is registered once in `hooks/hooks.json`, so a session continue, a `/clear`+resume and a `/reload-plugins` all leave them exactly where they were — the failure this ritual used to exist to repair. What scopes them is two on-disk facts, not one, and they answer different questions: whether this SESSION is engaged, and which run this SESSION is bound to. Engagement decides WHETHER a hook acts at all; the bound run decides WHAT it enforces. `hooks/engage.sh` writes engagement mechanically, the instant this session invokes `canonical-sdlc` — a Skill tool call or a typed `/bionic:canonical-sdlc` — as `.bionic/tmp/engaged-<session-id>.state`; no other skill call writes it, and a session that has never invoked this one is invisible to every bionic hook, the four always-on guards included. Every bionic hook checks engagement FIRST, before the run check that used to be its only gate: a hook that finds no marker does nothing at all, silently, on any input. **Which run is a property of the SESSION, not of the project** (bionic 1.4.2): the open run is the plan this session is BOUND to, recorded as the `plan=` line of its own engagement marker, and a session bound to a plan keeps it until it binds another — a run that closes leaves the session with no open run rather than handing it the neighbour's. Engagement binds the sole open run when the root has exactly one and writes `plan=none` otherwise; a Write that creates a new plan binds that plan; `session-poker.sh bind <plan>` names one by hand, and its operand may be absolute, project-root-relative, or docs-root-relative — the spelling session-start's own listing prints, so a listed line pastes straight into the verb. Only an UNBOUND session falls back to the newest plan under the docs root with a `## SDLC State` heading, `current:` below 9 or 9 without a `delivered:` Step-9 line, and no `abandoned:` frontmatter line — and every hook that takes that fallback announces it on stderr, so a session working the wrong run finds out from the wall rather than from the damage. A hook that finds the marker but no open run still enforces whatever it can enforce without one — the Patrol checkpoint, the deliverable wall, the always-on guards — and skips only the arms that measure against a step, a budget, or a roster. The marker is never removed during the session once written: `disarm` removes only the Patrol stamp, never the marker, so a session that invoked canonical-sdlc is bionic's for the whole rest of its life, run open or closed. So the resume ritual no longer re-invokes this skill to restore the walls; a `/clear`+resume re-invokes it to restore the PROMPT, which rewrites the marker under the new session id as a side effect — no second engagement trigger exists, or is needed, for that path. The 30-second proof still costs nothing and still tells you the truth: a throwaway dispatch carrying no deliverable must come back REFUSED. **The resume ritual is CronList-first:** `CronList`, delete every job whose prompt begins with the patrol marker `bionic-patrol session=` (a predecessor's clock that survived the `/clear`, not the new session's own), and only then `CronCreate` the fresh one — so a resume never runs two clocks side by side the way "one clock per run" forbids. The patrol prompt carries `bionic-patrol session=<session-id[0:8]>` as its first token for exactly this: a stray job's owning session is legible straight off `CronList` output, never guessed. **The resume ritual binds its run before it adopts anything:** if session-start listed more than one open run — or this session is otherwise unbound in a root that holds several — run `bash <plugin-root>/hooks/session-poker.sh bind <plan>` for the plan this session means, immediately after engaging and before the first dispatch. Engagement binds only a SOLE open run, and `adopt` partitions the fleet's rows on that binding, so an unbound resume in a shared root is offered the other run's agents and gated on the other run's plan. **The resume ritual rebuilds the task list after it binds:** run `TaskList`; if it is empty and the bound plan has `## SDLC State`, recreate one entry per step (and per slice at the current step) from the plan, statuses from the step lines. **The resume ritual also runs `bash <plugin-root>/hooks/session-poker.sh adopt` before its first dispatch:** what a `/clear` destroys is the completion message and the in-memory ledger, never the agents a predecessor session left running here, and `adopt` reads every open row off the other sessions' rosters with the one thing the new session cannot re-derive — the agent id, and the observe/message/stop addresses built from it. Ledger every row it prints, by agent id, into the plan's dispatch ledger; a row it reports UNADDRESSABLE is a predecessor that dispatched through a dead wall, and re-invoking the skill is what stops this session from adding another.
 
@@ -521,6 +702,8 @@ That expression is `detect_plugin_root`'s own, held byte-identical to the copy i
 
 **When a report is lost anyway.** The artifacts, the ledger row, and the contracted progress file are the safety net and remain the primary proof — the message is the latency channel, not the evidence, so losing it delays a run rather than voiding it. Recovery is mechanical: a dispatched agent's turns are on disk at `~/.claude/projects/<slugged-cwd>/<session-id>/subagents/agent-*.jsonl`, one JSON object per line, and the report is the last long `assistant` text block in that agent's file. Extract it and persist it under `<docs-root>/record/` before acting on it — a transcript is not an artifact, and a read-only dispatch whose findings live only in a transcript is one cleanup away from having produced nothing.
 
+**Redirect stray doc writes, and never commit them.** If a superpowers skill wants to write specs/plans under `docs/superpowers/`, redirect to `.bionic/docs/` (canonical-sdlc layout) — do not recreate the root docs tree, and never git-commit plan/spec artifacts.
+
 **Fresh by default; fork only** when hand-feeding context would cost more than the fork's inheritance — a fork re-pays the whole main-thread context AND the orchestrator's effort, and ignores `model`. Never fork a mechanical task, and never fork to reach a cheaper model. **Dispatch is always background when `multi_agent: true`** — attended or not. A synchronous dispatch freezes the session, and a user who cannot type cannot steer. Serialize dependent units by dispatching the next one on the previous one's completion notification, never by blocking. Synchronous main-thread execution exists only under `multi_agent: false`, where there are no subagents at all.
 
 **Parallel by default, justify sequential** — but dispatch serially when units share state (one local DB, a shared reset, count-based assertions).
@@ -535,6 +718,8 @@ That expression is `detect_plugin_root`'s own, held byte-identical to the copy i
 
 **The reporting contract.** Every factual claim in a subagent's report — a test result, a file's existence, a command's outcome — carries the command that proves it and that command's output, or the explicit label `unverified`. An `unverified` claim obligates the orchestrator to re-check before acting; a claim with neither proof nor label is a contract violation. The contract governs what a report says; Completion-by-artifact, below, governs how it arrives.
 
+**Agent outputs that claim "the docs explicitly state X"** (or any other verbatim-quote-from-authoritative-source assertion) must be verified against the primary source before acting on them, especially when stakes are material (file changes, infrastructure modifications, hook/config swaps). During the 2026-04-11 Stop-hook-label investigation the `claude-code-guide` agent fabricated a verbatim docs quote that did not exist in the actual docs page; catching it required a direct WebFetch. Treat agent "quotes" as leads, not facts.
+
 **Facts discharge stops.** A row whose verdict reads MET, WAIVED, or acked is stopped by a single TaskStop with no observation call first. A user-ordered stop executes at once regardless of verdict; an unmet contract yields one informational line naming what was missing, never a refusal. The ceremony below survives only for a live agent with an unmet contract.
 
 Two operator commands carry the fact-discharged paths: `bash <plugin-root>/hooks/stop-orders.sh standdown` computes the batch of landed/acked rows with stoppable addresses (and names what it will not touch) before closing a batch or wave; `bash <plugin-root>/hooks/stop-orders.sh order <target>` records a human stop order the gate honors immediately (30-minute validity; expiry fails closed). Addressing rule: **observe by the long transcript id, stop by the bare `name`** — different namespaces, and the machinery prints both. The suffixed form `name@session-xxxxxxxx` names the session that LAUNCHED the agent and never the one that adopted it: a `/clear` re-keys your own session id but does not move the harness's teammate table (live drive, 2026-09-03), so a suffix built from the surviving session addresses nothing. The bare name is the address that always survives.
@@ -542,6 +727,8 @@ Two operator commands carry the fact-discharged paths: `bash <plugin-root>/hooks
 **The stopping standard.** For a live agent with an unmet contract, a subagent may be stopped only when a fresh observation of that target has been recorded first. Freshness is the activity boundary, not a clock (D-1): a stop is permitted only if the target's last working-log activity is no later than what the observation recorded — anything written since is stale by definition, dormancy since the observation is valid however old. One observation discharges exactly one stop (D-2); a second stop needs a fresh observation. Where the brief contracted a progress artifact, the observation of that target names that path — the D-6 channel is evidence the contract already promised, and an observation that omits it is the agent-level look that was insufficient before. The observation that discharges a stop is the stopper's own — a look recorded by a different actor does not close it. What this session did not launch, it does not stop by name; the full agent id is the deliberate path past that refusal. Never on an idle notification, never on elapsed silence alone.
 
 **The non-response procedure.** For a quiet agent, examine its evidence first — for BOTH agent classes, before any other action; an undelivered review is as losable as an uncommitted commit. Then one class-appropriate round: read-only agents may be messaged once and relaunched fresh; writing agents are never resumed — examine their output directly, take over the work, and stand the agent down. Bounded to two rounds, ending in exactly one of: work delivered, work taken over, or agent stopped-and-reported. Every stop is reported to the user, never absorbed silently. **Overdue is a trigger, never evidence:** a task exceeding its declared expected duration routes into this procedure mechanically; it never justifies a stop by itself — the eventual stop still requires its own fresh observation.
+
+**Why writers are never pinged.** A message to an idle WRITE agent resumes a fresh instance from its transcript, and two instances of the same writer will collide on the shared tree (observed: interleaved edits + checkout-reverts) — which is why the procedure above verifies the tree directly (`git status` / `git show --stat`) instead of messaging. Check for a duplicate USER session first.
 
 Rationale, failure model, and use cases for the starting standard, the stopping standard, and the non-response procedure: `design/orchestrator-subagent-coordination.md`.
 
@@ -556,9 +743,10 @@ Before ending a turn, reconcile: every `active` row either has a verified result
 **Three-fail rule.** Three failures to produce valid evidence for one step: if diagnostic, run a full MAP-INSTRUMENT-NARROW pass (the counter resets on a completed pass, not on more speculative fixes); if decision-related, stop and surface. A `standard` slice that fails twice re-dispatches once as `senior-implementor` — that is the third try, not a fourth.
 
 **Stop and wake** for: an ambiguous spec needing a judgment call, new external-API auth, anything affecting billing, destructive migrations, secrets or production infrastructure, and anything the user's own config marks as requiring approval. Append a `## Wake Note` and do not proceed past it.
+<!-- ORCHESTRATOR-DISPATCH-END -->
 
 ## Diagrams
 
-`diagrams/lifecycle.svg` — the 10 steps, the two gates, and the commit rhythm. `diagrams/hook-chain.svg` — which hook fires on which tool event, and which arms block versus log. Each file is its own sole source: hand-composed text, no paired drawing file, no export step, and so nothing that can be stale relative to it. Because the text is greppable, `tests/diagrams.test.sh` pins what the pictures claim — the four version renderings against the hooks' `SUPPORTED_SDLC_VERSION`, the six always-on entries against `hooks/hooks.json`, the ten steps and the armed hook set against this file — and every pin re-proves itself against a doctored copy on each run.
+`diagrams/lifecycle.svg` — the 10 steps, the two gates, and the commit rhythm. `diagrams/hook-chain.svg` — which hook fires on which tool event, and which arms block versus log. Each file is its own sole source: hand-composed text, no paired drawing file, no export step, and so nothing that can be stale relative to it. Because the text is greppable, `tests/cross-gate-agreement.test.sh` §V pins the four version renderings across both SVGs against the hooks' `SUPPORTED_SDLC_VERSION`, with a mutation arm that re-proves the pin against a doctored copy on each run. The six always-on entries against `hooks/hooks.json` and the ten steps and the armed hook set against this file are not pinned by anything yet — `tests/diagrams.test.sh`, the suite this paragraph used to cite for all of it, does not exist.
 
 **Format policy.** Composed SVG is the default for a diagram here, because it is the only format that is simultaneously the editable source, the shipped artifact, and a test surface. Excalidraw (`bionic:excalidraw-diagram`) is the backup, for a drawing whose layout is genuinely hand-arranged rather than composed; it ships an export beside its source and re-accepts the is-that-current relationship, so reach for it when the picture is worth that cost. Any other format is a judgment call, argued at the time against one question: what will pin this picture to the truth after its author has moved on.

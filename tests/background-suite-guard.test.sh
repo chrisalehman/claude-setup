@@ -114,8 +114,25 @@ run_hook() {  # <payload> <hook> [args...]
 # THROUGH THE GUARD, as hooks/hooks.json registers the pair. Every cell below is driven
 # this way unless it is specifically about the guard being absent: what ships is the pair,
 # and a wall proved only when driven straight is a wall nobody proved.
+VERR=""
 guarded() {  # <repo> <command> [agent_id] [bg]
+  # TWO DRIVES OF THE SAME CALL, and the pair is what slice 13's ruling D-1 made
+  # necessary. The user stream is ONE line now — `bionic: <verb> refused — <fact>
+  # (<fix>)` — and everything this suite used to read off it (the suite asked for, the
+  # recorded set, the word BUDGET, the standing ruling) is `detail`, which reaches a
+  # reader only under BIONIC_WALL_VERBOSE=1. So `$ERR` is asserted for the LINE and
+  # `$VERR` for the detail; asserting the detail on `$ERR` would now be asserting that
+  # the wall leaks it.
   run_hook "$(mk_payload "$1" "$2" "${3-$ACTOR}" "${4:-omit}")" "$CTX_GUARD" "$GUARD"
+  local _st="$ST" _out="$OUT" _err="$ERR" _saved="$EXTRA_ENV"
+  VERR=""
+  # ONLY WHEN THE FIRST DRIVE REFUSED, so an allowed command is never run twice.
+  if [ "$_st" -ne 0 ]; then
+    EXTRA_ENV="$EXTRA_ENV BIONIC_WALL_VERBOSE=1"
+    run_hook "$(mk_payload "$1" "$2" "${3-$ACTOR}" "${4:-omit}")" "$CTX_GUARD" "$GUARD"
+    VERR="$ERR"
+  fi
+  EXTRA_ENV="$_saved"; ST="$_st"; OUT="$_out"; ERR="$_err"
 }
 
 section "B0 — the hook exists and parses"
@@ -141,11 +158,11 @@ expect_empty "B1b …silently" "$OUT$ERR"
 
 guarded "$R1" 'bash tests/gamma.test.sh'
 expect_eq "B1c a suite OFF the budget is REFUSED" "2" "$ST"
-expect_contains "B1c …naming the suite that was asked for" "gamma.test.sh" "$ERR"
-expect_contains "B1c …naming the set that was recorded" "alpha.test.sh beta.test.sh" "$ERR"
+expect_contains "B1c …naming the suite that was asked for" "gamma.test.sh" "$VERR"
+expect_contains "B1c …naming the set that was recorded" "alpha.test.sh beta.test.sh" "$VERR"
 # ADR-002: this arm is an instrument budget, not a safety wall, and the refusal says the
 # word — an agent that reads it must be able to tell "you may not" from "this costs".
-expect_contains "B1c …and calling itself a BUDGET, not a wall" "BUDGET" "$ERR"
+expect_contains "B1c …and calling itself a BUDGET, not a wall" "BUDGET" "$VERR"
 expect_empty "B1c …with nothing on stdout" "$OUT"
 
 # EVERY spelling the classifier recognises reaches this arm, or the budget is bypassable by
@@ -161,7 +178,7 @@ done
 # the arm reads every suite the command names, not the first one.
 guarded "$R1" 'bash tests/alpha.test.sh && bash tests/gamma.test.sh'
 expect_eq "B1e a chain carrying one off-budget suite is REFUSED" "2" "$ST"
-expect_contains "B1e …naming the member that was off it" "gamma.test.sh" "$ERR"
+expect_contains "B1e …naming the member that was off it" "gamma.test.sh" "$VERR"
 
 # NEGATIVE CONTROL: prose naming an off-budget suite is not an invocation.
 guarded "$R1" 'echo "next up: bash tests/gamma.test.sh"'
@@ -181,9 +198,9 @@ expect_empty "B1h …silently" "$OUT$ERR"
 section "B2 — tests/run.sh is refused unless the row carries it"
 guarded "$R1" 'bash tests/run.sh'
 expect_eq "B2a the full tree is REFUSED against a narrow budget" "2" "$ST"
-expect_contains "B2a …naming the full tree" "tests/run.sh" "$ERR"
-expect_contains "B2a …calling itself a BUDGET" "BUDGET" "$ERR"
-expect_contains "B2a …and naming the standing ruling it makes mechanical" "One regression means one" "$ERR"
+expect_contains "B2a …naming the full tree" "tests/run.sh" "$VERR"
+expect_contains "B2a …calling itself a BUDGET" "BUDGET" "$VERR"
+expect_contains "B2a …and naming the standing ruling it makes mechanical" "One regression means one" "$VERR"
 
 R2=$(mk_repo b2)
 add_row "$R2" name=w-b2 "agent_id=$ACTOR" suites_allowed=run.sh suites_source=declared files=
@@ -223,7 +240,7 @@ R4A=$(mk_repo b4a)
 add_row "$R4A" name=w-b4a "agent_id=$ACTOR" suites_allowed=none suites_source=declared files=
 guarded "$R4A" 'bash tests/alpha.test.sh'
 expect_eq "B4a a Suites: none row refuses every named suite" "2" "$ST"
-expect_contains "B4a …saying the brief declared none" "Suites: none" "$ERR"
+expect_contains "B4a …saying the brief declared none" "Suites: none" "$VERR"
 guarded "$R4A" 'bash tests/run.sh'
 expect_eq "B4a …and the full tree with it" "2" "$ST"
 
@@ -242,7 +259,7 @@ expect_eq "B4c a row from before the wall stands aside for a named suite" "0" "$
 expect_empty "B4c …silently" "$OUT$ERR"
 guarded "$R4C" 'bash tests/run.sh'
 expect_eq "B4c …but the full tree is still refused" "2" "$ST"
-expect_contains "B4c …saying no set was recorded" "no set was recorded" "$ERR"
+expect_contains "B4c …saying no set was recorded" "no set was recorded" "$VERR"
 # NON-VACUITY: the row really is on the roster and really carries this agent's id, so B4c
 # is the ABSENT KEY being read and not a row the hook failed to find.
 expect_contains "B4c non-vacuity: the row is on the roster under this agent's id" \
@@ -273,7 +290,7 @@ guarded "$R5" 'bash tests/delta.test.sh'
 expect_eq "B5a a suite the LATER row allows is allowed" "0" "$ST"
 guarded "$R5" 'bash tests/epsilon.test.sh'
 expect_eq "B5b …and one neither row allows is still refused" "2" "$ST"
-expect_contains "B5b …against the later row's set" "alpha.test.sh delta.test.sh" "$ERR"
+expect_contains "B5b …against the later row's set" "alpha.test.sh delta.test.sh" "$VERR"
 
 section "B6 — scope: the arm is the AGENT's, and the session must be engaged"
 # A main-thread payload has no top-level agent_id (t1-probe-report.md §3). The
@@ -316,12 +333,14 @@ section "B7 — which arm speaks when both apply"
 # budget is no answer to "nobody read the result" — so the B-9 arm speaks first.
 guarded "$R1" 'bash tests/alpha.test.sh' "$ACTOR" true
 expect_eq "B7a an ON-budget suite, backgrounded, is still REFUSED" "2" "$ST"
-expect_contains "B7a …by the B-9 arm" "run_in_background" "$ERR"
+expect_contains "B7a …by the B-9 arm, whose fact is on the user line" \
+  "a backgrounded suite's result is never read" "$ERR"
 expect_absent "B7a …and not by the budget arm" "BUDGET" "$ERR"
 
 guarded "$R1" 'bash tests/gamma.test.sh' "$ACTOR" true
 expect_eq "B7b an OFF-budget suite, backgrounded, is refused too" "2" "$ST"
-expect_contains "B7b …still by the B-9 arm, which is the wider refusal" "run_in_background" "$ERR"
+expect_contains "B7b …still by the B-9 arm, which is the wider refusal" \
+  "a backgrounded suite's result is never read" "$ERR"
 
 guarded "$R1" 'bash tests/alpha.test.sh' "$ACTOR" false
 expect_eq "B7c run_in_background false is not backgrounded, and on-budget passes" "0" "$ST"
@@ -370,11 +389,16 @@ guarded_from() {  # <cwd for the hook process> <repo> <command>
           bash "$CTX_GUARD" "$GUARD" 2>"$SANDBOX/.err")
   ST=$?
   ERR=$(cat "$SANDBOX/.err")
+  # The same call again with the knob, for the arms that read `detail` (slice 13, D-1).
+  VERR=$(cd "$_dir" && printf '%s' "$_payload" | env HOME="$FAKE_HOME" \
+          CLAUDE_CONFIG_DIR="$FAKE_HOME/.claude" BIONIC_PLUGINS_DIR="$SANDBOX/no-plugins" \
+          CLAUDE_CODE_SESSION_ID="$SID" CLAUDE_PROJECT_DIR= BIONIC_WALL_VERBOSE=1 \
+          bash "$CTX_GUARD" "$GUARD" 2>&1 >/dev/null)
   return 0
 }
 guarded_from "$BSG_GLOBDIR" "$R1" 'bash tests/*.test.sh'
 expect_eq "B8f a glob target is REFUSED by its literal name" "2" "$ST"
-expect_contains "B8f …naming the unexpanded word, not the files beside the hook" "*.test.sh" "$ERR"
+expect_contains "B8f …naming the unexpanded word, not the files beside the hook" "*.test.sh" "$VERR"
 
 section "B9 — a suite named by a shell VARIABLE is a different refusal (C-5, A-35c)"
 # THE DEFECT. A hook reads the command text BEFORE the shell expands it. A writer looping
@@ -388,9 +412,9 @@ section "B9 — a suite named by a shell VARIABLE is a different refusal (C-5, A
 guarded "$R1" 'for s in alpha beta; do bash "tests/$s.test.sh"; done'
 expect_eq "B9a a variable-named suite is still REFUSED" "2" "$ST"
 expect_contains "B9a …saying the name could not be resolved at hook time" \
-  "cannot be named at hook time" "$ERR"
+  "the suite name here is a shell variable" "$ERR"
 expect_contains "B9a …and telling the reader what to type instead" \
-  "Spell the suite literally, one per call" "$ERR"
+  "Spell the suite literally, one per call" "$VERR"
 # THE HEADLINE THE READER ACTS ON must not claim the suite is off a budget the hook never
 # managed to check it against.
 expect_absent "B9a …never claiming it is off the budget" "is not on this agent's suite budget" "$ERR"
@@ -398,10 +422,12 @@ expect_absent "B9a …never claiming it is off the budget" "is not on this agent
 # THE BRACE FORM AND A COMMAND SUBSTITUTION ARE THE SAME STATE.
 guarded "$R1" 'bash "tests/${s}.test.sh"'
 expect_eq "B9b the brace spelling reads the same way" "2" "$ST"
-expect_contains "B9b …with the same refusal" "cannot be named at hook time" "$ERR"
+expect_contains "B9b …with the same refusal" \
+  "the suite name here is a shell variable" "$ERR"
 guarded "$R1" 'bash tests/`suite_name`.test.sh'
 expect_eq "B9c a command substitution reads the same way" "2" "$ST"
-expect_contains "B9c …with the same refusal" "cannot be named at hook time" "$ERR"
+expect_contains "B9c …with the same refusal" \
+  "the suite name here is a shell variable" "$ERR"
 
 # CONTROL: the literal spelling the refusal asks for is allowed, so B9a is about the
 # spelling and not about the suite.
@@ -414,7 +440,7 @@ expect_empty "B9e …silently" "$OUT$ERR"
 # notice. Both labels now end at the colon and the values align on the padding.
 guarded "$R1" 'bash tests/gamma.test.sh'
 expect_eq "B9f control: an ordinary off-budget suite still refuses" "2" "$ST"
-expect_contains "B9f …and its label carries no space before the colon" "You asked for:" "$ERR"
+expect_contains "B9f …and its label carries no space before the colon" "You asked for:" "$VERR"
 expect_absent "B9f …the stray space is gone" "You asked for :" "$ERR"
 
 section "B10 — every site that turns a session id into a roster path carries the shape rule (A-10)"
@@ -448,5 +474,53 @@ expect_no_regex "B10 …and the pattern discriminates (a hook without the rule f
 B10_ADJACENT=$(/usr/bin/grep -A1 'case "\$BSG_SID" in' "$GUARD" | tail -1)
 expect_match "B10 …on the line immediately before the roster path is formed" \
   'ROSTER_FILE=*' "$B10_ADJACENT"
+
+section "B11 — AC-E1.3/E1.5: every refusal is one line, in the criterion's shape"
+#
+# fails-when: a refusal reaches the user as more than one line, or in any shape but
+# `bionic: <verb> refused — <fact> (<fix ≤ 40 cols>)`. All four of this wall's refusal
+# sites are tripped for real and asserted against the criterion's own regex and then
+# against the exact wording the ruled table gives them (s12-refusal-wording-draft.md §1
+# rows 11 through 14). The detail every arm above reads lives behind the knob, and B11e
+# is the pair that proves the split rather than assuming it.
+
+B11_RE='^bionic: [a-z-]+ refused — .+ \(.{1,40}\)$'
+b11_line() {  # <label> <expected line>   (reads $ERR from the last `guarded`)
+  local _n
+  _n="$(printf '%s\n' "$ERR" | wc -l | tr -d ' ')"
+  if [ "$_n" = "1" ]; then ok "$1: exactly one line on the user stream"
+  else no "$1: exactly one line on the user stream" "got $_n lines: [$ERR]"; fi
+  if printf '%s' "$ERR" | /usr/bin/grep -qE "$B11_RE"; then ok "$1: in AC-E1.3's shape"
+  else no "$1: in AC-E1.3's shape" "line=[$ERR]"; fi
+  if [ "$ERR" = "$2" ]; then ok "$1: and it is the table's own wording"
+  else no "$1: and it is the table's own wording" "want [$2] got [$ERR]"; fi
+}
+
+guarded "$R1" 'bash tests/alpha.test.sh' "$ACTOR" true
+b11_line "B11a row 11 (backgrounded)" \
+  "bionic: suite-run refused — a backgrounded suite's result is never read (run it in the foreground)"
+
+guarded "$R1" 'for s in alpha beta; do bash "tests/$s.test.sh"; done'
+b11_line "B11b row 12 (an unexpanded name)" \
+  "bionic: suite-run refused — the suite name here is a shell variable (spell each suite literally)"
+
+guarded "$R1" 'bash tests/gamma.test.sh'
+b11_line "B11c row 13 (off the budget)" \
+  "bionic: suite-run refused — that suite is not on this agent's budget (run only the budgeted suites)"
+
+guarded "$R1" 'bash tests/run.sh'
+b11_line "B11d row 14 (the full tree)" \
+  "bionic: suite-run refused — the full tree is not on this agent's budget (run your brief's suites)"
+
+# AC-E1.5, the pair. The same call, knob off and knob on: the budget set is the value
+# the one line had no room for, and the knob is the only thing that puts it back.
+guarded "$R1" 'bash tests/gamma.test.sh'
+expect_absent "B11e without the knob the recorded set is NOT on the user stream" \
+  "alpha.test.sh beta.test.sh" "$ERR"
+expect_contains "B11e …and with BIONIC_WALL_VERBOSE=1 it is" \
+  "alpha.test.sh beta.test.sh" "$VERR"
+expect_eq "B11e …with the one line still first" \
+  "bionic: suite-run refused — that suite is not on this agent's budget (run only the budgeted suites)" \
+  "$(printf '%s\n' "$VERR" | head -1)"
 
 finish

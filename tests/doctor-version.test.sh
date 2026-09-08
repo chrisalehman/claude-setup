@@ -176,16 +176,38 @@ _TOOLS_MISSING="$(make_tool_dir "$BIN" yes)$(make_tool_dir "$BIN_NO_CLAUDE" no)"
 if [ -z "$_TOOLS_MISSING" ]; then ok "T0: the fixture's tool directory carries every program doctor runs"
 else no "T0: a program doctor runs is missing from the fixture's tool directory" "$_TOOLS_MISSING"; fi
 
-run_doctor() {  # <claude-home> [shell-rc]
-  ( cd "$REPO" && HOME="$TMP" PATH="$BIN" BIONIC_SHELL_RC="${2:-$FIXTURE_RC}" \
-      BIONIC_CLAUDE_HOME="$1" BIONIC_PLUGIN_ROOT="$PAYLOAD" BIONIC_DOCTOR_PROBE_SECONDS=3 \
-      bash "$DOCTOR_SH" < /dev/null 2>&1 )
+# THE PAGE IS STDOUT, AND STDERR IS KEPT ASIDE RATHER THAN MERGED INTO IT.
+#
+# WHY THIS IS NOT A CONVENIENCE. Every arm below that measures the column budget
+# measures "every line doctor PRINTS", and doctor prints its page on stdout: the
+# only three things it writes to stderr are a usage refusal and a cannot-load
+# fatal, none of which is a row. A merged capture makes the budget arms measure
+# whatever ANY process in the drive happened to say on stderr, so a diagnostic
+# that has nothing to do with the renderer is counted as a rendered line. That is
+# not hypothetical: in the 8-wide floor run at aa3acc4, bash's own job-control
+# message from the `set -m` in `detect_bounded` —
+#   payload/scripts/lib/detect.sh: child setpgid (25227 to 25227): Operation not permitted
+# — 151 columns, emitted by /bin/bash and not by anything in this repo, landed in
+# the capture and failed arms 21 and 23 as though doctor had rendered a second
+# over-budget line. Alone, the same suite was 69/69.
+#
+# STDERR IS NOT DISCARDED. It goes to $DOCTOR_ERR_FILE, holding the LAST drive's
+# error stream, so a doctor that dies still says why — and so the split itself can
+# be asserted rather than assumed (arms 23b/23c below).
+DOCTOR_ERR_FILE="${TMP}/doctor.stderr"
+
+run_doctor() {  # <claude-home> [shell-rc] [extra doctor args...]
+  local h="$1" rcfile="${2:-$FIXTURE_RC}"
+  if [ $# -ge 2 ]; then shift 2; else shift $#; fi
+  ( cd "$REPO" && HOME="$TMP" PATH="$BIN" BIONIC_SHELL_RC="$rcfile" \
+      BIONIC_CLAUDE_HOME="$h" BIONIC_PLUGIN_ROOT="$PAYLOAD" BIONIC_DOCTOR_PROBE_SECONDS=3 \
+      bash "$DOCTOR_SH" "$@" < /dev/null 2>"$DOCTOR_ERR_FILE" )
 }
 
 run_doctor_no_claude() {  # <claude-home> — the same page with the CLI off PATH
   ( cd "$REPO" && HOME="$TMP" PATH="$BIN_NO_CLAUDE" BIONIC_SHELL_RC="$FIXTURE_RC" \
       BIONIC_CLAUDE_HOME="$1" BIONIC_PLUGIN_ROOT="$PAYLOAD" BIONIC_DOCTOR_PROBE_SECONDS=3 \
-      bash "$DOCTOR_SH" < /dev/null 2>&1 )
+      bash "$DOCTOR_SH" < /dev/null 2>"$DOCTOR_ERR_FILE" )
 }
 
 # The version row alone — the one line in BIONIC NATIVE beginning with one of
@@ -372,6 +394,16 @@ expect_match "22: and it is that paste-verbatim command" \
   "$REMOVE_CMD_LINE" "$OVER6"
 expect_all_lines_fit "23: half-uninstalled — every other line still fits" "$OUT6"
 
+# THE SPLIT ABOVE IS LOAD-BEARING, AND THIS PAIR PROVES IT IS REAL rather than a
+# capture that silently swallowed doctor's error stream. `--nonsense` is the one
+# refusal doctor renders on stderr (doctor.sh's own option parser); it must reach
+# the kept file and it must not reach the page the budget arms measure.
+OUT_BADOPT="$(run_doctor "$HOME6" "$HALF_RC" --nonsense)"
+expect_match "23b: doctor's error stream is kept, not merged — its usage refusal lands there" \
+  "*unknown option*" "$(cat "$DOCTOR_ERR_FILE" 2>/dev/null)"
+expect_no_match "23c: …and never on the page every column-budget arm measures" \
+  "*unknown option*" "$OUT_BADOPT"
+
 # The rc row is the other line the walk found over the budget (101 columns on a
 # short $HOME). The fixture rc path is far longer than that, so this proves the
 # row is elided rather than merely short.
@@ -433,6 +465,74 @@ write_known_marketplaces "$HOME8" '{"source":"github","repo":"example/bionic"}' 
 ROW8="$(version_row "$(run_doctor "$HOME8")")"
 expect_match "30: a dotted/dashed prerelease version is still reported" \
   "*9.9.9-rc.1 available*" "$ROW8"
+
+section "Section 7: plugin source — which tree the seat loads (W4 4/4)"
+
+# WHAT THIS SECTION OWNS. `detect_marketplace_source_path` (payload/scripts/lib/
+# detect.sh) reads what the registry names as bionic's source; doctor.sh turns
+# that into ONE line comparing it against the checkout doctor itself is running
+# from — the two homes for one marketplace name that a machine carrying a plugin
+# install, a checkout and a marketplace copy of the same thing can have live at
+# once. `run_doctor` (above) already `cd`s to `$REPO` before invoking doctor.sh,
+# so a fixture that names `$REPO` as bionic's source is exactly "this checkout",
+# and the same fixture with a different path is exactly the other one.
+
+plugin_source_line() {  # <full-output>
+  printf '%s\n' "$1" | awk '/^plugin source: /'
+}
+
+echo "--- 7a: this checkout ---"
+
+HOME9="$(make_registry_home)"
+write_known_marketplaces "$HOME9" '{"source":"directory","path":"'"$REPO"'"}' "$REPO"
+OUT9="$(run_doctor "$HOME9")"
+LINE9="$(plugin_source_line "$OUT9")"
+expect_match "31: a registration naming this checkout's own root reads [this checkout]" \
+  "*${REPO}*\[this checkout\]" "$LINE9"
+expect_no_match "31b: …and never carries the OTHER-checkout warning" "*OTHER checkout*" "$LINE9"
+
+echo "--- 7b: OTHER checkout ---"
+
+# Not asserted against the FULL literal path: a mktemp root under this machine's
+# $TMPDIR is long enough on its own that the bracket sentence leaves no room for
+# it whole — the truncation arm below is where that elision itself is the claim.
+OTHER_ROOT="$(mktemp -d -p "$TMP")"
+HOME10="$(make_registry_home)"
+write_known_marketplaces "$HOME10" '{"source":"directory","path":"'"$OTHER_ROOT"'"}' "$OTHER_ROOT"
+LINE10="$(plugin_source_line "$(run_doctor "$HOME10")")"
+expect_match "31c: a registration naming a DIFFERENT root reads OTHER checkout" \
+  "plugin source: *\[OTHER checkout — the CLI loads the plugin from THERE\]" "$LINE10"
+expect_no_match "31d: …and it is not read as this checkout" "*\[this checkout\]" "$LINE10"
+
+echo "--- 7c: unregistered ---"
+
+HOME11="$(make_registry_home)"
+write_empty_known_marketplaces "$HOME11"
+LINE11="$(plugin_source_line "$(run_doctor "$HOME11")")"
+expect_eq "31e: no bionic entry at all prints the plain unregistered line" \
+  "plugin source: unregistered" "$LINE11"
+
+echo "--- 7d: a git feed has no filesystem path, so it can never read 'this checkout' ---"
+
+HOME12="$(make_registry_home)"
+write_known_marketplaces "$HOME12" '{"source":"github","repo":"example/bionic"}' "/tmp/some-clone"
+LINE12="$(plugin_source_line "$(run_doctor "$HOME12")")"
+expect_match "31f: the repo slug prints as-is, verdict OTHER — nothing here can match a root" \
+  "*example/bionic*\[OTHER checkout — the CLI loads the plugin from THERE\]" "$LINE12"
+
+echo "--- 7e: the bracket verdict survives truncation; the path gives way instead ---"
+
+# THE SAME LESSON Section 5 already proved for the version row's path detail,
+# applied to this line: the informative half (the path) is expendable, the
+# verdict half (the bracket) is not.
+LONGROOT="${TMP}/${LONGSEG}/${LONGSEG}/checkout"
+mkdir -p "$LONGROOT"
+HOME13="$(make_registry_home)"
+write_known_marketplaces "$HOME13" '{"source":"directory","path":"'"$LONGROOT"'"}' "$LONGROOT"
+LINE13="$(plugin_source_line "$(run_doctor "$HOME13")")"
+expect_match "31g: the long path was elided" "*…*" "$LINE13"
+expect_match "31h: …and the OTHER-checkout verdict survived the cut whole" \
+  "*\[OTHER checkout — the CLI loads the plugin from THERE\]" "$LINE13"
 
 section "Section 8: feed kind is keyed on the installed plugin's own marketplace name (AC-18, L-DETECT/4.1)"
 
@@ -575,5 +675,82 @@ expect_match "43: with the CLI off PATH, an MCP row names that as the cause"   "
 expect_no_match "44: …and with the CLI present that cause is nowhere on the page"   "*the claude CLI is not on PATH*" "$OUT_WITHCLI"
 expect_match "45: …which answers the same row from the CLI instead (the pair is not vacuous)"   "*chrome-devtools*not installed*" "$OUT_WITHCLI"
 expect_all_lines_fit "46: the CLI-absent page still fits the budget" "$OUT_NOCLI"
+
+section "Section 13: the rendered-file integrity manifest doctor reads (wave-02 AC-8)"
+
+# WHAT CHANGED AND WHY IT NEEDS A TEST AT ALL. detect_agent_integrity() has shipped since
+# epic-17 W4 and, until now, NO suite exercised it: the manifest it reads was written by
+# agents-src/render.sh and named by exactly one other file, and a rename of either would
+# have been silent. Wave-02 S2a renames it (integrity/agents.sha256 ->
+# integrity/rendered.sha256) and widens it from the six role files to every rendered
+# plugin file, so the fact function's contract — stock / modified / unknown, with the
+# modified files NAMED — is pinned here where doctor's own rows live.
+#
+# DRIVEN THROUGH THE SEAM detect.sh ALREADY OFFERS. BIONIC_PLUGIN_ROOT points the fact
+# function at a fixture root built from the repo's own rendered files, so this asserts
+# against the SHIPPED manifest rather than a hand-typed one. Sourced in a child /bin/bash
+# so the fixture root never leaks into the rest of this suite.
+
+DETECT_LIB="${PAYLOAD}/scripts/lib/detect.sh"
+RENDERED_MANIFEST="${PAYLOAD}/integrity/rendered.sha256"
+
+expect_true "47: the payload ships payload/integrity/rendered.sha256" test -f "$RENDERED_MANIFEST"
+expect_false "48: …and no longer ships the old integrity/agents.sha256" \
+  test -f "${PAYLOAD}/integrity/agents.sha256"
+
+# make_plugin_root -> a plugin root laid out the way an INSTALLED payload is: the manifest
+# beside agents/, commands/ and skills/, each at the plugin-root-relative path the manifest
+# names (the repo reaches those through payload/agents and payload/skills/* symlinks).
+make_plugin_root() {
+  local dir; dir="$(mktemp -d -p "$TMP")"
+  mkdir -p "$dir/integrity" "$dir/agents" "$dir/commands" "$dir/skills/canonical-sdlc"
+  cp "$RENDERED_MANIFEST" "$dir/integrity/" || return 1
+  cp "${REPO}"/agents/*.md "$dir/agents/" || return 1
+  cp "${REPO}"/payload/commands/*.md "$dir/commands/" || return 1
+  cp "${REPO}/skills/canonical-sdlc/SKILL.md" "$dir/skills/canonical-sdlc/" || return 1
+  printf '%s' "$dir"
+}
+
+# integrity_line <plugin-root> -> detect_agent_integrity's one line
+integrity_line() {
+  BIONIC_PLUGIN_ROOT="$1" /bin/bash -c '. "$0"; detect_agent_integrity' "$DETECT_LIB" 2>/dev/null
+}
+
+PROOT_STOCK="$(make_plugin_root)"
+LINE_STOCK="$(integrity_line "$PROOT_STOCK")"
+expect_match "49: an untouched install reads as stock" "*state=stock*" "$LINE_STOCK"
+expect_match "50: …over all twelve rendered files, not just the six roles" "*total=12*" "$LINE_STOCK"
+expect_match "51: …with nothing named as modified" "*modified=0 names=-*" "$LINE_STOCK"
+
+# THE DEFECT CONTROL. `stock` above is worth nothing unless the same reader turns on a
+# real edit — and the role files are the case the line was written for.
+PROOT_ROLE="$(make_plugin_root)"
+printf '\nlocally added line\n' >> "$PROOT_ROLE/agents/critic.md"
+LINE_ROLE="$(integrity_line "$PROOT_ROLE")"
+expect_match "52: one doctored ROLE file reads as modified" "*state=modified*" "$LINE_ROLE"
+expect_match "53: …and is named" "*names=critic.md*" "$LINE_ROLE"
+
+# THE WIDENING ITSELF: before this slice a doctored skill file or command page was
+# invisible to this line, because the manifest had no row for either.
+PROOT_SKILL="$(make_plugin_root)"
+printf '\nlocally added line\n' >> "$PROOT_SKILL/skills/canonical-sdlc/SKILL.md"
+LINE_SKILL="$(integrity_line "$PROOT_SKILL")"
+expect_match "54: a doctored SKILL.md reads as modified" "*state=modified*" "$LINE_SKILL"
+expect_match "55: …and is named" "*names=SKILL.md*" "$LINE_SKILL"
+
+PROOT_CMD="$(make_plugin_root)"
+printf '\nlocally added line\n' >> "$PROOT_CMD/commands/help.md"
+LINE_CMD="$(integrity_line "$PROOT_CMD")"
+expect_match "56: a doctored command page reads as modified" "*state=modified*" "$LINE_CMD"
+expect_match "57: …and is named" "*names=help.md*" "$LINE_CMD"
+
+# THE THIRD VALUE. A payload with no manifest answers `unknown` with the cause naming the
+# path it looked for — which is how a rename that missed detect.sh would show itself.
+PROOT_NONE="$(make_plugin_root)"
+rm -f "$PROOT_NONE/integrity/rendered.sha256"
+LINE_NONE="$(integrity_line "$PROOT_NONE")"
+expect_match "58: a payload with no manifest answers unknown" "*state=unknown*" "$LINE_NONE"
+expect_match "59: …naming integrity/rendered.sha256 as what it looked for" \
+  "*integrity/rendered.sha256*" "$LINE_NONE"
 
 finish

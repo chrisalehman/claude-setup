@@ -316,20 +316,70 @@ deny  7 "claude plugin update bionic@bionic && git push"
 deny  8 "echo claude plugin update bionic@bionic"
 deny  9 "bash $FROOT/scripts/doctor.sh --fix"
 
-# The refusal message must name the missing file and all four repair commands.
+# THE REFUSAL IS ONE LINE, IN THE RENDERER'S FORMAT — the only wall in the tree that
+# spells that line without scripts/lib/refuse.sh, because refuse.sh is inside the
+# library this wall reports missing (slice 13, ruling D-1, table row 1). AC-E1.3's own
+# regex is driven here so the hand-spelled copy cannot drift from the rendered one.
 runhook "$F" "$FPD" "" "git push" > "$WORK/f6.out" 2>"$WORK/f6.err"
 FMSG="$(cat "$WORK/f6.err")"
+eq "F.10a the refusal is exactly one line" "$(wc -l < "$WORK/f6.err" | tr -d ' ')" "1"
+if printf '%s' "$FMSG" | /usr/bin/grep -qE '^bionic: [a-z-]+ refused — .+ \(.{1,40}\)$'; then
+  ok "F.10b …in AC-E1.3's shape"
+else
+  no "F.10b …in AC-E1.3's shape" "line=[$FMSG]"
+fi
+eq "F.10c …and it is row 1's wording, naming the hook and the repair" \
+  "$FMSG" "bionic: load refused — protect-main cannot load the bionic library (run /bionic:doctor)"
+
+# THE DETAIL IS BEHIND THE KNOB (AC-E1.5), end to end through a real hook rather than
+# through the library alone: without it the four repair commands are NOT on the user
+# stream, and with it they are. The pair is asserted together, so "absent" cannot pass
+# over a stream that is empty for some other reason — F.10c above is the positive.
+for needle in \
+  "claude plugin update bionic@bionic" \
+  "claude plugin install bionic@bionic" \
+  "bash $FROOT/scripts/doctor.sh" \
+  "bash $FROOT/scripts/setup.sh" \
+  "git-argv.sh"; do
+  case "$FMSG" in
+    *"$needle"*) no "F.10d the one-line refusal does NOT carry: $needle" ;;
+    *) ok "F.10d the one-line refusal does NOT carry: $needle" ;;
+  esac
+done
+env HOME="$FAKE_HOME" BIONIC_PLUGINS_DIR="$FPD" BIONIC_WALL_VERBOSE=1 \
+  bash "$F/hooks/probe.sh" "git push" > "$WORK/f7.out" 2>"$WORK/f7.err"; FVRC=$?
+FVMSG="$(cat "$WORK/f7.err")"
+eq "F.10e BIONIC_WALL_VERBOSE=1 still refuses (exit 2)" "$FVRC" "2"
+if printf '%s' "$FVMSG" | head -1 | /usr/bin/grep -qE '^bionic: [a-z-]+ refused — .+ \(.{1,40}\)$'; then
+  ok "F.10f …with the same one line first"
+else
+  no "F.10f …with the same one line first" "line=[$(printf '%s' "$FVMSG" | head -1)]"
+fi
 for needle in \
   "git-argv.sh" \
   "claude plugin update bionic@bionic" \
   "claude plugin install bionic@bionic" \
   "bash $FROOT/scripts/doctor.sh" \
   "bash $FROOT/scripts/setup.sh"; do
-  case "$FMSG" in
-    *"$needle"*) ok "F.10 refusal names: $needle" ;;
-    *) no "F.10 refusal names: $needle" ;;
+  case "$FVMSG" in
+    *"$needle"*) ok "F.10g …and the detail names: $needle" ;;
+    *) no "F.10g …and the detail names: $needle" ;;
   esac
 done
+
+# THE NAME IS BOUNDED. The longest caller in the tree is `canonical-sdlc-evidence-gate`
+# (28 columns), and the line budget leaves 25 — so the block truncates in pure bash
+# (bionic_trunc lives in the library that is missing) and the line still fits 100.
+F2="$WORK/f2"; mkhook "$F2" 'loader_fail_closed "canonical-sdlc-evidence-gate" "$1"'
+runhook "$F2" "$FPD" "" "git push" > "$WORK/f8.out" 2>"$WORK/f8.err"
+F2MSG="$(cat "$WORK/f8.err")"
+F2COLS="$( . "$PAYLOAD/scripts/lib/width.sh"; bionic_cols "$F2MSG" )"
+eq "F.10h the longest caller's line is still inside the 100-column budget" \
+  "$([ "${F2COLS:-999}" -le 100 ] && echo yes || echo no)" "yes"
+case "$F2MSG" in
+  *"canonical-sdlc-evidence-…"*) ok "F.10i …because the name is truncated with an ellipsis, not dropped" ;;
+  *) no "F.10i …because the name is truncated with an ellipsis, not dropped" "line=[$F2MSG]" ;;
+esac
 case "$(cat "$WORK/f6.out")" in
   *REACHED-PAST-FAIL-CLOSED*) no "F.11 a refusal does not fall through to the hook body" ;;
   *) ok "F.11 a refusal does not fall through to the hook body" ;;

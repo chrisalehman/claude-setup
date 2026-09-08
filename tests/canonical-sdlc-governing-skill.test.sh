@@ -12,6 +12,9 @@ set -euo pipefail
 
 . "$(dirname "$0")/lib/resolve-roots.sh"
 . "$(dirname "$0")/lib/assert.sh"
+# The column counter for the AC-E1.3 sweep: the em dash is three bytes and one column,
+# so a byte count would pass a line that wraps.
+. "${BIONIC_SCRIPTS_DIR}/payload/scripts/lib/width.sh"
 # THE ONE BOUND-MARKER BUILDER (AC-24). Two hand-written markers in this file survived that
 # consolidation — they happened to match `bind_plan`'s output byte for byte, which is exactly
 # the agreement a shared builder makes true by construction instead of by luck (Step-6
@@ -85,6 +88,29 @@ engage()   { mkdir -p "$1/.bionic/tmp" && : > "$1/.bionic/tmp/engaged-$GS_SID.st
 unengage() { rm -f "$1/.bionic/tmp/engaged-$GS_SID.state"; }
 
 # Runs hook with a synthetic Write payload for $FILE with $CONTENT.
+HOOK_VSTDERR=""
+
+# AC-E1.3, SWEPT AT THE DRIVER (slice 13). Every refusal this wall makes is checked for
+# the criterion's shape as it happens, so no migrated site can be left without an eval
+# and no arm has to be written twice. The counters are read in the section at the end.
+GS_E1_SEEN=0; GS_E1_BAD_SHAPE=""; GS_E1_BAD_LINES=""; GS_E1_BAD_COLS=""
+GS_E1_RE='^bionic: [a-z-]+ refused — .+ \(.{1,40}\)$'
+gs_e1_sweep() {
+  [ "$HOOK_EXIT" = "2" ] || return 0
+  # THE RENDERED REFUSAL, not the whole stream: this hook also prints its own
+  # run-resolution diagnostic before it decides, and that line is not a refusal.
+  local _l
+  _l=$(printf '%s\n' "$HOOK_STDERR" | /usr/bin/grep '^bionic: ' || true)
+  [ -n "$_l" ] || return 0
+  GS_E1_SEEN=$((GS_E1_SEEN + 1))
+  printf '%s' "$_l" | /usr/bin/grep -qE "$GS_E1_RE" \
+    || GS_E1_BAD_SHAPE="${GS_E1_BAD_SHAPE}[$_l] "
+  [ "$(printf '%s\n' "$HOOK_STDERR" | /usr/bin/grep -c '^bionic: ')" = "1" ] \
+    || GS_E1_BAD_LINES="${GS_E1_BAD_LINES}[$HOOK_STDERR] "
+  [ "$(bionic_cols "$_l")" -le 100 ] \
+    || GS_E1_BAD_COLS="${GS_E1_BAD_COLS}[$_l] "
+}
+
 run_write() {
   local file_path="$1" content="$2"
   local input
@@ -105,6 +131,17 @@ run_write() {
     HOOK_EXIT=$?
   fi
   HOOK_STDERR=$(cat "$tmp_err")
+  gs_e1_sweep
+  # THE SAME WRITE AGAIN, WITH THE KNOB (slice 13, ruling D-1). This wall's refusal is
+  # now ONE line — `bionic: write refused — <fact> (<fix>)` — and the artifact name, the
+  # path and the Fix block this suite reads are `detail`, which reaches a reader only
+  # under BIONIC_WALL_VERBOSE=1. `$HOOK_STDERR` is the line; `$HOOK_VSTDERR` is the line
+  # plus the detail. The hook writes no state, so a second drive changes nothing.
+  HOOK_VSTDERR=""
+  if [ "$HOOK_EXIT" -ne 0 ]; then
+    HOOK_VSTDERR=$(HOME="$FAKE_HOME" CLAUDE_CODE_SESSION_ID="$GS_SID" BIONIC_WALL_VERBOSE=1 \
+      bash "$HOOK" <<< "$input" 2>&1 >/dev/null) || true
+  fi
   rm -f "$tmp_err"
 }
 
@@ -125,6 +162,17 @@ run_edit() {
     HOOK_EXIT=$?
   fi
   HOOK_STDERR=$(cat "$tmp_err")
+  gs_e1_sweep
+  # THE SAME WRITE AGAIN, WITH THE KNOB (slice 13, ruling D-1). This wall's refusal is
+  # now ONE line — `bionic: write refused — <fact> (<fix>)` — and the artifact name, the
+  # path and the Fix block this suite reads are `detail`, which reaches a reader only
+  # under BIONIC_WALL_VERBOSE=1. `$HOOK_STDERR` is the line; `$HOOK_VSTDERR` is the line
+  # plus the detail. The hook writes no state, so a second drive changes nothing.
+  HOOK_VSTDERR=""
+  if [ "$HOOK_EXIT" -ne 0 ]; then
+    HOOK_VSTDERR=$(HOME="$FAKE_HOME" CLAUDE_CODE_SESSION_ID="$GS_SID" BIONIC_WALL_VERBOSE=1 \
+      bash "$HOOK" <<< "$input" 2>&1 >/dev/null) || true
+  fi
   rm -f "$tmp_err"
 }
 
@@ -160,6 +208,13 @@ build_plan() {
   local intent=build rigor=audited scale=wave step=3 version=14 mode="OMIT" omit=" " matrix=yes
   local skill="superpowers:writing-plans"
   local walk="OMIT" override="OMIT" waived="OMIT"
+  # goal: yes (default) | no | empty — K5.4. "yes" injects a real '## Goal' paragraph as
+  # the body's first section, so every PRE-EXISTING call site (none of which is about
+  # K5.4) keeps satisfying the new arm without being touched, the same precedent
+  # SPEC_DESIGN_WAIVER set when the design wall (wave-02) landed. "no" omits the section
+  # entirely (first-section fails-when); "empty" leaves the heading with no paragraph
+  # (empty-section fails-when) — the K5.4 section below is the only caller of either.
+  local goal=yes
   local arg
   for arg in "$@"; do
     case "$arg" in
@@ -175,6 +230,7 @@ build_plan() {
       walk=*)    walk="${arg#walk=}" ;;
       override=*) override="${arg#override=}" ;;
       waived=*)  waived="${arg#waived=}" ;;
+      goal=*)    goal="${arg#goal=}" ;;
     esac
   done
 
@@ -205,6 +261,17 @@ wave: wave-01-x
   done
   out+='---
 '
+  case "$goal" in
+    yes)   out+='
+## Goal
+
+A concise paragraph describing this fixture'"'"'s goal.
+' ;;
+    empty) out+='
+## Goal
+' ;;
+    no)    : ;;
+  esac
   if [ "$matrix" = yes ]; then
     out+='
 ## Verification Matrix
@@ -316,7 +383,7 @@ for bad_version in 13 12 11 9 2 99 "" "banana" "12.0" "v12"; do
     "$(build_plan version="$bad_version")"
   assert_eq "unsupported version '$label' blocks" 2 "$HOOK_EXIT"
   assert_contains "unsupported version '$label' names the value found" \
-    "canonical_sdlc_version: '$bad_version'" "$HOOK_STDERR"
+    "canonical_sdlc_version: '$bad_version'" "$HOOK_VSTDERR"
 done
 
 echo "canonical_sdlc_version line absent entirely → block"
@@ -373,7 +440,7 @@ assert_eq "blocks_bad_rigor_enum exit 2" 2 "$HOOK_EXIT"
 echo "bad scale enum (scale: session) → block, lists allowed set"
 run_write "$project/.bionic/docs/plans/epic-01-demo/bad-scale.plan.md" "$(build_plan scale=session)"
 assert_eq "blocks_bad_scale_enum exit 2" 2 "$HOOK_EXIT"
-assert_contains "blocks_bad_scale_enum lists allowed" "task|wave|epic" "$HOOK_STDERR"
+assert_contains "blocks_bad_scale_enum lists allowed" "task|wave|epic" "$HOOK_VSTDERR"
 
 echo "enum substring (intent: rebuild) → block (whole-value equality, not substring)"
 run_write "$project/.bionic/docs/plans/epic-01-demo/substr.plan.md" "$(build_plan intent=rebuild)"
@@ -403,17 +470,17 @@ assert_eq "allows_build_epic exit 0" 0 "$HOOK_EXIT"
 echo "missing a discriminator flag (surface_type) → block"
 run_write "$project/.bionic/docs/plans/epic-01-demo/no-flag.plan.md" "$(build_plan omit=surface_type)"
 assert_eq "blocks_missing_flag exit 2" 2 "$HOOK_EXIT"
-assert_contains "blocks_missing_flag names surface_type" "surface_type" "$HOOK_STDERR"
+assert_contains "blocks_missing_flag names surface_type" "surface_type" "$HOOK_VSTDERR"
 
 echo "missing an opt-in flag (use_worktree) → block"
 run_write "$project/.bionic/docs/plans/epic-01-demo/no-optin.plan.md" "$(build_plan omit=use_worktree)"
 assert_eq "blocks_missing_opt_in exit 2" 2 "$HOOK_EXIT"
-assert_contains "blocks_missing_opt_in names use_worktree" "use_worktree" "$HOOK_STDERR"
+assert_contains "blocks_missing_opt_in names use_worktree" "use_worktree" "$HOOK_VSTDERR"
 
 echo "missing model_plan → block, error names model_plan"
 run_write "$project/.bionic/docs/plans/epic-01-demo/no-mp.plan.md" "$(build_plan omit=model_plan)"
 assert_eq "blocks_missing_model_plan exit 2" 2 "$HOOK_EXIT"
-assert_contains "blocks_missing_model_plan names model_plan" "model_plan" "$HOOK_STDERR"
+assert_contains "blocks_missing_model_plan names model_plan" "model_plan" "$HOOK_VSTDERR"
 
 echo "*.plan.md at sdlc-step 3 without matrix → block"
 run_write "$project/.bionic/docs/plans/epic-01-demo/no-matrix.plan.md" "$(build_plan step=3 matrix=no)"
@@ -504,7 +571,7 @@ assert_eq "crlf_full exit 0" 0 "$HOOK_EXIT"
 echo "CRLF plan missing model_plan → block for the RIGHT reason (parses, then flags model_plan)"
 run_write "$project/.bionic/docs/plans/epic-01-demo/crlf-no-mp.plan.md" "$(to_crlf "$(build_plan omit=model_plan)")"
 assert_eq "crlf_no_mp exit 2" 2 "$HOOK_EXIT"
-assert_contains "crlf error names model_plan (not 'missing frontmatter')" "model_plan" "$HOOK_STDERR"
+assert_contains "crlf error names model_plan (not 'missing frontmatter')" "model_plan" "$HOOK_VSTDERR"
 
 echo "CR-only plan with full valid frontmatter → allow"
 run_write "$project/.bionic/docs/plans/epic-01-demo/cr-only.plan.md" "$(to_cr_only "$(build_plan)")"
@@ -513,7 +580,7 @@ assert_eq "cr_only_full exit 0" 0 "$HOOK_EXIT"
 echo "CR-only plan missing model_plan → block for the RIGHT reason"
 run_write "$project/.bionic/docs/plans/epic-01-demo/cr-only-no-mp.plan.md" "$(to_cr_only "$(build_plan omit=model_plan)")"
 assert_eq "cr_only_no_mp exit 2" 2 "$HOOK_EXIT"
-assert_contains "cr-only error names model_plan" "model_plan" "$HOOK_STDERR"
+assert_contains "cr-only error names model_plan" "model_plan" "$HOOK_VSTDERR"
 
 echo "CR-only plan with a bad enum → block on the enum, proving the triple parsed"
 run_write "$project/.bionic/docs/plans/epic-01-demo/cr-only-enum.plan.md" "$(to_cr_only "$(build_plan intent=feature)")"
@@ -791,7 +858,7 @@ echo "e2e: floor-violating plan under a worktree-local .bionic/ → blocks as mi
 run_write "$ac10_wt/.bionic/docs/plans/epic-01-demo/wt-floor.plan.md" "$(build_plan intent=spike rigor=audited)"
 assert_eq "ac10_e2e_worktree exit 2 (misplaced)" 2 "$HOOK_EXIT"
 assert_contains "ac10_e2e_worktree names the parent repo's docs root" \
-  "$ac10_main/.bionic/docs/plans/" "$HOOK_STDERR"
+  "$ac10_main/.bionic/docs/plans/" "$HOOK_VSTDERR"
 run_write "$ac10_main/.bionic/docs/plans/epic-01-demo/main-floor.plan.md" "$(build_plan intent=spike rigor=audited)"
 assert_eq "ac10_e2e_worktree_pair exit 0" 0 "$HOOK_EXIT"
 assert_contains "ac10_e2e_worktree_pair finding keyed on the main repo" "spike-cap" "$(read_audit "$ac10_main")"
@@ -814,6 +881,14 @@ run_write_oldgit() {  # like run_write, with the old-git shim first on PATH and 
     HOOK_EXIT=$?
   fi
   HOOK_STDERR=$(cat "$tmp_err")
+  # THE SAME CALL AGAIN, WITH THE KNOB (slice 13, ruling D-1): the values this suite
+  # reads off the refusal are `detail` now. Guarded on the refusal and `|| true` because
+  # the suite runs under `set -e` and the hook exits 2 when it refuses.
+  HOOK_VSTDERR=""
+  if [ "$HOOK_EXIT" -ne 0 ]; then
+    HOOK_VSTDERR=$( (cd "$ac10_out" && HOME="$FAKE_HOME" CLAUDE_CODE_SESSION_ID="$GS_SID" \
+      PATH="$ac10_oldgit:$PATH" BIONIC_WALL_VERBOSE=1 bash "$HOOK" <<< "$input") 2>&1 >/dev/null) || true
+  fi
   rm -f "$tmp_err"
 }
 ac10_og="$ac10_tmp/oldgit"; mkdir -p "$ac10_og"; git -C "$ac10_og" init -q .
@@ -826,7 +901,7 @@ assert_eq "ac10_e2e_oldgit valid artifact allowed" 0 "$HOOK_EXIT"
 run_write_oldgit "$ac10_og/notes/rogue.plan.md" "$(build_plan)"
 assert_eq "ac10_e2e_oldgit misplaced artifact blocked" 2 "$HOOK_EXIT"
 assert_contains "ac10_e2e_oldgit names the artifact's own repo, not the session cwd" \
-  "$ac10_og/.bionic/docs/plans/" "$HOOK_STDERR"
+  "$ac10_og/.bionic/docs/plans/" "$HOOK_VSTDERR"
 
 # ============================================================
 # AC-11 / AC-12: tree creation on first lifecycle use
@@ -1037,7 +1112,7 @@ ac13_docs="$ac13_p/.bionic/docs"
 echo "AC-13 c1: valid artifact written OUTSIDE the computed docs-root -> block, naming the correct path"
 run_write "$ac13_p/docs/bionic/plans/epic-01-demo/wave-01-x.plan.md" "$VALID_FRONTMATTER"
 assert_eq "ac13_c1 exit 2" 2 "$HOOK_EXIT"
-assert_contains "ac13_c1 names the correct path" "$ac13_docs/plans/" "$HOOK_STDERR"
+assert_contains "ac13_c1 names the correct path" "$ac13_docs/plans/" "$HOOK_VSTDERR"
 
 echo "AC-13 c1b: 'governing-skill: canonical-sdlc' alone is enough to identify the artifact"
 run_write "$ac13_p/notes/stray.md" '---
@@ -1052,10 +1127,10 @@ assert_eq "ac13_c2 exit 0" 0 "$HOOK_EXIT"
 
 echo "AC-13 c3: the named path follows the artifact kind (spec -> specs/, adr -> adrs/)"
 run_write "$ac13_p/docs/wave-01-x.spec.md" "$VALID_FRONTMATTER"
-assert_contains "ac13_c3 spec names specs/" "$ac13_docs/specs/" "$HOOK_STDERR"
+assert_contains "ac13_c3 spec names specs/" "$ac13_docs/specs/" "$HOOK_VSTDERR"
 run_write "$ac13_p/docs/adr-001-thing.md" "$VALID_FRONTMATTER"
 assert_eq "ac13_c3 adr exit 2" 2 "$HOOK_EXIT"
-assert_contains "ac13_c3 adr names adrs/" "$ac13_docs/adrs/" "$HOOK_STDERR"
+assert_contains "ac13_c3 adr names adrs/" "$ac13_docs/adrs/" "$HOOK_VSTDERR"
 
 echo "AC-13 c4: Edit of an already-misplaced artifact blocks too (not just Write)"
 mkdir -p "$ac13_p/legacy"
@@ -1105,7 +1180,7 @@ echo "AC-13 c7b: what blocks is the misplacement, not the absence -- same bare r
 ac13_bare2=$(make_bare_project)
 run_write "$ac13_bare2/docs/plans/wave-01-x.plan.md" "$VALID_FRONTMATTER"
 assert_eq "ac13_c7b exit 2" 2 "$HOOK_EXIT"
-assert_contains "ac13_c7b names the computed docs-root" "$ac13_bare2/.bionic/docs/plans/" "$HOOK_STDERR"
+assert_contains "ac13_c7b names the computed docs-root" "$ac13_bare2/.bionic/docs/plans/" "$HOOK_VSTDERR"
 
 echo "AC-13 c8: under the docs-root but outside the four enforced subdirs -> placed, unblocked"
 mkdir -p "$ac13_docs/spikes" "$ac13_docs/record"
@@ -1118,7 +1193,7 @@ printf 'docs-root: custom/docs\n' > "$ac13_cfg/.bionic/config.yaml"
 mkdir -p "$ac13_cfg/custom/docs/plans/epic-01-demo"
 run_write "$ac13_cfg/.bionic/docs/plans/epic-01-demo/wave-01-x.plan.md" "$VALID_FRONTMATTER"
 assert_eq "ac13_c9 default location is now the misplaced one" 2 "$HOOK_EXIT"
-assert_contains "ac13_c9 names the configured docs-root" "$ac13_cfg/custom/docs/plans/" "$HOOK_STDERR"
+assert_contains "ac13_c9 names the configured docs-root" "$ac13_cfg/custom/docs/plans/" "$HOOK_VSTDERR"
 run_write "$ac13_cfg/custom/docs/plans/epic-01-demo/wave-01-x.plan.md" "$VALID_FRONTMATTER"
 assert_eq "ac13_c9 configured location passes" 0 "$HOOK_EXIT"
 
@@ -1143,7 +1218,7 @@ assert_eq "ac13_c10 correctly-placed artifact via a symlinked path exit 0" 0 "$H
 run_write "$ac13_sym/link/docs/plans/wave-01-x.plan.md" "$VALID_FRONTMATTER"
 assert_eq "ac13_c10 misplaced artifact via a symlinked path still exit 2" 2 "$HOOK_EXIT"
 assert_contains "ac13_c10 misplaced-via-symlink names the real docs root" \
-  "$ac13_sym/real/.bionic/docs/plans/" "$HOOK_STDERR"
+  "$ac13_sym/real/.bionic/docs/plans/" "$HOOK_VSTDERR"
 
 # ============================================================
 # AC-14: no session-state file
@@ -1220,9 +1295,12 @@ expect_empty "ac14_b no shipped surface instructs a context.md write" "$ac14_hit
 #
 # Knobs: scale (default wave) · section=yes|no (the in-place `## Design`,
 # default yes, as in the real artifact) · design=<value> injects a
-# `design:` line · waived=<full line> injects it verbatim.
+# `design:` line · waived=<full line> injects it verbatim · goal=yes|no|empty
+# (K5.4, default yes — same reasoning as build_plan()'s own goal= knob: a real
+# '## Goal' paragraph opens the body by default so pre-existing design-wall cases keep
+# passing the new K5.4 arm untouched; "no"/"empty" are for K5.4's own negative cases).
 build_spec() {
-  local scale=wave section=yes design="OMIT" waived="OMIT" step=2
+  local scale=wave section=yes design="OMIT" waived="OMIT" step=2 adrs="OMIT" goal=yes
   local arg
   for arg in "$@"; do
     case "$arg" in
@@ -1231,6 +1309,8 @@ build_spec() {
       design=*)  design="${arg#design=}" ;;
       waived=*)  waived="${arg#waived=}" ;;
       step=*)    step="${arg#step=}" ;;
+      adrs=*)    adrs="${arg#adrs=}" ;;
+      goal=*)    goal="${arg#goal=}" ;;
     esac
   done
 
@@ -1245,6 +1325,7 @@ scale: '"$scale"'
 '
   [ "$design" = OMIT ] || out+="design: $design"$'\n'
   [ "$waived" = OMIT ] || out+="$waived"$'\n'
+  [ "$adrs" = OMIT ] || out+="adrs: $adrs"$'\n'
   out+='surface_type: system
 language: bash
 has_ui: false
@@ -1259,7 +1340,19 @@ created: 2026-08-02
 # wave-01-demo — spec
 
 Source of requirements: the demo report.
+'
+  case "$goal" in
+    yes)   out+='
+## Goal
 
+A concise paragraph describing this fixture'"'"'s goal.
+' ;;
+    empty) out+='
+## Goal
+' ;;
+    no)    : ;;
+  esac
+  out+='
 ## Requirements
 
 - **R1 — A requirement.** Body text.
@@ -1319,8 +1412,8 @@ echo "c1: wave spec with none of the three arms → block, naming all three ways
 run_write "$DESIGN_SPECS/w1.spec.md" "$(build_spec section=no)"
 assert_eq "design_none exit 2" 2 "$HOOK_EXIT"
 assert_contains "design_none names the in-place section" "## Design" "$HOOK_STDERR"
-assert_contains "design_none names the pointer" "design:" "$HOOK_STDERR"
-assert_contains "design_none names the waiver" "design-waived:" "$HOOK_STDERR"
+assert_contains "design_none names the pointer" "design:" "$HOOK_VSTDERR"
+assert_contains "design_none names the waiver" "design-waived:" "$HOOK_VSTDERR"
 
 echo "c2: wave spec with a flush-left ## Design in place → allow"
 run_write "$DESIGN_SPECS/w2.spec.md" "$(build_spec)"
@@ -1345,8 +1438,8 @@ echo "c4: design: pointer to a file that does not exist → block, naming the re
 run_write "$DESIGN_SPECS/w4.spec.md" \
   "$(build_spec section=no design=specs/epic-01-demo/nowhere.spec.md)"
 assert_eq "design_pointer_dangling exit 2" 2 "$HOOK_EXIT"
-assert_contains "design_pointer_dangling names the raw value" "specs/epic-01-demo/nowhere.spec.md" "$HOOK_STDERR"
-assert_contains "design_pointer_dangling still names the three-way rule" "design-waived:" "$HOOK_STDERR"
+assert_contains "design_pointer_dangling names the raw value" "specs/epic-01-demo/nowhere.spec.md" "$HOOK_VSTDERR"
+assert_contains "design_pointer_dangling still names the three-way rule" "design-waived:" "$HOOK_VSTDERR"
 
 echo "c5: design: pointer to a real file WITHOUT ## Design → block"
 run_write "$DESIGN_SPECS/w5.spec.md" \
@@ -1378,7 +1471,7 @@ assert_eq "design_task_scale exit 0" 0 "$HOOK_EXIT"
 echo "c9: epic-scale spec behaves as wave → block with none of the three"
 run_write "$DESIGN_SPECS/e1.spec.md" "$(build_spec scale=epic section=no)"
 assert_eq "design_epic_scale exit 2" 2 "$HOOK_EXIT"
-assert_contains "design_epic_scale names the three-way rule" "design-waived:" "$HOOK_STDERR"
+assert_contains "design_epic_scale names the three-way rule" "design-waived:" "$HOOK_VSTDERR"
 
 echo "c10: a wave-scale PLAN with no design → allow (the arm is spec-only)"
 run_write "$design_project/.bionic/docs/plans/epic-01-demo/wave-01-x.plan.md" "$(build_plan)"
@@ -1400,7 +1493,7 @@ echo "c12: an in-place '## Design' that exists only inside a fenced code block �
 run_write "$DESIGN_SPECS/w12.spec.md" \
   "$(build_spec section=no)$(printf '\n%s\n## Design\n\nan example of the contract, not this spec.\n%s\n' '```markdown' '```')"
 assert_eq "design_fenced_in_place exit 2" 2 "$HOOK_EXIT"
-assert_contains "design_fenced_in_place names the three-way rule" "design-waived:" "$HOOK_STDERR"
+assert_contains "design_fenced_in_place names the three-way rule" "design-waived:" "$HOOK_VSTDERR"
 run_write "$DESIGN_SPECS/w12b.spec.md" \
   "$(build_spec section=no)$(printf '\n%s\n## Design\n%s\n\n## Design\n\nthe real one, outside the fence.\n' '```markdown' '```')"
 assert_eq "design_fenced_in_place_control exit 0" 0 "$HOOK_EXIT"
@@ -1412,7 +1505,7 @@ printf '%s' \
 run_write "$DESIGN_SPECS/w13.spec.md" \
   "$(build_spec section=no design=specs/epic-01-demo/fenced-design.spec.md)"
 assert_eq "design_fenced_pointer_target exit 2" 2 "$HOOK_EXIT"
-assert_contains "design_fenced_pointer_target names the target" "fenced-design.spec.md" "$HOOK_STDERR"
+assert_contains "design_fenced_pointer_target names the target" "fenced-design.spec.md" "$HOOK_VSTDERR"
 # Control: the same target with the heading moved out of the fence resolves.
 printf '%s' \
   "$(build_spec section=no)$(printf '\n%s\n## Design\n%s\n\n## Design\n\nthe real one.\n' '```markdown' '```')" \
@@ -1456,7 +1549,7 @@ echo "c15: in-place '## Design' + a dangling pointer → block"
 run_write "$DESIGN_SPECS/w15.spec.md" \
   "$(build_spec design=specs/epic-01-demo/nowhere.spec.md)"
 assert_eq "design_combined_dangling exit 2" 2 "$HOOK_EXIT"
-assert_contains "design_combined_dangling names the raw value" "specs/epic-01-demo/nowhere.spec.md" "$HOOK_STDERR"
+assert_contains "design_combined_dangling names the raw value" "specs/epic-01-demo/nowhere.spec.md" "$HOOK_VSTDERR"
 
 echo "c15b: in-place '## Design' + a '..' pointer → block"
 run_write "$DESIGN_SPECS/w15b.spec.md" \
@@ -1472,6 +1565,112 @@ echo "c15d: in-place '## Design' + a VALID pointer → allow (the documented com
 run_write "$DESIGN_SPECS/w15d.spec.md" \
   "$(build_spec design=specs/epic-01-demo/with-design.spec.md)"
 assert_eq "design_combined_valid exit 0" 0 "$HOOK_EXIT"
+
+# ============================================================
+# K3 F4 / D6: the adrs: pointer arm (AC-K3.3)
+# ============================================================
+#
+# A momentous decision's ADR is drafted at Step 2 alongside the spec and
+# pointed to from the spec's own `adrs:` frontmatter (one path, or several
+# joined by ` · `). The arm only checks the pointer RESOLVES — no in-place
+# alternative, no waiver, unlike the three-way design rule above it — and it
+# is scoped to `sdlc-step >= 3`: below that, the ADR and the pointer are
+# typically authored in the same design pass and the file may not exist yet
+# on the turn the spec names it, so a dangling path is not yet a defect.
+#
+# Fixture: a real ADR at `adrs/epic-01-demo/real.md` (make_project() already
+# creates that directory); every case below points at it, or deliberately
+# does not.
+echo
+section "K3 F4: adrs: pointer arm (AC-K3.3)"
+
+ADRS_DIR="$design_project/.bionic/docs/adrs/epic-01-demo"
+printf '# ADR 001 — a momentous decision\n\nStatus: Accepted\n' > "$ADRS_DIR/real.md"
+
+echo "k3-1: sdlc-step 3, adrs: names a real file → allow"
+run_write "$DESIGN_SPECS/k3-1.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs=adrs/epic-01-demo/real.md)"
+assert_eq "adrs_resolving_step3 exit 0" 0 "$HOOK_EXIT"
+
+echo "k3-2: sdlc-step 3, adrs: names no file → block, naming the raw value and the resolved path"
+run_write "$DESIGN_SPECS/k3-2.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs=adrs/epic-01-demo/nowhere.md)"
+assert_eq "adrs_dangling_step3 exit 2" 2 "$HOOK_EXIT"
+assert_contains "adrs_dangling_step3 names the raw value" "adrs/epic-01-demo/nowhere.md" "$HOOK_VSTDERR"
+assert_contains "adrs_dangling_step3 names the resolved path" "$ADRS_DIR/nowhere.md" "$HOOK_VSTDERR"
+
+echo "k3-3: sdlc-step 2, adrs: names no file → allow (arm inert below step 3)"
+run_write "$DESIGN_SPECS/k3-3.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=2 adrs=adrs/epic-01-demo/nowhere.md)"
+assert_eq "adrs_dangling_step2_inert exit 0" 0 "$HOOK_EXIT"
+
+echo "k3-4: sdlc-step 3, no adrs: line at all → allow (a wave with no momentous decision cites none)"
+run_write "$DESIGN_SPECS/k3-4.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3)"
+assert_eq "adrs_absent_step3 exit 0" 0 "$HOOK_EXIT"
+
+echo "k3-5: sdlc-step 3, two adrs: paths joined by ' · ', one real one dangling → block naming the dangling one"
+run_write "$DESIGN_SPECS/k3-5.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 \
+    adrs="adrs/epic-01-demo/real.md · adrs/epic-01-demo/nowhere.md")"
+assert_eq "adrs_multi_one_dangling exit 2" 2 "$HOOK_EXIT"
+assert_contains "adrs_multi_one_dangling names the dangling entry, not the real one" \
+  "adrs/epic-01-demo/nowhere.md" "$HOOK_VSTDERR"
+
+echo "k3-6: sdlc-step 3, adrs: path with a '..' component → block even though it would resolve to a real file"
+run_write "$DESIGN_SPECS/k3-6.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs=adrs/epic-01-demo/../epic-01-demo/real.md)"
+assert_eq "adrs_dotdot_step3 exit 2" 2 "$HOOK_EXIT"
+
+echo "k3-7: sdlc-step 3, a task-scale spec with a dangling adrs: → allow (arm is wave/epic only, matching the design wall)"
+run_write "$DESIGN_SPECS/k3-7.spec.md" \
+  "$(build_spec section=no scale=task step=3 adrs=adrs/epic-01-demo/nowhere.md)"
+assert_eq "adrs_task_scale_untouched exit 0" 0 "$HOOK_EXIT"
+
+# ── THE TWO POINTERS AGREE ABOUT AN ABSOLUTE PATH (Step-6 review F-2) ─────────
+#
+# F-2 read `adrs:` refusing `..` while letting `/etc/passwd` through and called the
+# pair inconsistent. It is not: `resolve_adrs_path` copies `resolve_design_path`
+# clause for clause, and "absolute stands as written" is the project's rule for
+# every frontmatter pointer — the `design:` arm pins it at c3c above
+# ("the same pointer spelled absolute → allow"), and the evidence gate's
+# `resolve_walk_path` and `resolve_requirements_path` open with the same `/*)` case.
+# Absolute is not a hole in the `..` refusal, it is the OTHER spelling of a path the
+# author states outright: `..` is refused because a climbing path is a spelling
+# nobody should have to audit, not because the target must live under the docs root.
+# The arm is presence-only — it neither reads nor writes the file it names — so a
+# spec pointing `adrs:` at an unrelated readable file gets a green light and nothing
+# else, which is the same thing `design:` has always done.
+#
+# CONSISTENT BY DESIGN, so these rows pin the agreement rather than change it. They
+# are the two halves that F-2 saw separately, asserted side by side, so a later
+# hardening pass moves both resolvers or fails here.
+echo "k3-8: sdlc-step 3, adrs: spelled ABSOLUTE to a real file → allow (same as design: c3c)"
+run_write "$DESIGN_SPECS/k3-8.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs="$ADRS_DIR/real.md")"
+assert_eq "adrs_absolute_real exit 0" 0 "$HOOK_EXIT"
+
+echo "k3-8b: …and the design: pointer, spelled absolute in the same spec, agrees"
+run_write "$DESIGN_SPECS/k3-8b.spec.md" \
+  "$(build_spec section=no design="$DESIGN_SPECS/with-design.spec.md" step=3 adrs="$ADRS_DIR/real.md")"
+assert_eq "adrs_and_design_absolute_agree exit 0" 0 "$HOOK_EXIT"
+
+echo "k3-9: sdlc-step 3, adrs: spelled ABSOLUTE to a file that does not exist → block"
+run_write "$DESIGN_SPECS/k3-9.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs="$ADRS_DIR/nowhere-abs.md")"
+assert_eq "adrs_absolute_dangling exit 2" 2 "$HOOK_EXIT"
+assert_contains "adrs_absolute_dangling names the path it could not find" \
+  "$ADRS_DIR/nowhere-abs.md" "$HOOK_VSTDERR"
+
+echo "k3-9b: …and the design: pointer, spelled absolute and dangling, blocks the same way"
+run_write "$DESIGN_SPECS/k3-9b.spec.md" \
+  "$(build_spec section=no design="$DESIGN_SPECS/nowhere-abs.spec.md" step=3)"
+assert_eq "design_absolute_dangling exit 2" 2 "$HOOK_EXIT"
+
+echo "k3-10: sdlc-step 3, adrs: spelled ABSOLUTE with a '..' component → still refused (the climb rule is not about the leader)"
+run_write "$DESIGN_SPECS/k3-10.spec.md" \
+  "$(build_spec section=no design=specs/epic-01-demo/with-design.spec.md step=3 adrs="$ADRS_DIR/../epic-01-demo/real.md")"
+assert_eq "adrs_absolute_dotdot exit 2" 2 "$HOOK_EXIT"
 
 # ============================================================
 # AC-13: the pinned-root wall
@@ -1508,7 +1707,7 @@ ac13_record_body='# operational artifact — no canonical-sdlc frontmatter at al
 
 echo "ac13-1: real worktree — operational write under the worktree's OWN .bionic/ → block, names pinned root"
 run_write "$ac13_wt/.bionic/docs/record/w2-s8-ac13.md" "$ac13_record_body"
-assert_contains "ac13_wt_write names the pinned root" "Pinned root: $ac13_main/.bionic" "$HOOK_STDERR"
+assert_contains "ac13_wt_write names the pinned root" "Pinned root: $ac13_main/.bionic" "$HOOK_VSTDERR"
 
 echo "ac13-2: paired positive — the IDENTICAL write to the pinned root passes"
 run_write "$ac13_main/.bionic/docs/record/w2-s8-ac13.md" "$ac13_record_body"
@@ -1528,7 +1727,7 @@ ac13_orig_pwd=$(pwd)
 cd "$ac13_main/subdir"
 run_write "$ac13_main/subdir/.bionic/docs/record/w2-s8-ac13-sub.md" "$ac13_record_body"
 cd "$ac13_orig_pwd"
-assert_contains "ac13_subdir_write names the pinned root" "Pinned root: $ac13_main/.bionic" "$HOOK_STDERR"
+assert_contains "ac13_subdir_write names the pinned root" "Pinned root: $ac13_main/.bionic" "$HOOK_VSTDERR"
 
 echo "ac13-4: paired positive — the IDENTICAL subdir-case write to the pinned root passes"
 run_write "$ac13_main/.bionic/docs/record/w2-s8-ac13-sub.md" "$ac13_record_body"
@@ -1558,9 +1757,9 @@ echo "ac13-6: traversal through a NON-EXISTENT segment escapes to a sibling .bio
 run_write "$ac13_main/.bionic/nonexistent/../../../other/.bionic/docs/record/w2-r4-esc.md" \
   "$ac13_record_body"
 assert_contains "ac13_traversal_missing names the escaped-to tree" \
-  "$ac13_sibling/.bionic" "$HOOK_STDERR"
+  "$ac13_sibling/.bionic" "$HOOK_VSTDERR"
 assert_contains "ac13_traversal_missing names the pinned root" \
-  "Pinned root: $ac13_main/.bionic" "$HOOK_STDERR"
+  "Pinned root: $ac13_main/.bionic" "$HOOK_VSTDERR"
 
 echo "ac13-7: the same escape through EXISTING segments (control) still blocks"
 # ENGAGED ON THE ENCLOSING TEMP DIRECTORY, because that is the root this path resolves to.
@@ -1576,7 +1775,7 @@ engage "$ac13_tmp"
 run_write "$ac13_main/.bionic/docs/../../../other/.bionic/docs/record/w2-r4-esc2.md" \
   "$ac13_record_body"
 assert_contains "ac13_traversal_existing names the escaped-to tree" \
-  "$ac13_sibling/.bionic" "$HOOK_STDERR"
+  "$ac13_sibling/.bionic" "$HOOK_VSTDERR"
 
 echo 'ac13-8: paired positive — a climbing path that folds back ONTO the pinned root passes'
 # The discriminator against a fix that refuses every climb outright: folding is not
@@ -1599,7 +1798,7 @@ echo "ac13-9: a NESTED .bionic inside the pinned tree is a phantom tree too → 
 run_write "$ac13_main/.bionic/tmp/scratch/.bionic/docs/record/w2-r4-nested.md" \
   "$ac13_record_body"
 assert_contains "ac13_nested names the pinned root" \
-  "Pinned root: $ac13_main/.bionic" "$HOOK_STDERR"
+  "Pinned root: $ac13_main/.bionic" "$HOOK_VSTDERR"
 
 echo "ac13-10: paired positive — the pinned tree's own operational path is untouched"
 # The nested rule must not catch the ordinary write it sits next to.
@@ -1611,7 +1810,7 @@ run_write "$ac13_wt/.bionic/docs/plans/epic-01-demo/w2-s8-ac13-canon.plan.md" \
   "$(build_plan intent=spike rigor=audited)"
 assert_eq "ac13_canonical_still_ac10_arm exit 2" 2 "$HOOK_EXIT"
 assert_contains "ac13_canonical_still_ac10_arm names the pinned docs root, AC-10's shape" \
-  "$ac13_main/.bionic/docs/plans/" "$HOOK_STDERR"
+  "$ac13_main/.bionic/docs/plans/" "$HOOK_VSTDERR"
 
 echo
 section "AC-14: no-git fallback walks up from the TARGET, not the shell"
@@ -1642,7 +1841,7 @@ cd "$ac14_unrelated"
 run_write "$ac14_ws/sub/.bionic/docs/record/ac14-phantom.md" "$ac14_record_body"
 cd "$ac14_orig_pwd"
 assert_contains "ac14_phantom names the pinned root (the real workspace tree)" \
-  "Pinned root: $ac14_ws/.bionic" "$HOOK_STDERR"
+  "Pinned root: $ac14_ws/.bionic" "$HOOK_VSTDERR"
 
 # ============================================ WALLS: parallel-budget + worktree cwd
 # (spec AC-14 and AC-26; plan slice WALLS.)
@@ -1684,6 +1883,14 @@ run_write_from() {
     HOOK_EXIT=$?
   fi
   HOOK_STDERR=$(cat "$tmp_err")
+  # THE SAME CALL AGAIN, WITH THE KNOB (slice 13, ruling D-1): the values this suite
+  # reads off the refusal are `detail` now. Guarded on the refusal and `|| true` because
+  # the suite runs under `set -e` and the hook exits 2 when it refuses.
+  HOOK_VSTDERR=""
+  if [ "$HOOK_EXIT" -ne 0 ]; then
+    HOOK_VSTDERR=$(HOME="$FAKE_HOME" CLAUDE_CODE_SESSION_ID="$GS_SID" BIONIC_WALL_VERBOSE=1 \
+      bash "$HOOK" <<< "$input" 2>&1 >/dev/null) || true
+  fi
   rm -f "$tmp_err"
 }
 
@@ -1721,8 +1928,8 @@ assert_eq "walls-3 a plan write from the main checkout passes" 0 "$HOOK_EXIT"
 echo "Write: plan write whose cwd is inside the linked worktree → block"
 run_write_from "$walls_plan" "$WALLS_PLAN_WITH_BUDGET" "$walls_tree"
 assert_eq "walls-4 a plan write from inside a linked worktree is refused" 2 "$HOOK_EXIT"
-assert_contains "walls-4b …naming the main checkout" "main checkout: $walls_project" "$HOOK_STDERR"
-assert_contains "walls-4c …and the tree it came from" "$walls_tree" "$HOOK_STDERR"
+assert_contains "walls-4b …naming the main checkout" "main checkout: $walls_project" "$HOOK_VSTDERR"
+assert_contains "walls-4c …and the tree it came from" "$walls_tree" "$HOOK_VSTDERR"
 
 echo "Write: the same write from an agent context → allow"
 run_write_from "$walls_plan" "$WALLS_PLAN_WITH_BUDGET" "$walls_tree" "senior-implementor"
@@ -1887,6 +2094,14 @@ run_post() {  # <tool> <file-path> <tool_response.type|NONE> [agent_id]
   fi
   HOOK_STDOUT=$(cat "$tmp_out")
   HOOK_STDERR=$(cat "$tmp_err")
+  # THE SAME CALL AGAIN, WITH THE KNOB (slice 13, ruling D-1): the values this suite
+  # reads off the refusal are `detail` now. Guarded on the refusal and `|| true` because
+  # the suite runs under `set -e` and the hook exits 2 when it refuses.
+  HOOK_VSTDERR=""
+  if [ "$HOOK_EXIT" -ne 0 ]; then
+    HOOK_VSTDERR=$(HOME="$FAKE_HOME" CLAUDE_CODE_SESSION_ID="$GS_SID" BIONIC_WALL_VERBOSE=1 \
+      bash "$HOOK" <<< "$input" 2>&1 >/dev/null) || true
+  fi
   rm -f "$tmp_out" "$tmp_err"
 }
 
@@ -2093,5 +2308,283 @@ assert_contains "v3 a session bound to a closed plan is told, and never falls th
   "governing-skill: bound plan closed — $v_plans/wave-01-old.plan.md; this session has no open run" \
   "$HOOK_STDERR"
 assert_eq "v3 ...and still passes" 0 "$HOOK_EXIT"
+
+section "K5/AC-K5.1: *.requirements.md gets the frontmatter contract, minus the design rule"
+
+# K5: requirements.md is the Step-1 artifact (design ledger K5; ADR-001), living beside the
+# spec under specs/epic-NN-<slug>/. It gets the SAME frontmatter contract *.spec.md gets —
+# but never the three-way design rule (that arm's own case statement keys on *.spec.md only).
+k5_p=$(make_project)
+k5_req="$k5_p/.bionic/docs/specs/epic-01-demo/wave-01-x.requirements.md"
+
+echo "k5a: requirements.md with no frontmatter → block"
+run_write "$k5_req" '# Requirements body, no frontmatter'
+assert_eq "k5a exit 2" 2 "$HOOK_EXIT"
+assert_contains "k5a names the missing frontmatter block" "missing a YAML frontmatter block" "$HOOK_VSTDERR"
+
+echo "k5b: requirements.md with the full valid contract → allow"
+run_write "$k5_req" "$VALID_FRONTMATTER"
+assert_eq "k5b exit 0" 0 "$HOOK_EXIT"
+assert_eq "k5b silent" "" "$HOOK_STDERR"
+
+echo "k5c: the SAME frontmatter (no '## Design', no 'design:' pointer, no waiver) written to a" \
+     ".spec.md path would block on the design wall (proven in the design-wall section above)" \
+     "— written to .requirements.md instead it is allowed: the design rule never fires here"
+run_write "$k5_req" "$(build_plan)"
+assert_eq "k5c exit 0 (design rule not applied to a requirements file)" 0 "$HOOK_EXIT"
+assert_eq "k5c silent" "" "$HOOK_STDERR"
+
+# k5d: this wave's own requirements.md is the exemplar shape (design ledger K5; the brief
+# says "copy it into a fixture and assert that"). Frontmatter copied byte-for-byte from
+# .bionic/docs/specs/epic-22-plugin-only/wave-01-plugin-only.requirements.md (gitignored,
+# machine-local — not a path this hermetic suite can read live, so the fixture is a literal
+# copy rather than a dynamic read). K5.4 (mid-wave, landed after k5d was first written):
+# the real file's own opening picked up a '## Goal' section between the title and
+# "## Requirements and acceptance criteria" — this fixture is updated to match, so k5d
+# keeps proving "the real artifact passes the arm as-is" against the ARM'S CURRENT SHAPE,
+# K5.4's included, rather than a shape the real file no longer has.
+K5_EXEMPLAR_FRONTMATTER='---
+governing-skill: agent-skills:idea-refine
+sdlc-step: 1
+intent: build
+rigor: audited
+scale: wave
+canonical_sdlc_version: 14
+surface_type: cli-plugin
+language: bash
+has_ui: false
+multi_agent: true
+deploy_target: n/a
+cleanup_on_finish: true
+use_worktree: false
+walk: required
+design-interview: true
+model_plan: orchestrator=claude-fable-5-1; implementor=sonnet-high; senior-implementor=opus-high; researcher=opus-high; test-runner=haiku-medium; auditor=opus-high; critic=opus-high
+created: 2026-09-07
+---
+
+# bionic 1.6.0 — plugin-only · requirements (epic-22 wave-01)
+
+## Goal
+
+Ship bionic 1.6.0 as a plugin a stranger can install and trust: one source renders every skill
+and canon passage, the version lives in one place, dependent plugins stop falling out of the
+registry, known doctor and setup bugs are fixed, walls print one line, and the lifecycle shows the
+user settings at Step 0, the contract at Step 3, and the premise before the build.
+
+## Requirements and acceptance criteria
+
+**REQ-K5 — Three artifacts, three steps.**
+- AC-K5.1 The governing-skill hook validates '"'"'*.requirements.md'"'"' frontmatter under '"'"'specs/'"'"'.'
+echo "k5d: this wave's own requirements.md is the exemplar shape and must pass the arm as-is"
+k5_real_target="$k5_p/.bionic/docs/specs/epic-01-demo/real.requirements.md"
+run_write "$k5_real_target" "$K5_EXEMPLAR_FRONTMATTER"
+assert_eq "k5d exit 0 on the real wave-01 requirements doc's frontmatter" 0 "$HOOK_EXIT"
+assert_eq "k5d silent" "" "$HOOK_STDERR"
+
+# ============================================================
+# K5.4/AC-K5.4: the goal-paragraph rule (design ledger K5.4)
+# ============================================================
+#
+# Chris 2026-09-07 ~14:45 PT, "Option 2 - but make it: opens with a CONCISE goal
+# description in one paragraph": each of requirements.md, spec.md and plan.md opens with
+# a '## Goal' section — one concise paragraph — first after the title.
+#
+# SCALE DECISION (recorded here and in the hook's own comment): the arm is wave|epic
+# only, matching the design wall and the Verification Matrix wall in this same hook —
+# at `scale: task` there is no three-artifact shape to hold open (Step 1-3 collapse into
+# ONE session plan with a '## Tasks' ledger), so a task-scale plan is untouched (k54-4).
+echo
+section "K5.4/AC-K5.4: the goal-paragraph rule"
+
+k54_p=$(make_project)
+
+echo "k54-1: plan.md, wave scale, no '## Goal' at all → block, naming Goal and the file"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/w1.plan.md" "$(build_plan goal=no)"
+assert_eq "k54_plan_no_goal exit 2" 2 "$HOOK_EXIT"
+assert_contains "k54_plan_no_goal names Goal" "'## Goal'" "$HOOK_STDERR"
+assert_contains "k54_plan_no_goal names the file" "w1.plan.md" "$HOOK_VSTDERR"
+
+echo "k54-2: plan.md, wave scale, '## Goal' present with a real paragraph → allow"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/w2.plan.md" "$(build_plan goal=yes)"
+assert_eq "k54_plan_with_goal exit 0" 0 "$HOOK_EXIT"
+assert_eq "k54_plan_with_goal silent" "" "$HOOK_STDERR"
+
+echo "k54-3: plan.md, wave scale, '## Goal' present but EMPTY (heading, no paragraph) → block"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/w3.plan.md" "$(build_plan goal=empty)"
+assert_eq "k54_plan_empty_goal exit 2" 2 "$HOOK_EXIT"
+assert_contains "k54_plan_empty_goal names the empty section" "'Goal' section is empty" "$HOOK_VSTDERR"
+
+echo "k54-4: plan.md, TASK scale, no Goal at all → allow (arm inert — no three-artifact shape at task scale)"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/w4.plan.md" "$(build_plan goal=no scale=task matrix=no)"
+assert_eq "k54_plan_task_untouched exit 0" 0 "$HOOK_EXIT"
+assert_eq "k54_plan_task_untouched silent" "" "$HOOK_STDERR"
+
+echo "k54-5: plan.md, EPIC scale, no Goal → block (epic gets the arm too, not just wave)"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/w5.plan.md" "$(build_plan goal=no scale=epic)"
+assert_eq "k54_plan_epic_scoped exit 2" 2 "$HOOK_EXIT"
+
+echo "k54-6: spec.md, wave scale, no Goal (Design present) → block on Goal — proven independent of the design wall"
+run_write "$k54_p/.bionic/docs/specs/epic-01-demo/w6.spec.md" "$(build_spec goal=no section=yes)"
+assert_eq "k54_spec_no_goal exit 2" 2 "$HOOK_EXIT"
+assert_contains "k54_spec_no_goal names Goal" "'## Goal'" "$HOOK_STDERR"
+
+echo "k54-7: spec.md, wave scale, Goal present + Design present → allow (both walls satisfied)"
+run_write "$k54_p/.bionic/docs/specs/epic-01-demo/w7.spec.md" "$(build_spec goal=yes section=yes)"
+assert_eq "k54_spec_with_goal exit 0" 0 "$HOOK_EXIT"
+assert_eq "k54_spec_with_goal silent" "" "$HOOK_STDERR"
+
+echo "k54-8: spec.md, wave scale, Goal EMPTY + Design present → block on the empty Goal, not the design wall"
+run_write "$k54_p/.bionic/docs/specs/epic-01-demo/w8.spec.md" "$(build_spec goal=empty section=yes)"
+assert_eq "k54_spec_empty_goal exit 2" 2 "$HOOK_EXIT"
+assert_contains "k54_spec_empty_goal names the empty section" "'Goal' section is empty" "$HOOK_VSTDERR"
+
+echo "k54-9: requirements.md, wave scale, no Goal → block (requirements gets the arm too)"
+run_write "$k54_p/.bionic/docs/specs/epic-01-demo/w9.requirements.md" "$(build_plan goal=no)"
+assert_eq "k54_req_no_goal exit 2" 2 "$HOOK_EXIT"
+
+echo "k54-10: requirements.md, wave scale, Goal present → allow"
+run_write "$k54_p/.bionic/docs/specs/epic-01-demo/w10.requirements.md" "$(build_plan goal=yes)"
+assert_eq "k54_req_with_goal exit 0" 0 "$HOOK_EXIT"
+
+echo "k54-11: continuation.md, no Goal → allow (untouched — never one of the three artifacts)"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/continuation.md" "$(build_plan goal=no)"
+assert_eq "k54_continuation_untouched exit 0" 0 "$HOOK_EXIT"
+
+echo "k54-12: adr-*.md, no Goal → allow (untouched — an ADR has no three-artifact shape)"
+run_write "$k54_p/.bionic/docs/adrs/epic-01-demo/adr-099-x.md" "$(build_plan goal=no)"
+assert_eq "k54_adr_untouched exit 0" 0 "$HOOK_EXIT"
+
+echo "k54-13: a write to record/ (operational, never enforced), no Goal, no frontmatter at all → allow untouched"
+run_write "$k54_p/.bionic/docs/record/k54-note.md" '# an operational note, no canonical-sdlc frontmatter at all'
+assert_eq "k54_record_untouched exit 0" 0 "$HOOK_EXIT"
+
+# --- exemplar fixtures: this wave's own three artifacts, as-shipped ---
+#
+# The brief: "This wave's three artifacts already comply — each opens with `## Goal` —
+# and are your exemplar fixtures ... copy each into a fixture and assert the arm accepts
+# them." k5d above already covers requirements.md (K5_EXEMPLAR_FRONTMATTER, updated for
+# K5.4). The two below cover spec.md and plan.md. All three real files open with the
+# SAME Goal paragraph, word for word — copied here once and reused, rather than retyped
+# three times where a copy-paste slip could quietly diverge.
+K54_GOAL_PARA='Ship bionic 1.6.0 as a plugin a stranger can install and trust: one source renders every skill
+and canon passage, the version lives in one place, dependent plugins stop falling out of the
+registry, known doctor and setup bugs are fixed, walls print one line, and the lifecycle shows the
+user settings at Step 0, the contract at Step 3, and the premise before the build.'
+
+# spec.md exemplar: frontmatter + title + Goal copied from
+# .bionic/docs/specs/epic-22-plugin-only/wave-01-plugin-only.spec.md (gitignored,
+# machine-local, same reason k5d's copy is literal). The real file's design wall is
+# satisfied by an in-place '## Design' section (not reproduced here — this fixture is
+# about the Goal arm, not the design wall, which slices 16/17/18 already cover in depth);
+# a waiver substitutes, the same pattern SPEC_DESIGN_WAIVER already uses above for
+# fixtures that are not about design.
+K54_SPEC_EXEMPLAR='---
+governing-skill: agent-skills:spec-driven-development
+sdlc-step: 2
+intent: build
+rigor: audited
+scale: wave
+canonical_sdlc_version: 14
+surface_type: cli-plugin
+language: bash
+has_ui: false
+multi_agent: true
+deploy_target: n/a
+cleanup_on_finish: true
+use_worktree: false
+walk: required
+design-interview: true
+model_plan: orchestrator=claude-fable-5-1; implementor=sonnet-high; senior-implementor=opus-high; researcher=opus-high; test-runner=haiku-medium; auditor=opus-high; critic=opus-high
+requirements: specs/epic-22-plugin-only/wave-01-plugin-only.requirements.md
+'"$SPEC_DESIGN_WAIVER"'
+created: 2026-09-07
+---
+
+# bionic 1.6.0 — plugin-only · specification (epic-22 wave-01)
+
+## Goal
+
+'"$K54_GOAL_PARA"'
+
+## Context and Problem
+
+As ratified in the requirements document (§Context, §Problem); they travel into the PR body at Step 8.
+'
+
+echo "k54-14: this wave's own spec.md opening (title + '## Goal' + the shared paragraph) → allow"
+run_write "$k54_p/.bionic/docs/specs/epic-01-demo/real.spec.md" "$K54_SPEC_EXEMPLAR"
+assert_eq "k54_spec_exemplar exit 0" 0 "$HOOK_EXIT"
+assert_eq "k54_spec_exemplar silent" "" "$HOOK_STDERR"
+
+# plan.md exemplar: frontmatter + title + Goal copied from
+# .bionic/docs/plans/epic-22-plugin-only/wave-01-plugin-only.plan.md (same gitignored-copy
+# reasoning). sdlc-step 3 needs a '## Verification Matrix' section (the wall above this
+# one) — a minimal stub stands in for the real 60-row matrix, which is not this fixture's
+# subject.
+K54_PLAN_EXEMPLAR='---
+governing-skill: superpowers:writing-plans
+sdlc-step: 3
+intent: build
+rigor: audited
+scale: wave
+canonical_sdlc_version: 14
+surface_type: cli-plugin
+language: bash
+has_ui: false
+multi_agent: true
+deploy_target: n/a
+cleanup_on_finish: true
+use_worktree: false
+walk: required
+design-interview: true
+model_plan: orchestrator=claude-fable-5-1; implementor=sonnet-high; senior-implementor=opus-high; researcher=opus-high; test-runner=haiku-medium; auditor=opus-high; critic=opus-high
+requirements: specs/epic-22-plugin-only/wave-01-plugin-only.requirements.md
+spec: specs/epic-22-plugin-only/wave-01-plugin-only.spec.md
+created: 2026-09-07
+---
+
+# bionic 1.6.0 — plugin-only · implementation plan (epic-22 wave-01)
+
+## Goal
+
+'"$K54_GOAL_PARA"'
+
+## Verification Matrix
+
+stack-health: n/a: no long-running serve observed
+
+| AC | tier | status | evidence | auditor |
+|---|---|---|---|---|
+| AC-1 | T1 | discharged | see AC-1 | CONFIRMED |
+'
+
+echo "k54-15: this wave's own plan.md opening (title + '## Goal' + the shared paragraph) → allow"
+run_write "$k54_p/.bionic/docs/plans/epic-01-demo/real.plan.md" "$K54_PLAN_EXEMPLAR"
+assert_eq "k54_plan_exemplar exit 0" 0 "$HOOK_EXIT"
+assert_eq "k54_plan_exemplar silent" "" "$HOOK_STDERR"
+
+echo "AC-E1.3/E1.5: every refusal is one line, in the criterion's shape"
+
+# fails-when: a refusal reaches the user as more than one line, or in any shape but
+# `bionic: <verb> refused — <fact> (<fix ≤ 40 cols>)`. The counters below were filled by
+# every refusal the sections above produced, through the two main drivers.
+assert_eq "E1.3 the wall refused many times in this run (not counting over air)" "yes" \
+  "$([ "$GS_E1_SEEN" -ge 30 ] && echo yes || echo no)"
+assert_eq "E1.3 every refusal matched the criterion's shape" "" "$GS_E1_BAD_SHAPE"
+assert_eq "E1.3 every refusal was exactly one line" "" "$GS_E1_BAD_LINES"
+assert_eq "E1.3 every refusal fitted the 100-column budget" "" "$GS_E1_BAD_COLS"
+
+# THE TABLE'S EXACT WORDING at two sites, one direct and one through the `block` frame.
+gs_e1_project=$(make_project)
+run_write "$gs_e1_project/.bionic/docs/plans/epic-01-demo/badver.plan.md" "$(build_plan version=99)"
+assert_eq "E1.3 row 89 (an unsupported version) is the table's line" \
+  "bionic: write refused — this artifact declares an unsupported version (set the supported version)" \
+  "$(printf '%s\n' "$HOOK_STDERR" | /usr/bin/grep '^bionic: ')"
+assert_contains "E1.5 …and the value found is in the detail, behind the knob" \
+  "canonical_sdlc_version: '99'" "$HOOK_VSTDERR"
+assert_eq "E1.5 …with the one line still first" \
+  "bionic: write refused — this artifact declares an unsupported version (set the supported version)" \
+  "$(printf '%s\n' "$HOOK_VSTDERR" | /usr/bin/grep -m1 '^bionic: ')"
 
 finish

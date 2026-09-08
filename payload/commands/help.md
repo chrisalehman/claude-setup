@@ -28,7 +28,7 @@ Presentation contract — what the user sees from this command:
 Render the page below in full, verbatim, every time this command runs — even if it was
 shown earlier in this session; never summarize it or refer back to an earlier rendering.
 
-bionic 1.5.1 (installed)
+bionic 1.6.0 (installed)
 
 # bionic
 
@@ -43,6 +43,7 @@ install it once and every project gets the same working discipline.
 | `/bionic:help` | this page — the roster, and where to start |
 | `/bionic:setup` | idempotent machine setup, one consented item at a time |
 | `/bionic:doctor` | read-only diagnosis of this machine; it changes nothing |
+| `/bionic:version` | one line — installed version, commit or feed, install path, this-checkout state |
 | `/bionic:remove` | consented teardown, finishing with the plugin uninstall |
 
 ## Skills — ship with the plugin

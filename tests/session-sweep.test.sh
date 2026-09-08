@@ -74,7 +74,11 @@ expect_matches() { expect_regex "$@"; }
 # in its own subshell and a background job started inside one dies with it (the measurement
 # is recorded in tests/doctor-patrol.test.sh, whose builder this copies).
 spawn_live_pid() {
-  sleep 100 &
+  # 3600, not 100: the fixture must outlive the SUITE, not a case — under load this suite
+  # has taken 323 s (tests-floor3, 2026-09-07), and a fake session whose process has exited
+  # before the case that reads it is honestly reported dead (doctor-patrol case 44). The
+  # EXIT trap kills every one of these; nothing waits on them.
+  sleep 3600 &
   LIVE_PID=$!
   LIVE_PIDS="${LIVE_PIDS} ${LIVE_PID}"
 }
@@ -435,5 +439,410 @@ poke "$R6C" "$H6" "-" sweep
 expect_eq "6.12 a sweep with no session key completes (exit 0)" "0" "$RC"
 expect_false "6.13 …and sweeps the dead session" test -e "$(f_of "$R6C" roster "$SID_DEAD")"
 expect_contains "6.14 …reporting no session of its own" "|session=none|" "$OUT"
+
+# =============================================================================
+section "7. session-start.sh's own silent auto-sweep (R2, ticket-30, AC-R2.1/2.2/2.3)"
+# =============================================================================
+#
+# EVERYTHING ABOVE THIS SECTION drives `sweep` itself, directly, and stays exactly
+# as it was (A-5: the verb is wired here, never rewritten). This section drives
+# THE CALLER — hooks/session-start.sh — which is what actually decides WHETHER
+# `sweep` runs at every session start, and adds one thing the verb itself does
+# not have: an age gate, so a session dead one instant ago is not swept before
+# anyone could read the predecessor report this same run just printed.
+#
+# NO wrap.sh / PPID DANCE (unlike tests/session-start.test.sh). This session's
+# own liveness, for the sweep decision, is CLAUDE_CODE_SESSION_ID alone — the
+# hook's wiring passes it to `patrol_dead_sessions` as an explicit also-live id,
+# the same way `session-poker.sh sweep` protects its own caller — so a claude-home
+# with no pid entry for it is enough; only the classes under test (a genuinely
+# DEAD or LIVE *other* session) need the pid-file machinery `live_home` builds.
+HOOK_SESSION_START="${BIONIC_HOOKS_DIR}/session-start.sh"
+expect_true "hooks/session-start.sh exists" test -f "$HOOK_SESSION_START"
+
+CUR_SELF="$SID_SELF"
+
+ss_make_project() {  # <label> [poker-interval, default 1s] -> project dir
+  local r="$TMPROOT/$1" interval="${2:-1s}"
+  mkdir -p "$r/.bionic/tmp"
+  ( cd "$r" && git init -q . 2>/dev/null )
+  printf 'poker-interval: %s\n' "$interval" > "$r/.bionic/config.yaml"
+  printf '%s' "$r"
+}
+
+# THE SAME BACKDATING IDIOM tests/dispatch-preflight.test.sh's `s21_backdate` and
+# tests/cross-gate-agreement.test.sh's `s_backdate` use — portable across BSD and
+# GNU `date`, and nothing here sleeps.
+ss_backdate() {  # <file> <seconds ago>
+  local ts
+  ts="$(date -v-"$2"S +%Y%m%d%H%M.%S 2>/dev/null || date -d "-$2 seconds" +%Y%m%d%H%M.%S)"
+  touch -t "$ts" "$1"
+}
+
+# Drive the REAL hook (or a stubbed tree — see ss_plant_hook_tree below), against
+# a chosen claude-home, as the named current session. Sets $OUT and $RC.
+ss_drive_start() {  # <hook path> <repo> <claude-home> <cur sid> [extra env NAME=VALUE ...]
+  local hook="$1" r="$2" h="$3" cur="$4"; shift 4
+  OUT="$( cd "$r" \
+          && printf '{"session_id":"%s","cwd":"%s","source":"startup"}' "$cur" "$r" \
+          | env "$@" CLAUDE_CODE_SESSION_ID="$cur" BIONIC_CLAUDE_HOME="$h" \
+                BIONIC_PLUGINS_DIR="$TMPROOT/no-plugins" \
+                bash "$hook" 2>&1 )"
+  RC=$?
+}
+
+section "7a. AC-R2.1 — a dead session, aged past the interval, is fully swept"
+
+R7A="$(ss_make_project r7a 1s)"
+H7A="$TMPROOT/home-r7a"; mkdir -p "$H7A/sessions"
+plant_session "$R7A" "$SID_DEAD"
+for f7a in "$R7A/.bionic/tmp/"*"-$SID_DEAD.state"*; do ss_backdate "$f7a" 5; done
+
+ss_drive_start "$HOOK_SESSION_START" "$R7A" "$H7A" "$CUR_SELF"
+expect_eq "7a.1 session-start still exits 0" "0" "$RC"
+expect_false "7a.2 …its roster is gone"    test -e "$(f_of "$R7A" roster "$SID_DEAD")"
+expect_false "7a.3 …its preflight is gone" test -e "$(f_of "$R7A" preflight "$SID_DEAD")"
+expect_false "7a.4 …its engaged marker is gone" test -e "$(f_of "$R7A" engaged "$SID_DEAD")"
+expect_false "7a.5 …its sweeper ledger is gone"  test -e "$(f_of "$R7A" sweeper "$SID_DEAD")"
+expect_false "7a.6 …its patrol stamp is gone"    test -e "$(f_of "$R7A" patrol "$SID_DEAD")"
+expect_false "7a.7 …and no sweep-failure marker was left behind" \
+  test -e "$R7A/.bionic/tmp/sweep-failed.state"
+
+section "7b. AC-R2.2 — a LIVE session's files survive a session start"
+
+R7B="$(ss_make_project r7b 1s)"
+live_home 7b "$SID_LIVE"; H7B="$CLAUDE_HOME"
+plant_session "$R7B" "$SID_LIVE"
+for f7b in "$R7B/.bionic/tmp/"*"-$SID_LIVE.state"*; do ss_backdate "$f7b" 5; done
+
+ss_drive_start "$HOOK_SESSION_START" "$R7B" "$H7B" "$CUR_SELF"
+expect_eq "7b.1 session-start exits 0" "0" "$RC"
+expect_true "7b.2 the live session's roster survives"    test -f "$(f_of "$R7B" roster "$SID_LIVE")"
+expect_true "7b.3 …its preflight survives"                test -f "$(f_of "$R7B" preflight "$SID_LIVE")"
+expect_true "7b.4 …its patrol stamp survives"             test -f "$(f_of "$R7B" patrol "$SID_LIVE")"
+
+section "7c. AC-R2.3 — files younger than one Patrol interval survive, even though the session is dead"
+
+R7C="$(ss_make_project r7c 3600s)"
+H7C="$TMPROOT/home-r7c"; mkdir -p "$H7C/sessions"
+plant_session "$R7C" "$SID_DEAD"
+# NOT backdated: fresh mtimes, well inside the (deliberately huge) 3600s interval.
+
+ss_drive_start "$HOOK_SESSION_START" "$R7C" "$H7C" "$CUR_SELF"
+expect_eq "7c.1 session-start exits 0" "0" "$RC"
+expect_true "7c.2 a fresh dead session's roster survives (deferred, not swept)" \
+  test -f "$(f_of "$R7C" roster "$SID_DEAD")"
+expect_true "7c.3 …its preflight survives too"           test -f "$(f_of "$R7C" preflight "$SID_DEAD")"
+expect_true "7c.4 …its patrol stamp survives too"        test -f "$(f_of "$R7C" patrol "$SID_DEAD")"
+expect_false "7c.5 …and no sweep-failure marker either — nothing FAILED, it was deferred" \
+  test -e "$R7C/.bionic/tmp/sweep-failed.state"
+
+# THE PAIRED POSITIVE (anti-vacuity): the SAME dead session, backdated past the
+# SAME interval, on a fresh copy of the fixture, is swept — so 7c above is
+# proven to be the age gate and not a hook that never sweeps anything.
+R7C2="$(ss_make_project r7c2 1s)"
+H7C2="$TMPROOT/home-r7c2"; mkdir -p "$H7C2/sessions"
+plant_session "$R7C2" "$SID_DEAD"
+for f7c2 in "$R7C2/.bionic/tmp/"*"-$SID_DEAD.state"*; do ss_backdate "$f7c2" 5; done
+ss_drive_start "$HOOK_SESSION_START" "$R7C2" "$H7C2" "$CUR_SELF"
+expect_false "7c.6 …the paired positive: aged past a SHORT interval, it IS swept" \
+  test -e "$(f_of "$R7C2" roster "$SID_DEAD")"
+
+section "7d. the failure path — a marker is written, one line prints, and it clears on the next success"
+
+# A STUBBED HOOK TREE, so `session-poker.sh sweep` answers something other than
+# 0 or 1 — deterministically, without constructing a real refusal (sweep's own
+# rc=2 causes — a symlinked .bionic/tmp, an unresolvable cwd — are either
+# pre-empted by this hook's own guard before it would ever call sweep, or too
+# machine-fragile to plant reliably). The stub is asked ONLY for `sweep`; every
+# other verb this hook calls (`interval`, `interval-default`) gets a real,
+# trivial answer so the age gate and the report above still behave normally.
+ss_plant_hook_tree() {  # <root> <sweep-exit-code|"hang"> -> echoes <root>/hooks
+  local root="$1" mode="$2" lib_src
+  lib_src="${BIONIC_HOOKS_DIR}/../payload/scripts/lib"
+  [ -d "$lib_src" ] || lib_src="${BIONIC_HOOKS_DIR}/../scripts/lib"
+  mkdir -p "$root/hooks" "$root/scripts/lib"
+  cp "$HOOK_SESSION_START" "$root/hooks/session-start.sh"
+  cp "$lib_src"/*.sh "$root/scripts/lib/" 2>/dev/null
+  {
+    printf '#!/bin/bash\ncase "$1" in\n'
+    printf '  interval|interval-default) echo 1; exit 0 ;;\n'
+    if [ "$mode" = hang ]; then
+      printf '  sweep) sleep 999 ;;\n'
+    else
+      printf '  sweep) exit %s ;;\n' "$mode"
+    fi
+    printf '  *) exit 0 ;;\nesac\n'
+  } > "$root/hooks/session-poker.sh"
+  chmod +x "$root/hooks/session-poker.sh"
+  printf '%s' "$root/hooks"
+}
+
+# ---------- a genuine refusal (rc=2): marker written, one line, once ----------
+R7D="$(ss_make_project r7d 1s)"
+H7D="$TMPROOT/home-r7d"; mkdir -p "$H7D/sessions"
+plant_session "$R7D" "$SID_DEAD" roster
+ss_backdate "$(f_of "$R7D" roster "$SID_DEAD")" 5
+HOOKS_R7D="$(ss_plant_hook_tree "$TMPROOT/tree-r7d" 2)"
+
+ss_drive_start "$HOOKS_R7D/session-start.sh" "$R7D" "$H7D" "$CUR_SELF"
+expect_eq "7d.1 session-start still exits 0 — a sweep failure never blocks a start" "0" "$RC"
+expect_contains "7d.2 the one line names the failure and the rc" \
+  "automatic dead-session sweep failed (rc=2)" "$OUT"
+D7D_HITS="$(printf '%s\n' "$OUT" | grep -c 'automatic dead-session sweep failed')"
+expect_eq "7d.3 …exactly once" "1" "$D7D_HITS"
+expect_true "7d.4 a marker is left under .bionic/tmp" test -f "$R7D/.bionic/tmp/sweep-failed.state"
+expect_contains "7d.5 …carrying the schema and the rc" "sweep-failed/v1" \
+  "$(cat "$R7D/.bionic/tmp/sweep-failed.state")"
+expect_contains "7d.6 …the rc field itself" "rc=2" "$(cat "$R7D/.bionic/tmp/sweep-failed.state")"
+
+# ---------- bounded: a hung sweep is killed within its bound, not left to hang ----------
+R7E="$(ss_make_project r7e 1s)"
+H7E="$TMPROOT/home-r7e"; mkdir -p "$H7E/sessions"
+plant_session "$R7E" "$SID_DEAD" roster
+ss_backdate "$(f_of "$R7E" roster "$SID_DEAD")" 5
+HOOKS_R7E="$(ss_plant_hook_tree "$TMPROOT/tree-r7e" hang)"
+
+SS_T0="$(date -u +%s)"
+ss_drive_start "$HOOKS_R7E/session-start.sh" "$R7E" "$H7E" "$CUR_SELF" BIONIC_SWEEP_BOUND_SECONDS=2
+SS_T1="$(date -u +%s)"
+SS_ELAPSED=$(( SS_T1 - SS_T0 ))
+expect_eq "7e.1 session-start exits 0 even after killing a hung sweep" "0" "$RC"
+expect_true "7e.2 the bound actually bound it — well under the sweep's own 999s sleep" \
+  test "$SS_ELAPSED" -lt 30
+expect_contains "7e.3 the failure line prints (a bounded timeout counts as a failure)" \
+  "automatic dead-session sweep failed (rc=124)" "$OUT"
+expect_true "7e.4 a marker is left" test -f "$R7E/.bionic/tmp/sweep-failed.state"
+
+# ---------- success clears a marker a PAST failure left ----------
+R7F="$(ss_make_project r7f 1s)"
+H7F="$TMPROOT/home-r7f"; mkdir -p "$H7F/sessions"
+printf 'sweep-failed/v1|at=2026-01-01T00:00:00Z|rc=2\n' > "$R7F/.bionic/tmp/sweep-failed.state"
+# No dead session at all this time — the real, unstubbed hook, a clean sweep.
+ss_drive_start "$HOOK_SESSION_START" "$R7F" "$H7F" "$CUR_SELF"
+expect_eq "7f.1 session-start exits 0" "0" "$RC"
+expect_false "7f.2 a stale failure marker is cleared the next time sweeping works" \
+  test -e "$R7F/.bionic/tmp/sweep-failed.state"
+expect_no_match "7f.3 …and nothing about a failure prints" \
+  "*automatic dead-session sweep failed*" "$OUT"
+
+section "7g. the age gate's COST: one stat call for the whole gate, not one per file"
+# =============================================================================
+#
+# Step-6 review F-4. The gate above ran `stat` once per state file per dead session,
+# and it ran BEFORE the bounded sweep rather than inside it — so its cost was neither
+# bounded nor small. Measured by the reviewer: 400 dead sessions took 13.8 s against
+# the 10-second timeout hooks/hooks.json registers for this hook, and
+# BIONIC_SWEEP_BOUND_SECONDS defaults to that same 10, so the internal guard could
+# never fire first. The user-visible consequence is not a slow sweep: the sweep is
+# invoked AFTER the predecessor report is built, so a CLI timeout discards the report
+# the hook exists to print, on exactly the residue-heavy project it is most useful on.
+#
+# PROCESS COUNTS, NOT A CLOCK. A wall-clock assertion on a machine running sibling
+# agents measures the machine as much as the hook, and the margin between the two
+# shapes at a fixture size a hermetic suite can afford is inside that noise. The
+# `stat` execution count is deterministic, is the thing that actually changed, and is
+# what the wall clock was a proxy for. The before/after timings themselves are
+# measured and recorded in record/wave-01-plugin-only/s24-review-fixes.md rather than
+# asserted here.
+
+# A PATH SHIM that counts every `stat` the hook runs and then execs the real one.
+SS_SHIM="$TMPROOT/shim"; mkdir -p "$SS_SHIM"
+SS_STAT_LOG="$TMPROOT/stat-calls.log"
+SS_REAL_STAT="$(command -v stat)"
+{
+  printf '#!/bin/bash\n'
+  printf 'printf "x\\n" >> "%s"\n' "$SS_STAT_LOG"
+  printf 'exec "%s" "$@"\n' "$SS_REAL_STAT"
+} > "$SS_SHIM/stat"
+chmod +x "$SS_SHIM/stat"
+
+# N dead sessions, every file aged past the interval so the gate opens and the real
+# sweep runs. 60 is enough to separate one-call-per-file (which would be ~720) from
+# one-call-for-the-gate, and small enough that the fixture builds in well under a
+# second.
+ss_plant_dead_many() {  # <repo> <n> [class...]
+  local r="$1" n="$2" i=0 sid; shift 2
+  while [ "$i" -lt "$n" ]; do
+    sid="$(printf 'dead-%04d-aaaa-bbbb-cccccccccccc' "$i")"
+    plant_session "$r" "$sid" "$@"
+    i=$(( i + 1 ))
+  done
+  for f in "$r/.bionic/tmp/"*.state "$r/.bionic/tmp/"*.armed; do
+    [ -e "$f" ] && ss_backdate "$f" 60
+  done
+  return 0
+}
+
+R7G="$(ss_make_project r7g 1s)"
+H7G="$TMPROOT/home-r7g"; mkdir -p "$H7G/sessions"
+ss_plant_dead_many "$R7G" 60 roster preflight engaged sweeper patrol
+SS_FILE_COUNT="$(ls "$R7G/.bionic/tmp/" | wc -l | tr -d ' ')"
+SS_STAMPS="$(ls "$R7G/.bionic/tmp/"patrol-*.state 2>/dev/null | wc -l | tr -d ' ')"
+expect_true "7g.0 the fixture really does carry hundreds of dead-session files" \
+  test "$SS_FILE_COUNT" -ge 300
+
+: > "$SS_STAT_LOG"
+# THE BOUND HERE IS A HANG-CATCHER, NOT THE THING UNDER TEST. It used to be 2s,
+# and that made 7g.4 a wall-clock assertion in disguise — plan A-47 already ruled
+# those cannot hold. Measured on this machine at this fixture's exact size (60 dead
+# sessions x 5 classes): the bounded sweep completes in ~2s idle and 4-5s beside
+# eight busy siblings, so a 2-second bound killed it 3 times out of 3 under the
+# 8-wide floor and left `sweep-failed.state` carrying `rc=124` — the bound's own
+# timeout code, not a fault in anything this section measures. At 120s only a
+# genuine hang trips it, and the hang path already has its own arm at 7e with a
+# small bound, so nothing is given up. The `stat` COUNTS this section actually
+# asserts are unaffected either way: the gate runs before the sweep, and the count
+# was 61 with the sweep killed and 61 with it finishing.
+ss_drive_start "$HOOK_SESSION_START" "$R7G" "$H7G" "$CUR_SELF" \
+  "PATH=$SS_SHIM:$PATH" BIONIC_SWEEP_BOUND_SECONDS=120
+SS_STATS="$(wc -l < "$SS_STAT_LOG" | tr -d ' ')"
+
+expect_eq "7g.1 session-start still exits 0" "0" "$RC"
+
+# THE BUDGET IS "ONE PER PATROL STAMP, PLUS A HANDFUL", and the stamps are not the
+# gate's. This hook's predecessor-stamp loop reads one mtime per `patrol-*.state` to
+# age it, and has done since before this wave (5740e3f:475) — it is outside F-4 and is
+# not touched here. Everything ABOVE that floor was the age gate spending one process
+# per state file per dead session: 360 of them at this fixture's size, against the 60
+# the stamps account for. The budget refuses to let them come back.
+expect_true "7g.2 the gate spends no stat per state file: $SS_STATS calls over $SS_FILE_COUNT files, against $SS_STAMPS pre-existing stamp reads" \
+  test "$SS_STATS" -le "$(( SS_STAMPS + 5 ))"
+
+# THE SAME SESSIONS, FEWER FILES EACH — the arm that names F-4's property directly and
+# needs no clock to do it. `roster patrol` gives every dead session two classes instead
+# of five, so the PATROL STAMP COUNT (the pre-existing per-stamp read) is identical and
+# the only thing that changed is how many state files the gate would have had to visit.
+# Before the fix that difference was ~180 processes; a gate that reads mtimes in one
+# call cannot notice the difference at all.
+R7G2="$(ss_make_project r7g2 1s)"
+H7G2="$TMPROOT/home-r7g2"; mkdir -p "$H7G2/sessions"
+ss_plant_dead_many "$R7G2" 60 roster patrol
+SS_FILE_COUNT2="$(ls "$R7G2/.bionic/tmp/" | wc -l | tr -d ' ')"
+SS_STAMPS2="$(ls "$R7G2/.bionic/tmp/"patrol-*.state 2>/dev/null | wc -l | tr -d ' ')"
+: > "$SS_STAT_LOG"
+ss_drive_start "$HOOK_SESSION_START" "$R7G2" "$H7G2" "$CUR_SELF" \
+  "PATH=$SS_SHIM:$PATH" BIONIC_SWEEP_BOUND_SECONDS=120
+SS_STATS2="$(wc -l < "$SS_STAT_LOG" | tr -d ' ')"
+
+expect_eq "7g.2a the control fixture has the same stamp count, so only the file count differs" \
+  "$SS_STAMPS" "$SS_STAMPS2"
+expect_true "7g.2b …and the gate costs the same on $SS_FILE_COUNT files as on $SS_FILE_COUNT2 ($SS_STATS vs $SS_STATS2 stat calls)" \
+  test "$(( SS_STATS - SS_STATS2 ))" -le 5
+
+# THE MARKER IS THE SWEEP'S, NOT THE GATE'S — the gate is not inside the bound at
+# all — so this arm says that the hook, at this size, reaches the end of a sweep
+# instead of timing out of one. Under the old 2-second bound its old label ("the
+# gate finished") named something it never measured.
+expect_false "7g.4 …and no sweep-failure marker: the bounded sweep ran to the end, it was not killed" \
+  test -e "$R7G/.bionic/tmp/sweep-failed.state"
+expect_false "7g.5 …and the dead residue is actually gone, so the gate still OPENED" \
+  test -e "$(f_of "$R7G" roster "dead-0000-aaaa-bbbb-cccccccccccc")"
+
+# THE GATE STILL CLOSES ON A YOUNG FILE, at the same scale — the cheap version must
+# not be cheap because it stopped looking. One fresh file among 60 aged sessions
+# defers the whole batch, which is section 7c's rule at 7g's size.
+R7H="$(ss_make_project r7h 3600s)"
+H7H="$TMPROOT/home-r7h"; mkdir -p "$H7H/sessions"
+ss_plant_dead_many "$R7H" 60 roster preflight engaged sweeper patrol
+touch "$(f_of "$R7H" roster "dead-0059-aaaa-bbbb-cccccccccccc")"
+ss_drive_start "$HOOK_SESSION_START" "$R7H" "$H7H" "$CUR_SELF"
+expect_eq "7h.1 session-start exits 0" "0" "$RC"
+expect_true "7h.2 one young file among 60 dead sessions still defers the whole batch" \
+  test -f "$(f_of "$R7H" roster "dead-0000-aaaa-bbbb-cccccccccccc")"
+
+section "7i. the gate reads mtimes on a GNU machine too, not only on a BSD one"
+# =============================================================================
+#
+# Step-6 critic, issue 1. The gate's mtime read chose its `stat` flavour by asking
+# whether the BSD form produced any output: `stat -f %m` first, and the GNU
+# `-c %Y` form only if that came back EMPTY. GNU `stat` does not leave it empty.
+# `-f` there is `--file-system`, so `%m` is read as a FILE operand: GNU complains
+# about `%m` on stderr, still prints a full file-system report for the real files
+# on STDOUT, and exits 1. The capture is therefore non-empty, the `-c %Y` arm is
+# never reached, every captured line fails the numeric test, and the gate decides
+# NOTHING IS YOUNG — so on Linux and WSL, both supported (README's install paths),
+# session state seconds old was deleted at the next session start. That is the one
+# failure mode the whole gate exists to prevent.
+#
+# THE SHIM, NOT A CONTAINER. This arm has to run on every machine the suite runs
+# on, so the GNU behaviour is planted on PATH rather than borrowed from a Linux
+# box: a `stat` that answers `-f` the way GNU answers it (a multi-line file-system
+# dump on stdout, a complaint on stderr, exit 1) and answers `-c %Y` with the
+# real mtimes. A gate that discriminates by FLAVOUR passes; a gate that
+# discriminates by EMPTINESS cannot.
+SS_GNU="$TMPROOT/gnu-shim"; mkdir -p "$SS_GNU"
+# Whatever the REAL `stat` on this machine is, the shim has to be able to answer
+# `-c %Y` truthfully — so its flavour is settled here, by the discriminating test,
+# and baked in. (On the BSD host this suite normally runs on, `-c` is rejected.)
+if [ -n "$(/usr/bin/stat -c %Y /dev/null 2>/dev/null | tr -dc '0-9')" ]; then
+  SS_REAL_MTIME='/usr/bin/stat -c %Y'
+else
+  SS_REAL_MTIME='/usr/bin/stat -f %m'
+fi
+{
+  printf '#!/bin/bash\n'
+  printf 'REAL_MTIME="%s"\n' "$SS_REAL_MTIME"
+  cat <<'SS_GNU_SHIM'
+case "${1:-}" in
+  -c)
+    shift 2
+    for f in "$@"; do $REAL_MTIME "$f"; done
+    exit 0
+    ;;
+  -f)
+    shift 2
+    echo "stat: cannot read file system information for '%m': No such file or directory" >&2
+    for f in "$@"; do
+      printf '  File: "%s"\n' "$f"
+      printf '    ID: 28d79cb6769f8344 Namelen: 255     Type: ext2/ext3\n'
+      printf 'Block size: 4096       Fundamental block size: 4096\n'
+      printf 'Blocks: Total: 58623224   Free: 54873547   Available: 51877439\n'
+      printf 'Inodes: Total: 14966784   Free: 14381835\n'
+    done
+    exit 1
+    ;;
+esac
+exec /usr/bin/stat "$@"
+SS_GNU_SHIM
+} > "$SS_GNU/stat"
+chmod +x "$SS_GNU/stat"
+
+# THE SHIM IS THE THING UNDER TEST TOO, so it is proven before it is trusted: it
+# must answer `-f %m` the GNU way (dump on stdout, non-zero) and `-c %Y` with a
+# number. Without this pair a shim that silently degraded to the real `stat`
+# would make 7i.3 pass for the wrong reason.
+SS_SHIM_F="$( "$SS_GNU/stat" -f %m /dev/null 2>/dev/null )"; SS_SHIM_F_RC=$?
+expect_true "7i.0 the shim answers -f the GNU way: a file-system dump on stdout, not a number" \
+  test -n "$SS_SHIM_F" -a "$SS_SHIM_F_RC" -ne 0
+expect_no_match "7i.0a …and what it printed is not mtime-shaped" "*[0-9][0-9][0-9][0-9][0-9]*" \
+  "$(printf '%s' "$SS_SHIM_F" | head -1)"
+expect_match "7i.0b …while -c %Y answers with a number" "[0-9]*" \
+  "$( "$SS_GNU/stat" -c %Y /dev/null )"
+
+# 7c's fixture exactly — a dead session with FRESH mtimes against a 3600s interval,
+# which must be deferred — driven with the GNU-shaped `stat` on PATH.
+R7I="$(ss_make_project r7i 3600s)"
+H7I="$TMPROOT/home-r7i"; mkdir -p "$H7I/sessions"
+plant_session "$R7I" "$SID_DEAD"
+ss_drive_start "$HOOK_SESSION_START" "$R7I" "$H7I" "$CUR_SELF" "PATH=$SS_GNU:$PATH"
+expect_eq "7i.1 session-start exits 0 under a GNU-shaped stat" "0" "$RC"
+expect_true "7i.2 a seconds-old dead session survives on a GNU machine (deferred, not swept)" \
+  test -f "$(f_of "$R7I" roster "$SID_DEAD")"
+expect_true "7i.3 …its patrol stamp survives too" \
+  test -f "$(f_of "$R7I" patrol "$SID_DEAD")"
+
+# THE PAIRED POSITIVE (anti-vacuity): the same GNU-shaped `stat`, the same hook,
+# a dead session aged PAST a short interval — swept. So 7i.2 is the age gate
+# reading real mtimes through the GNU form, not a hook that stopped sweeping the
+# moment an unfamiliar `stat` appeared on PATH.
+R7I2="$(ss_make_project r7i2 1s)"
+H7I2="$TMPROOT/home-r7i2"; mkdir -p "$H7I2/sessions"
+plant_session "$R7I2" "$SID_DEAD"
+for f7i2 in "$R7I2/.bionic/tmp/"*"-$SID_DEAD.state"*; do ss_backdate "$f7i2" 60; done
+ss_drive_start "$HOOK_SESSION_START" "$R7I2" "$H7I2" "$CUR_SELF" "PATH=$SS_GNU:$PATH"
+expect_eq "7i.4 session-start exits 0" "0" "$RC"
+expect_false "7i.5 …and an AGED dead session is still swept under the same GNU stat" \
+  test -e "$(f_of "$R7I2" roster "$SID_DEAD")"
 
 finish
